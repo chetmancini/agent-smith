@@ -1,6 +1,4 @@
 # Agent Smith
-"Never send a human to do a machine's job" - Agent Smith, The Matrix, 1999
-https://www.youtube.com/watch?v=dJ4Bt2xtE9Q
 
 > "Never send a human to do a machine's job." Agent Smith, *The Matrix* (1999)
 >
