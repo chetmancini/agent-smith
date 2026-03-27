@@ -36,7 +36,7 @@ Agent Smith implements a closed-loop improvement cycle:
 │  Present structural changes for approval                │
 │  → settings.json, commands/*.md, CLAUDE.md              │
 └─────────────────────────────────────────────────────────┘
-```text
+```
 
 Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
 
@@ -46,13 +46,13 @@ Automatic analysis is disabled by default. You can opt in to background raw repo
 
 ```bash
 claude --plugin-dir path/to/agent-smith
-```text
+```
 
 ### From a Git repo
 
 ```bash
 claude plugin add https://github.com/chetmancini/agent-smith
-```text
+```
 
 ## What Gets Collected
 
@@ -80,7 +80,7 @@ Use the slash command:
 
 ```text
 /agent-smith:analyze
-```text
+```
 
 Or run the scripts directly:
 
@@ -96,7 +96,7 @@ bash scripts/analyze-config.sh --llm --sessions 50
 
 # Include your local Claude settings snapshot in the LLM prompt (explicit opt-in)
 bash scripts/analyze-config.sh --llm --include-settings --sessions 50
-```text
+```
 
 ### Schema validation
 
@@ -125,7 +125,7 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 │   └── 2026-03-27-analysis.md
 ├── .session_start_ts     # Temporary: session timing
 └── .test_fail_count      # Temporary: consecutive test failures
-```text
+```
 
 ## Prerequisites
 
