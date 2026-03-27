@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Self-modifying feedback loop for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
   "author": {
-    "name": "Chet Corcos"
+    "name": "Chet Mancini"
   },
-  "repository": "https://github.com/ccorcos/agent-smith",
+  "repository": "https://github.com/mancini/agent-smith",
   "license": "MIT",
   "keywords": [
     "metrics",
