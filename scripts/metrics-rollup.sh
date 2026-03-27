@@ -1,0 +1,184 @@
+#!/bin/bash
+# Metrics rollup: process JSONL events into SQLite for querying
+# Usage: metrics-rollup.sh [--rotate-at-mb N]
+# Supports incremental ingestion — only processes new lines since last run
+
+set -euo pipefail
+
+METRICS_DIR="${METRICS_DIR:-${HOME}/.config/agent-smith}"
+EVENTS_FILE="${METRICS_DIR}/events.jsonl"
+DB_FILE="${METRICS_DIR}/rollup.db"
+ROTATE_AT_BYTES=$((10 * 1024 * 1024))  # 10MB default
+
+ensure_private_dir() {
+    local path="$1"
+    local old_umask
+    old_umask=$(umask)
+    umask 077
+    mkdir -p "$path" 2>/dev/null || true
+    umask "$old_umask"
+    chmod 700 "$path" 2>/dev/null || true
+}
+
+harden_private_file() {
+    local path="$1"
+    [ -e "$path" ] || return 0
+    chmod 600 "$path" 2>/dev/null || true
+}
+
+# Parse args
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --rotate-at-mb)
+            ROTATE_AT_BYTES=$(($2 * 1024 * 1024))
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "Error: sqlite3 not found (ships with macOS)" >&2
+    exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq not found" >&2
+    exit 1
+fi
+
+if [ ! -f "$EVENTS_FILE" ]; then
+    exit 0
+fi
+
+ensure_private_dir "$METRICS_DIR"
+
+# Initialize DB schema
+sqlite3 "$DB_FILE" <<'SCHEMA'
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    metadata TEXT NOT NULL,
+    ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_tool ON events(tool);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+
+CREATE TABLE IF NOT EXISTS daily_rollup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    session_count INTEGER NOT NULL DEFAULT 0,
+    sample_metadata TEXT,
+    UNIQUE(date, tool, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_rollup(date);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL UNIQUE,
+    tool TEXT NOT NULL,
+    started_at TEXT,
+    stopped_at TEXT,
+    duration_seconds INTEGER,
+    stop_reason TEXT,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    test_loop_count INTEGER NOT NULL DEFAULT 0,
+    clarification_count INTEGER NOT NULL DEFAULT 0,
+    denial_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool);
+CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
+
+CREATE TABLE IF NOT EXISTS ingestion_state (
+    file_path TEXT PRIMARY KEY,
+    byte_offset INTEGER NOT NULL DEFAULT 0,
+    last_ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+SCHEMA
+
+# Get last ingested byte offset
+OFFSET=$(sqlite3 "$DB_FILE" "SELECT COALESCE(byte_offset, 0) FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || echo "0")
+OFFSET="${OFFSET:-0}"
+
+# Get current file size (macOS stat syntax)
+FILE_SIZE=$(stat -f%z "$EVENTS_FILE" 2>/dev/null || stat -c%s "$EVENTS_FILE" 2>/dev/null || echo "0")
+FILE_SIZE="${FILE_SIZE:-0}"
+
+if [ "$OFFSET" -ge "$FILE_SIZE" ]; then
+    exit 0  # Nothing new
+fi
+
+# Extract new lines and transform to SQL in a single jq pass, wrapped in a transaction
+{
+    echo "BEGIN TRANSACTION;"
+
+    tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
+        # Skip malformed lines
+        select(.ts != null and .tool != null and .event_type != null) |
+
+        # Escape single quotes for SQL
+        def sq: gsub("'\''"; "'\'''\''");
+
+        # Generate INSERT for events table
+        "INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES ('\''" + (.ts | sq) + "'\'', '\''" + (.tool | sq) + "'\'', '\''" + (.session_id | sq) + "'\'', '\''" + (.event_type | sq) + "'\'', '\''" + (.metadata | tostring | sq) + "'\'');",
+
+        # Generate UPSERT for daily_rollup
+        "INSERT INTO daily_rollup (date, tool, event_type, count, session_count, sample_metadata) VALUES ('\''" + (.ts[0:10]) + "'\'', '\''" + (.tool | sq) + "'\'', '\''" + (.event_type | sq) + "'\'', 1, 1, '\''" + (.metadata | tostring | sq) + "'\'') ON CONFLICT(date, tool, event_type) DO UPDATE SET count = count + 1;",
+
+        # Generate UPSERT for sessions
+        "INSERT INTO sessions (session_id, tool, event_count" +
+            (if .event_type == "session_start" then ", started_at" else "" end) +
+            (if .event_type == "session_stop" then ", stopped_at, stop_reason, duration_seconds" else "" end) +
+            (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count" else "" end) +
+            (if .event_type == "test_failure_loop" then ", test_loop_count" else "" end) +
+            (if .event_type == "clarifying_question" then ", clarification_count" else "" end) +
+            (if .event_type == "permission_denied" then ", denial_count" else "" end) +
+        ") VALUES ('\''" + (.session_id | sq) + "'\'', '\''" + (.tool | sq) + "'\'', 1" +
+            (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\''" else "" end) +
+            (if .event_type == "session_stop" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.stop_reason // "unknown") | sq) + "'\'', " + ((.metadata.duration_seconds // 0) | tostring) else "" end) +
+            (if .event_type == "tool_failure" or .event_type == "command_failure" then ", 1" else "" end) +
+            (if .event_type == "test_failure_loop" then ", 1" else "" end) +
+            (if .event_type == "clarifying_question" then ", 1" else "" end) +
+            (if .event_type == "permission_denied" then ", 1" else "" end) +
+        ") ON CONFLICT(session_id) DO UPDATE SET event_count = event_count + 1" +
+            (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at)" else "" end) +
+            (if .event_type == "session_stop" then ", stopped_at = excluded.stopped_at, stop_reason = excluded.stop_reason, duration_seconds = excluded.duration_seconds" else "" end) +
+            (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count = failure_count + 1" else "" end) +
+            (if .event_type == "test_failure_loop" then ", test_loop_count = test_loop_count + 1" else "" end) +
+            (if .event_type == "clarifying_question" then ", clarification_count = clarification_count + 1" else "" end) +
+            (if .event_type == "permission_denied" then ", denial_count = denial_count + 1" else "" end) +
+        ";"
+    ' 2>/dev/null || true
+
+    # Update ingestion state
+    echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
+
+    echo "COMMIT;"
+} | sqlite3 "$DB_FILE" 2>/dev/null
+
+harden_private_file "$DB_FILE"
+
+# Rotate if file exceeds size limit
+if [ "$FILE_SIZE" -gt "$ROTATE_AT_BYTES" ]; then
+    rotated_file="${EVENTS_FILE}.$(date +%Y%m%d%H%M%S)"
+    mv "$EVENTS_FILE" "$rotated_file"
+    harden_private_file "$rotated_file"
+    # Reset offset for new file
+    sqlite3 "$DB_FILE" "DELETE FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || true
+fi
+
+echo "Rollup complete: processed $((FILE_SIZE - OFFSET)) bytes"

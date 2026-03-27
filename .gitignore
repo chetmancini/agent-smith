@@ -1,0 +1,20 @@
+# Metrics data (generated at runtime)
+*.db
+*.jsonl
+*.jsonl.*
+
+# Metrics state files
+.session_start_ts
+.test_fail_count
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
