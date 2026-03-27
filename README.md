@@ -1,6 +1,6 @@
 # Agent Smith
 
-A self-modifying feedback loop plugin for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to continuously improve agent reliability and autonomy.
+A self-tuning feedback loop plugin for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to continuously improve agent reliability and autonomy.
 
 ## How It Works
 
@@ -86,16 +86,16 @@ Or run the scripts directly:
 
 ```bash
 # Process events into SQLite
-bash path/to/agent-smith/scripts/metrics-rollup.sh
+bash scripts/metrics-rollup.sh
 
 # Generate a local raw report (default, no LLM)
-bash path/to/agent-smith/scripts/analyze-config.sh --sessions 50
+bash scripts/analyze-config.sh --sessions 50
 
 # Generate an LLM-backed report (explicit opt-in)
-bash path/to/agent-smith/scripts/analyze-config.sh --llm --sessions 50
+bash scripts/analyze-config.sh --llm --sessions 50
 
 # Include your local Claude settings snapshot in the LLM prompt (explicit opt-in)
-bash path/to/agent-smith/scripts/analyze-config.sh --llm --include-settings --sessions 50
+bash scripts/analyze-config.sh --llm --include-settings --sessions 50
 ```text
 
 ### Schema validation
