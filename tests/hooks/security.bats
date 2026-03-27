@@ -12,7 +12,11 @@ teardown() {
 
 get_mode() {
     local path="$1"
-    stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path"
+    if stat --version >/dev/null 2>&1; then
+        stat -c '%a' "$path"
+    else
+        stat -f '%Lp' "$path"
+    fi
 }
 
 create_metrics_db() {

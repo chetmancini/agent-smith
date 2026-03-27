@@ -66,8 +66,12 @@ case "$extension" in
     ts|tsx|js|jsx|mjs)
         # Determine the parallel test extension (tsx -> tsx, ts -> ts, etc.)
         test_ext="$extension"
-        [ "$extension" = "tsx" ] && alt_ext="ts" || alt_ext=""
-        [ "$extension" = "jsx" ] && alt_ext="js" || true
+        alt_ext=""
+        if [ "$extension" = "tsx" ]; then
+            alt_ext="ts"
+        elif [ "$extension" = "jsx" ]; then
+            alt_ext="js"
+        fi
 
         candidates=(
             "${dir}/${stem}.test.${test_ext}"
