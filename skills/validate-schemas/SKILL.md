@@ -34,7 +34,7 @@ Use `curl -sL <schema_url>` to download the latest schema. Cache it to `~/.confi
 mkdir -p ~/.config/agent-smith/schemas
 curl -sL "https://json.schemastore.org/claude-code-settings.json" \
   -o ~/.config/agent-smith/schemas/claude-code-settings.schema.json
-```
+```text
 
 ### 3. Validate existing config
 
@@ -48,7 +48,7 @@ npx ajv validate -s schema.json -d settings.json --spec=draft7
 
 # For Draft 2020-12 schemas (OpenCode, Kilo)
 npx ajv validate -s schema.json -d config.json --spec=draft2020
-```
+```text
 
 **Manual validation** (fallback): If AJV is not available, read both the schema and the config file. Check:
 - All required fields are present
@@ -134,13 +134,13 @@ Produce a single report with all findings:
 
 ## Schema Versions
 - <tool>: fetched <date>, <N> properties defined
-```
+```text
 
 ## Integration with analyze-config
 
 These skills form a feedback loop:
 
-```
+```text
 validate-schemas                    analyze-config
 ─────────────────                   ──────────────
 Schema says feature X exists   →   Metrics show pattern that X would fix

@@ -4,7 +4,8 @@
 # Determine the tests root directory (where setup_suite.bash lives)
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export TESTS_ROOT="${SETUP_DIR}"
-export PROJECT_ROOT="$(cd "${SETUP_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SETUP_DIR}/.." && pwd)"
+export PROJECT_ROOT
 export HOOKS_DIR="${PROJECT_ROOT}/hooks"
 export FIXTURES_DIR="${TESTS_ROOT}/fixtures"
 
@@ -18,10 +19,12 @@ if [ -f "${TESTS_ROOT}/test_helper/bats-assert/load.bash" ] || [ -f "${TESTS_ROO
     load "${TESTS_ROOT}/test_helper/bats-assert/load"
 else
     assert_success() {
+        # shellcheck disable=SC2154  # Provided by bats when assertions run.
         [ "${status}" -eq 0 ]
     }
 
     assert_output() {
+        # shellcheck disable=SC2154  # Provided by bats when assertions run.
         [ "${output}" = "$1" ]
     }
 fi

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck shfmt
+          npm install --global markdownlint-cli
+
+      - name: Validate skill file format
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in skills/*/SKILL.md; do
+            echo "Checking ${file}"
+            awk '
+              NR == 1 { if ($0 != "---") exit 1 }
+              NR > 1 && $0 == "---" { end=1; exit }
+              !end && /^name:[[:space:]]+/ { name=1 }
+              !end && /^description:[[:space:]]+/ { desc=1 }
+              END { exit !(name && desc && end) }
+            ' "$file" || {
+              echo "Invalid skill frontmatter in ${file}" >&2
+              exit 1
+            }
+          done
+
+      - name: Validate JSON files
+        run: |
+          find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
+
+      - name: Lint shell scripts
+        run: shellcheck -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh tests/setup_suite.bash
+
+      - name: Check shell formatting
+        run: shfmt -d hooks/*.sh hooks/lib/*.sh scripts/*.sh tests/setup_suite.bash
+
+      - name: Lint Markdown
+        run: markdownlint README.md commands/**/*.md skills/**/*.md
+
+      - name: Lint GitHub Actions
+        uses: rhysd/actionlint@v1
+
+  bats:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats jq sqlite3
+
+      - name: Run Bats test suite
+        run: bats --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats
