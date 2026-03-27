@@ -1,4 +1,6 @@
 # Agent Smith
+"Never send a human to do a machine's job" - Agent Smith, The Matrix, 1999
+https://www.youtube.com/watch?v=dJ4Bt2xtE9Q
 
 A self-tuning feedback loop plugin for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to continuously improve agent reliability and autonomy.
 
