@@ -16,9 +16,9 @@ command=$(echo "$input" | jq -r '.tool_input.command // ""')
 
 # Skip expected non-zero exits that aren't real failures
 if [ "$tool_name" = "Bash" ]; then
-    case "$command" in
-        *"command -v"*|*"which "*|*"test -"*|*"[ -"*|*"git rev-parse"*|*"hash "*|*"type "*) exit 0 ;;
-    esac
+	case "$command" in
+	*"command -v"* | *"which "* | *"test -"* | *"[ -"* | *"git rev-parse"* | *"hash "* | *"type "*) exit 0 ;;
+	esac
 fi
 
 metrics_on_tool_failure "$tool_name" "$error" "$command"

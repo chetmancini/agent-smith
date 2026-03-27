@@ -8,49 +8,49 @@ set -euo pipefail
 METRICS_DIR="${METRICS_DIR:-${HOME}/.config/agent-smith}"
 EVENTS_FILE="${METRICS_DIR}/events.jsonl"
 DB_FILE="${METRICS_DIR}/rollup.db"
-ROTATE_AT_BYTES=$((10 * 1024 * 1024))  # 10MB default
+ROTATE_AT_BYTES=$((10 * 1024 * 1024)) # 10MB default
 
 ensure_private_dir() {
-    local path="$1"
-    local old_umask
-    old_umask=$(umask)
-    umask 077
-    mkdir -p "$path" 2>/dev/null || true
-    umask "$old_umask"
-    chmod 700 "$path" 2>/dev/null || true
+	local path="$1"
+	local old_umask
+	old_umask=$(umask)
+	umask 077
+	mkdir -p "$path" 2>/dev/null || true
+	umask "$old_umask"
+	chmod 700 "$path" 2>/dev/null || true
 }
 
 harden_private_file() {
-    local path="$1"
-    [ -e "$path" ] || return 0
-    chmod 600 "$path" 2>/dev/null || true
+	local path="$1"
+	[ -e "$path" ] || return 0
+	chmod 600 "$path" 2>/dev/null || true
 }
 
 # Parse args
 while [ $# -gt 0 ]; do
-    case "$1" in
-        --rotate-at-mb)
-            ROTATE_AT_BYTES=$(($2 * 1024 * 1024))
-            shift 2
-            ;;
-        *)
-            shift
-            ;;
-    esac
+	case "$1" in
+	--rotate-at-mb)
+		ROTATE_AT_BYTES=$(($2 * 1024 * 1024))
+		shift 2
+		;;
+	*)
+		shift
+		;;
+	esac
 done
 
 if ! command -v sqlite3 >/dev/null 2>&1; then
-    echo "Error: sqlite3 not found (ships with macOS)" >&2
-    exit 1
+	echo "Error: sqlite3 not found (ships with macOS)" >&2
+	exit 1
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-    echo "Error: jq not found" >&2
-    exit 1
+	echo "Error: jq not found" >&2
+	exit 1
 fi
 
 if [ ! -f "$EVENTS_FILE" ]; then
-    exit 0
+	exit 0
 fi
 
 ensure_private_dir "$METRICS_DIR"
@@ -119,14 +119,14 @@ FILE_SIZE=$(stat -f%z "$EVENTS_FILE" 2>/dev/null || stat -c%s "$EVENTS_FILE" 2>/
 FILE_SIZE="${FILE_SIZE:-0}"
 
 if [ "$OFFSET" -ge "$FILE_SIZE" ]; then
-    exit 0  # Nothing new
+	exit 0 # Nothing new
 fi
 
 # Extract new lines and transform to SQL in a single jq pass, wrapped in a transaction
 {
-    echo "BEGIN TRANSACTION;"
+	echo "BEGIN TRANSACTION;"
 
-    tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
+	tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
         # Skip malformed lines
         select(.ts != null and .tool != null and .event_type != null) |
 
@@ -164,21 +164,21 @@ fi
         ";"
     ' 2>/dev/null || true
 
-    # Update ingestion state
-    echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
+	# Update ingestion state
+	echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
 
-    echo "COMMIT;"
+	echo "COMMIT;"
 } | sqlite3 "$DB_FILE" 2>/dev/null
 
 harden_private_file "$DB_FILE"
 
 # Rotate if file exceeds size limit
 if [ "$FILE_SIZE" -gt "$ROTATE_AT_BYTES" ]; then
-    rotated_file="${EVENTS_FILE}.$(date +%Y%m%d%H%M%S)"
-    mv "$EVENTS_FILE" "$rotated_file"
-    harden_private_file "$rotated_file"
-    # Reset offset for new file
-    sqlite3 "$DB_FILE" "DELETE FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || true
+	rotated_file="${EVENTS_FILE}.$(date +%Y%m%d%H%M%S)"
+	mv "$EVENTS_FILE" "$rotated_file"
+	harden_private_file "$rotated_file"
+	# Reset offset for new file
+	sqlite3 "$DB_FILE" "DELETE FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || true
 fi
 
 echo "Rollup complete: processed $((FILE_SIZE - OFFSET)) bytes"

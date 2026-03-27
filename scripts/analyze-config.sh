@@ -16,46 +16,58 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 while [ $# -gt 0 ]; do
-    case "$1" in
-        --sessions) SESSIONS="$2"; shift 2 ;;
-        --llm) USE_LLM=1; shift ;;
-        --include-settings) INCLUDE_SETTINGS=1; shift ;;
-        --auto) AUTO_MODE=1; shift ;;
-        *) shift ;;
-    esac
+	case "$1" in
+	--sessions)
+		SESSIONS="$2"
+		shift 2
+		;;
+	--llm)
+		USE_LLM=1
+		shift
+		;;
+	--include-settings)
+		INCLUDE_SETTINGS=1
+		shift
+		;;
+	--auto)
+		AUTO_MODE=1
+		shift
+		;;
+	*) shift ;;
+	esac
 done
 
 ensure_private_dir() {
-    local path="$1"
-    local old_umask
-    old_umask=$(umask)
-    umask 077
-    mkdir -p "$path" 2>/dev/null || true
-    umask "$old_umask"
-    chmod 700 "$path" 2>/dev/null || true
+	local path="$1"
+	local old_umask
+	old_umask=$(umask)
+	umask 077
+	mkdir -p "$path" 2>/dev/null || true
+	umask "$old_umask"
+	chmod 700 "$path" 2>/dev/null || true
 }
 
 harden_private_file() {
-    local path="$1"
-    [ -e "$path" ] || return 0
-    chmod 600 "$path" 2>/dev/null || true
+	local path="$1"
+	[ -e "$path" ] || return 0
+	chmod 600 "$path" 2>/dev/null || true
 }
 
 if ! command -v sqlite3 >/dev/null 2>&1; then
-    echo "Error: sqlite3 not found" >&2
-    exit 1
+	echo "Error: sqlite3 not found" >&2
+	exit 1
 fi
 
 if [ ! -f "$DB_FILE" ]; then
-    echo "Error: Metrics database not found at $DB_FILE" >&2
-    echo "Run 'bash ${PLUGIN_ROOT}/scripts/metrics-rollup.sh' first to process events." >&2
-    exit 1
+	echo "Error: Metrics database not found at $DB_FILE" >&2
+	echo "Run 'bash ${PLUGIN_ROOT}/scripts/metrics-rollup.sh' first to process events." >&2
+	exit 1
 fi
 
 # --- SQL Queries ---
 
 query_tool_failures() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             json_extract(metadata, '$.tool_name') as tool_name,
             COUNT(*) as total_failures,
@@ -74,7 +86,7 @@ query_tool_failures() {
 }
 
 query_permission_denials() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             json_extract(metadata, '$.tool_name') as tool_name,
             COUNT(*) as denial_count,
@@ -92,7 +104,7 @@ query_permission_denials() {
 }
 
 query_test_loops() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             session_id,
             COUNT(*) as loop_events,
@@ -112,7 +124,7 @@ query_test_loops() {
 }
 
 query_clarifying_questions() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             COUNT(*) as total_clarifications,
             COUNT(DISTINCT session_id) as sessions_with_clarification,
@@ -130,7 +142,7 @@ query_clarifying_questions() {
 }
 
 query_session_outcomes() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             stop_reason,
             COUNT(*) as count,
@@ -149,7 +161,7 @@ query_session_outcomes() {
 }
 
 query_overview() {
-    sqlite3 -header -column "$DB_FILE" "
+	sqlite3 -header -column "$DB_FILE" "
         SELECT
             tool,
             COUNT(DISTINCT session_id) as sessions,
@@ -190,12 +202,12 @@ base_name="$date_str-analysis"
 output_file="${output_dir}/${base_name}.md"
 suffix=2
 while [ -f "$output_file" ]; do
-    output_file="${output_dir}/${base_name}-${suffix}.md"
-    suffix=$((suffix + 1))
+	output_file="${output_dir}/${base_name}-${suffix}.md"
+	suffix=$((suffix + 1))
 done
 
 write_raw_report() {
-    cat > "$output_file" <<EOF
+	cat >"$output_file" <<EOF
 # Config Metrics Report (raw) — $(date +%Y-%m-%d)
 Last $SESSIONS sessions analyzed.
 
@@ -217,36 +229,36 @@ $CLARIFYING_QUESTIONS
 ## Session Outcomes
 $SESSION_OUTCOMES
 EOF
-    harden_private_file "$output_file"
+	harden_private_file "$output_file"
 }
 
 # --- Raw Output Mode ---
 
 if [ "$USE_LLM" -ne 1 ]; then
-    write_raw_report
-    echo "Raw report saved: $output_file"
-    exit 0
+	write_raw_report
+	echo "Raw report saved: $output_file"
+	exit 0
 fi
 
 # --- LLM Analysis Mode ---
 
 if ! command -v claude >/dev/null 2>&1; then
-    echo "Error: claude CLI not found. Re-run without --llm for a local raw report." >&2
-    exit 1
+	echo "Error: claude CLI not found. Re-run without --llm for a local raw report." >&2
+	exit 1
 fi
 
 # Read current config for context only when explicitly requested
 SETTINGS_CONTEXT="Settings snapshot omitted. Suggest any settings changes from metrics only and note when local inspection is required."
 if [ "$INCLUDE_SETTINGS" -eq 1 ]; then
-    echo "  -> Reading current settings for context..."
-    SETTINGS_EXCERPT=""
-    if [ -f "${HOME}/.claude/settings.json" ]; then
-        SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.json")
-    elif [ -f "${HOME}/.claude/settings.local.json" ]; then
-        SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.local.json")
-    fi
+	echo "  -> Reading current settings for context..."
+	SETTINGS_EXCERPT=""
+	if [ -f "${HOME}/.claude/settings.json" ]; then
+		SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.json")
+	elif [ -f "${HOME}/.claude/settings.local.json" ]; then
+		SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.local.json")
+	fi
 
-    SETTINGS_CONTEXT="Current settings snapshot included below.
+	SETTINGS_CONTEXT="Current settings snapshot included below.
 
 \`\`\`json
 $SETTINGS_EXCERPT
@@ -332,7 +344,7 @@ What to monitor going forward.
 Be specific — reference file paths, metric values, and tool names. Only suggest changes supported by the data. If metrics show no significant issues, say so."
 
 if [ "$AUTO_MODE" -eq 1 ]; then
-    prompt="$prompt
+	prompt="$prompt
 
 NOTE: This is an automated analysis run. Produce the report only. Do not suggest interactive actions."
 fi
@@ -341,12 +353,12 @@ echo "Running analysis with Claude..."
 echo "  -> Building prompt ($(echo "$prompt" | wc -c | tr -d ' ') bytes)..."
 echo "  -> Sending to Claude CLI (this may take 30-60s)..."
 
-if claude -p --output-format text "$prompt" > "$output_file" 2>/dev/null; then
-    harden_private_file "$output_file"
-    echo "  Analysis complete."
-    echo "Report saved: $output_file"
+if claude -p --output-format text "$prompt" >"$output_file" 2>/dev/null; then
+	harden_private_file "$output_file"
+	echo "  Analysis complete."
+	echo "Report saved: $output_file"
 else
-    echo "Error: Failed to generate analysis report" >&2
-    rm -f "$output_file"
-    exit 1
+	echo "Error: Failed to generate analysis report" >&2
+	rm -f "$output_file"
+	exit 1
 fi

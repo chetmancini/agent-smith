@@ -21,22 +21,22 @@ PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Need sqlite3 and the rollup DB to check session count
 if ! command -v sqlite3 >/dev/null 2>&1; then
-    exit 0
+	exit 0
 fi
 
 # Automatic analysis is opt-in. Public installs should never send telemetry to
 # an LLM without an explicit user choice.
 if [ "$AUTO_ANALYZE_ENABLED" != "1" ]; then
-    exit 0
+	exit 0
 fi
 
 # Run rollup first to ensure DB is current
 if [ -f "${PLUGIN_ROOT}/scripts/metrics-rollup.sh" ]; then
-    bash "${PLUGIN_ROOT}/scripts/metrics-rollup.sh" 2>/dev/null || true
+	bash "${PLUGIN_ROOT}/scripts/metrics-rollup.sh" 2>/dev/null || true
 fi
 
 if [ ! -f "$METRICS_DB" ]; then
-    exit 0
+	exit 0
 fi
 
 # Count sessions since last analysis run
@@ -50,21 +50,21 @@ session_count=$(sqlite3 "$METRICS_DB" "
 " 2>/dev/null || echo "0")
 
 if [ "$session_count" -ge "$ANALYZE_THRESHOLD" ]; then
-    # Record the analysis run event
-    emit_metric "claude" "analysis_run" "{\"trigger\":\"auto\",\"mode\":\"${AUTO_ANALYZE_MODE}\",\"sessions\":${session_count}}"
+	# Record the analysis run event
+	emit_metric "claude" "analysis_run" "{\"trigger\":\"auto\",\"mode\":\"${AUTO_ANALYZE_MODE}\",\"sessions\":${session_count}}"
 
-    # Spawn analyzer in background — don't block
-    if [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
-        analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto)
-        if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
-            command -v claude >/dev/null 2>&1 || exit 0
-            analyze_args+=(--llm)
-            if [ "$AUTO_ANALYZE_INCLUDE_SETTINGS" = "1" ]; then
-                analyze_args+=(--include-settings)
-            fi
-        fi
-        nohup "${analyze_args[@]}" > /dev/null 2>&1 &
-    fi
+	# Spawn analyzer in background — don't block
+	if [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
+		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto)
+		if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
+			command -v claude >/dev/null 2>&1 || exit 0
+			analyze_args+=(--llm)
+			if [ "$AUTO_ANALYZE_INCLUDE_SETTINGS" = "1" ]; then
+				analyze_args+=(--include-settings)
+			fi
+		fi
+		nohup "${analyze_args[@]}" >/dev/null 2>&1 &
+	fi
 fi
 
 exit 0
