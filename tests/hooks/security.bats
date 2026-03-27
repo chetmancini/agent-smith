@@ -10,6 +10,11 @@ teardown() {
     rm -rf "$TEST_TMPDIR"
 }
 
+get_mode() {
+    local path="$1"
+    stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path"
+}
+
 create_metrics_db() {
     local db_file="$1"
     mkdir -p "$(dirname "$db_file")"
@@ -82,7 +87,7 @@ EOF
     local metrics_dir
     metrics_dir="$TEST_TMPDIR/metrics"
 
-    run bash -lc "source \"$HOOKS_DIR/lib/metrics.sh\"; export METRICS_DIR=\"$metrics_dir\"; export METRICS_FILE=\"$metrics_dir/events.jsonl\"; emit_metric claude session_start '{\"cwd\":\"/tmp\"}'; dir_mode=\$(stat -f '%Lp' \"$metrics_dir\"); file_mode=\$(stat -f '%Lp' \"$metrics_dir/events.jsonl\"); printf '%s %s\n' \"\$dir_mode\" \"\$file_mode\""
+    run bash -lc "source \"$HOOKS_DIR/lib/metrics.sh\"; $(declare -f get_mode); export METRICS_DIR=\"$metrics_dir\"; export METRICS_FILE=\"$metrics_dir/events.jsonl\"; emit_metric claude session_start '{\"cwd\":\"/tmp\"}'; dir_mode=\$(get_mode \"$metrics_dir\"); file_mode=\$(get_mode \"$metrics_dir/events.jsonl\"); printf '%s %s\n' \"\$dir_mode\" \"\$file_mode\""
 
     [ "$status" -eq 0 ]
     [ "$output" = "700 600" ]
