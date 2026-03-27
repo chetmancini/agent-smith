@@ -169,6 +169,45 @@ brew install bats-core
 bats tests/lib/metrics.bats tests/hooks/security.bats
 ```
 
+Or use the Makefile:
+
+```bash
+make test
+```
+
+## Linting
+
+```bash
+# Install local lint dependencies if needed
+brew install jq shellcheck shfmt
+npm install --global markdownlint-cli
+
+# Run the same lint suite as CI
+make lint
+```
+
+## Claude Entrypoints
+
+The Makefile also exposes direct Claude entrypoints that load this repo as a plugin:
+
+```bash
+# Run the analyze-config skill through Claude
+make claude-analyze
+
+# Run the validate-schemas skill through Claude
+make claude-validate-schemas
+
+# Run validate-schemas, then analyze-config, as one loop
+make claude-loop
+```
+
+You can override the session window for the analysis targets:
+
+```bash
+make claude-analyze SESSIONS=100
+make claude-loop SESSIONS=100
+```
+
 ## License
 
 MIT
