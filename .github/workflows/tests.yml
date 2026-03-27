@@ -60,7 +60,7 @@ jobs:
         run: markdownlint README.md commands/**/*.md skills/**/*.md
 
       - name: Lint GitHub Actions
-        uses: rhysd/actionlint@v1
+        uses: rhysd/actionlint@393031adb9afb225ee52ae2ccd7a5af5525e03e8 # v1.7.11
 
   bats:
     runs-on: ubuntu-latest
