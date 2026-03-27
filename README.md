@@ -12,14 +12,14 @@ Agent Smith implements a closed-loop improvement cycle:
 │  Hooks emit metrics on every session:                   │
 │  tool failures, permission denials, test loops,         │
 │  vague prompts, session lifecycle                       │
-│  → ~/.config/agent-smith/events.jsonl                 │
+│  → ~/.config/agent-smith/events.jsonl                   │
 └────────────────────────┬────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────┐
 │  2. ROLLUP                                              │
 │  JSONL events → SQLite database                         │
 │  Incremental, resumable, auto-rotating                  │
-│  → ~/.config/agent-smith/rollup.db                    │
+│  → ~/.config/agent-smith/rollup.db                      │
 └────────────────────────┬────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -27,7 +27,7 @@ Agent Smith implements a closed-loop improvement cycle:
 │  SQL queries produce a local report by default          │
 │  Claude LLM analysis is explicit opt-in                 │
 │  Generates tuning report with specific suggestions      │
-│  → ~/.config/agent-smith/reports/<date>-analysis.md   │
+│  → ~/.config/agent-smith/reports/<date>-analysis.md     │
 └────────────────────────┬────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────┐
