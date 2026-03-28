@@ -270,59 +270,118 @@ metrics_on_permission_denied() {
 # Args: <transcript_path>
 # Writes a session-scoped snapshot file so rollup has cost data even if
 # the transcript is deleted before rollup runs. Updated on each turn.
+#
+# Incremental: tracks a line-count cursor so only new transcript lines are
+# parsed each turn, avoiding the O(n²) cumulative cost of re-scanning the
+# entire transcript on every Stop event. Previous totals are read from the
+# existing snapshot and deltas are added.
 snapshot_session_cost() {
 	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
 	local transcript_path="${1:-}"
 	[ -n "$transcript_path" ] && [ -f "$transcript_path" ] || return 0
 	[ -n "${METRICS_SESSION_ID:-}" ] || return 0
 
-	# Single jq pass: aggregate tokens and per-entry costs
-	local aggregated
-	aggregated=$(jq -s '
-		[.[] | select(.type == "assistant" and .message.usage != null)] |
-		{
-			input_tokens: (map(.message.usage.input_tokens // 0) | add // 0),
-			output_tokens: (map(.message.usage.output_tokens // 0) | add // 0),
-			cache_read_input_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add // 0),
-			cache_creation_input_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add // 0),
-			model: (last(.[].message.model) // "unknown"),
-			assistant_turns: length,
-			per_entry: [.[] | {
-				input: (.message.usage.input_tokens // 0),
-				output: (.message.usage.output_tokens // 0),
-				cache_read: (.message.usage.cache_read_input_tokens // 0),
-				cache_create: (.message.usage.cache_creation_input_tokens // 0),
-				model: (.message.model // "unknown")
-			}]
-		}
-	' "$transcript_path" 2>/dev/null) || return 0
-
-	local turns
-	turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
-	[ "$turns" -gt 0 ] 2>/dev/null || return 0
-
-	local input_tokens output_tokens cache_read cache_create model
-	input_tokens=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
-	output_tokens=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
-	cache_read=$(printf '%s' "$aggregated" | jq -r '.cache_read_input_tokens')
-	cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
-	model=$(printf '%s' "$aggregated" | jq -r '.model')
-
-	# Sum cost per entry so mixed-model sessions are priced correctly
-	local cost=0
-	while IFS=$'\t' read -r e_in e_out e_cr e_cc e_model; do
-		local entry_cost
-		entry_cost=$(_estimate_cost "$e_in" "$e_out" "$e_cr" "$e_cc" "$e_model")
-		cost=$(awk "BEGIN { printf \"%.6f\", $cost + $entry_cost }")
-	done < <(printf '%s' "$aggregated" | jq -r '.per_entry[] | [.input, .output, .cache_read, .cache_create, .model] | @tsv')
-
-	# Write snapshot — tab-separated, one line, overwritten each turn
 	_ensure_metrics_dir
 	local snapshot="${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}"
-	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-		"$input_tokens" "$output_tokens" "$cache_read" "$cache_create" \
-		"$model" "$turns" "$cost" >"$snapshot" 2>/dev/null || true
+	local cursor_file="${METRICS_DIR}/.cost_cursor_${METRICS_SESSION_ID}"
+
+	# Read previous cursor (lines + byte size already processed) and snapshot totals.
+	# Cursor format: <line_count>\t<byte_size>
+	local prev_lines=0 prev_bytes=0
+	local prev_input=0 prev_output=0 prev_cr=0 prev_cc=0 prev_turns=0 prev_cost="0.000000"
+	if [ -f "$cursor_file" ] && [ -f "$snapshot" ]; then
+		IFS=$'\t' read -r prev_lines prev_bytes <"$cursor_file" 2>/dev/null || prev_lines=0
+		# Validate both fields are numeric
+		case "$prev_lines" in '' | *[!0-9]*) prev_lines=0 ;; esac
+		case "$prev_bytes" in '' | *[!0-9]*) prev_bytes=0 ;; esac
+		if [ "$prev_lines" -gt 0 ]; then
+			IFS=$'\t' read -r prev_input prev_output prev_cr prev_cc _ prev_turns prev_cost <"$snapshot" 2>/dev/null || prev_lines=0
+		fi
+	fi
+
+	local total_lines total_bytes
+	total_lines=$(wc -l <"$transcript_path" 2>/dev/null | tr -d ' ') || total_lines=0
+	total_bytes=$(wc -c <"$transcript_path" 2>/dev/null | tr -d ' ') || total_bytes=0
+
+	# Detect transcript rewrite (compaction/truncation): if either the line
+	# count or byte size decreased, the file was replaced, not appended to.
+	# Reset and do a full (cheap, post-compaction) rescan.
+	if [ "$prev_lines" -gt 0 ]; then
+		if [ "$total_lines" -lt "$prev_lines" ] || [ "$total_bytes" -lt "$prev_bytes" ]; then
+			prev_lines=0 prev_bytes=0 prev_input=0 prev_output=0 prev_cr=0 prev_cc=0
+			prev_turns=0 prev_cost="0.000000"
+		fi
+	fi
+
+	# Nothing new to process (line count unchanged and file hasn't shrunk)
+	if [ "$prev_lines" -gt 0 ] && [ "$total_lines" -le "$prev_lines" ]; then
+		return 0
+	fi
+
+	# Extract only new lines (tail is O(seek), not O(n) on the already-seen prefix)
+	local new_data
+	if [ "$prev_lines" -gt 0 ]; then
+		new_data=$(tail -n +"$((prev_lines + 1))" "$transcript_path" 2>/dev/null) || return 0
+	else
+		new_data=$(cat "$transcript_path" 2>/dev/null) || return 0
+	fi
+
+	# Single jq pass on the new lines: aggregate tokens and compute cost inline.
+	# jq handles the per-entry cost math so we avoid spawning awk per row.
+	local delta
+	delta=$(printf '%s' "$new_data" | jq -s --argjson rates '{
+			"claude-opus-4-6":      {"i":15,"o":75,"cr":1.5,"cc":18.75},
+			"claude-sonnet-4-6":    {"i":3,"o":15,"cr":0.3,"cc":3.75},
+			"claude-sonnet-4-5":    {"i":3,"o":15,"cr":0.3,"cc":3.75},
+			"claude-haiku-4-5":     {"i":0.8,"o":4,"cr":0.08,"cc":1}
+		}' '
+		[.[] | select(.type == "assistant" and .message.usage != null)] |
+		if length == 0 then
+			{input:0, output:0, cache_read:0, cache_create:0, model:"unknown", turns:0, cost:0}
+		else
+			{
+				input:      (map(.message.usage.input_tokens // 0) | add),
+				output:     (map(.message.usage.output_tokens // 0) | add),
+				cache_read: (map(.message.usage.cache_read_input_tokens // 0) | add),
+				cache_create:(map(.message.usage.cache_creation_input_tokens // 0) | add),
+				model:      (last(.[].message.model) // "unknown"),
+				turns:      length,
+				cost:       (map(
+					(.message.model // "unknown") as $m |
+					($rates[($m | split("-") | .[:4] | join("-"))] // {i:0,o:0,cr:0,cc:0}) as $r |
+					(
+						((.message.usage.input_tokens // 0) * $r.i) +
+						((.message.usage.output_tokens // 0) * $r.o) +
+						((.message.usage.cache_read_input_tokens // 0) * $r.cr) +
+						((.message.usage.cache_creation_input_tokens // 0) * $r.cc)
+					) / 1000000
+				) | add)
+			}
+		end
+	' 2>/dev/null) || return 0
+
+	local d_turns
+	d_turns=$(printf '%s' "$delta" | jq -r '.turns') || return 0
+
+	# If no new assistant turns, just update cursor and return
+	if [ "$d_turns" = "0" ] || [ -z "$d_turns" ]; then
+		printf '%s\t%s\n' "$total_lines" "$total_bytes" >"$cursor_file" 2>/dev/null || true
+		return 0
+	fi
+
+	# Extract delta values and add to previous totals (single awk call)
+	local result
+	result=$(printf '%s' "$delta" | jq -r '[.input, .output, .cache_read, .cache_create, .model, .turns, .cost] | @tsv' | \
+		awk -F'\t' -v pi="$prev_input" -v po="$prev_output" -v pcr="$prev_cr" -v pcc="$prev_cc" \
+			-v pt="$prev_turns" -v pc="$prev_cost" '{
+			printf "%d\t%d\t%d\t%d\t%s\t%d\t%.6f\n",
+				$1+pi, $2+po, $3+pcr, $4+pcc, $5, $6+pt, $7+pc
+		}') || return 0
+
+	printf '%s\n' "$result" >"$snapshot" 2>/dev/null || true
 	_harden_path "$snapshot" 600
+	printf '%s\t%s\n' "$total_lines" "$total_bytes" >"$cursor_file" 2>/dev/null || true
+	_harden_path "$cursor_file" 600
 }
 
 # Call from: hooks/compact.sh (PostCompact hook)

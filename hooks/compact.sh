@@ -25,4 +25,8 @@ trigger="${COMPACT_TRIGGER:-unknown}"
 
 metrics_on_context_compression "$trigger" "$transcript_path"
 
+# Compaction rewrites the transcript, invalidating the line-based cursor used
+# by snapshot_session_cost. Remove it so the next Stop does a full (cheap) rescan.
+rm -f "${METRICS_DIR}/.cost_cursor_${METRICS_SESSION_ID}" 2>/dev/null || true
+
 exit 0

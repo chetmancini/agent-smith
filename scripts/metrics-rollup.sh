@@ -209,8 +209,19 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 
 	# Atomically claim the file so concurrent session-start.sh appends go to
 	# a fresh .transcript_paths instead of the one we're processing.
+	# If another rollup already claimed it, skip this pass — the winner will
+	# process the data, and the next run will pick up anything new.
 	WORK_FILE="${TRANSCRIPT_PATHS_FILE}.processing"
-	mv "$TRANSCRIPT_PATHS_FILE" "$WORK_FILE" 2>/dev/null || true
+	mv "$TRANSCRIPT_PATHS_FILE" "$WORK_FILE" 2>/dev/null || {
+		# Claim failed — another process got it first, or file vanished.
+		# Nothing to process this pass.
+		WORK_FILE=""
+	}
+	if ! { [ -n "$WORK_FILE" ] && [ -f "$WORK_FILE" ]; }; then
+		# Claim failed — another rollup process got it first, or file vanished.
+		# Nothing to process; the winner handles this pass.
+		:
+	else
 
 	# Track entries to keep (transcript still exists)
 	KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
@@ -300,9 +311,9 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
 
-		# Cost is now durable in the DB. Clean up snapshot if it exists
+		# Cost is now durable in the DB. Clean up snapshot and cursor if they exist
 		# (redundant now that DB has fresh transcript-based data).
-		rm -f "${METRICS_DIR}/.cost_snapshot_${sid}" 2>/dev/null || true
+		rm -f "${METRICS_DIR}/.cost_snapshot_${sid}" "${METRICS_DIR}/.cost_cursor_${sid}" 2>/dev/null || true
 
 		# Keep entry while transcript still exists (for recalculation as session grows).
 		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
@@ -316,6 +327,8 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 		harden_private_file "$TRANSCRIPT_PATHS_FILE"
 	fi
 	rm -f "$KEEP_FILE" 2>/dev/null || true
+
+	fi # WORK_FILE claimed successfully
 fi
 
 # Rotate if file exceeds size limit
