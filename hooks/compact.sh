@@ -1,7 +1,5 @@
 #!/bin/bash
-# Stop hook: emit session_stop metric with stop reason and duration
-# Session cost is calculated during rollup, not here — Stop fires on every
-# turn, and re-parsing the full transcript each time would be expensive.
+# PostCompact hook: emit context_compression metric
 # Never blocks the agent — exits 0 always
 
 set -euo pipefail
@@ -12,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-stop_reason=$(echo "$input" | jq -r '.stop_reason // "completed"')
+transcript_path=$(echo "$input" | jq -r '.transcript_path // ""')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
 
 # Each hook runs in a separate process, so METRICS_SESSION_ID from session-start
@@ -20,6 +18,11 @@ session_id=$(echo "$input" | jq -r '.session_id // ""')
 METRICS_SESSION_ID=$(derive_session_id "$session_id")
 export METRICS_SESSION_ID
 
-metrics_on_session_stop "$stop_reason"
+# The matcher value tells us whether this was auto or manual compact.
+# We receive it via COMPACT_TRIGGER env var set by the hook registration,
+# or default to "unknown".
+trigger="${COMPACT_TRIGGER:-unknown}"
+
+metrics_on_context_compression "$trigger" "$transcript_path"
 
 exit 0

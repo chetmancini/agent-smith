@@ -110,6 +110,19 @@ CREATE TABLE IF NOT EXISTS ingestion_state (
 );
 SCHEMA
 
+# Idempotent column additions for session cost and compression tracking
+for col_def in \
+	"input_tokens INTEGER DEFAULT 0" \
+	"output_tokens INTEGER DEFAULT 0" \
+	"cache_read_tokens INTEGER DEFAULT 0" \
+	"cache_create_tokens INTEGER DEFAULT 0" \
+	"estimated_cost_usd REAL DEFAULT 0.0" \
+	"model TEXT" \
+	"assistant_turns INTEGER DEFAULT 0" \
+	"compression_count INTEGER DEFAULT 0"; do
+	sqlite3 "$DB_FILE" "ALTER TABLE sessions ADD COLUMN $col_def;" 2>/dev/null || true
+done
+
 # Get last ingested byte offset
 OFFSET=$(sqlite3 "$DB_FILE" "SELECT COALESCE(byte_offset, 0) FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || echo "0")
 OFFSET="${OFFSET:-0}"
@@ -118,11 +131,13 @@ OFFSET="${OFFSET:-0}"
 FILE_SIZE=$(stat -f%z "$EVENTS_FILE" 2>/dev/null || stat -c%s "$EVENTS_FILE" 2>/dev/null || echo "0")
 FILE_SIZE="${FILE_SIZE:-0}"
 
+HAVE_NEW_EVENTS=1
 if [ "$OFFSET" -ge "$FILE_SIZE" ]; then
-	exit 0 # Nothing new
+	HAVE_NEW_EVENTS=0
 fi
 
 # Extract new lines and transform to SQL in a single jq pass, wrapped in a transaction
+if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
 {
 	echo "BEGIN TRANSACTION;"
 
@@ -147,6 +162,7 @@ fi
             (if .event_type == "test_failure_loop" then ", test_loop_count" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count" else "" end) +
             (if .event_type == "permission_denied" then ", denial_count" else "" end) +
+            (if .event_type == "context_compression" then ", compression_count" else "" end) +
         ") VALUES ('\''" + (.session_id | sq) + "'\'', '\''" + (.tool | sq) + "'\'', 1" +
             (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\''" else "" end) +
             (if .event_type == "session_stop" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.stop_reason // "unknown") | sq) + "'\'', " + ((.metadata.duration_seconds // 0) | tostring) else "" end) +
@@ -154,6 +170,7 @@ fi
             (if .event_type == "test_failure_loop" then ", 1" else "" end) +
             (if .event_type == "clarifying_question" then ", 1" else "" end) +
             (if .event_type == "permission_denied" then ", 1" else "" end) +
+            (if .event_type == "context_compression" then ", 1" else "" end) +
         ") ON CONFLICT(session_id) DO UPDATE SET event_count = event_count + 1" +
             (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at)" else "" end) +
             (if .event_type == "session_stop" then ", stopped_at = excluded.stopped_at, stop_reason = excluded.stop_reason, duration_seconds = excluded.duration_seconds" else "" end) +
@@ -161,6 +178,7 @@ fi
             (if .event_type == "test_failure_loop" then ", test_loop_count = test_loop_count + 1" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count = clarification_count + 1" else "" end) +
             (if .event_type == "permission_denied" then ", denial_count = denial_count + 1" else "" end) +
+            (if .event_type == "context_compression" then ", compression_count = compression_count + 1" else "" end) +
         ";"
     ' 2>/dev/null || true
 
@@ -171,6 +189,82 @@ fi
 } | sqlite3 "$DB_FILE" 2>/dev/null
 
 harden_private_file "$DB_FILE"
+fi # HAVE_NEW_EVENTS
+
+# --- Session cost calculation from transcripts ---
+# Cost is calculated here (not in hooks) because the Stop hook fires on every
+# turn, and re-parsing the growing transcript each time would be expensive.
+# session-start.sh persists session_id + transcript_path pairs.
+#
+# Transcripts grow during a session, so rollup may run multiple times before
+# a session ends (e.g., via analyze-trigger). We always recalculate cost from
+# the current transcript contents — later runs pick up new turns. Entries are
+# kept in .transcript_paths until the transcript file disappears (session ended
+# and cleanup occurred) or a configurable age threshold is reached.
+TRANSCRIPT_PATHS_FILE="${METRICS_DIR}/.transcript_paths"
+if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
+	# Source metrics.sh for _estimate_cost
+	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	source "${SCRIPT_DIR}/../hooks/lib/metrics.sh"
+
+	# Track entries to keep (transcript still exists)
+	KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
+	: > "$KEEP_FILE" 2>/dev/null || true
+
+	# File format: <session_id>\t<transcript_path> (one per session)
+	while IFS=$'\t' read -r sid tp; do
+		[ -n "$sid" ] && [ -n "$tp" ] || continue
+
+		# If the transcript file is gone, the session is over — drop the entry
+		if [ ! -f "$tp" ]; then
+			continue
+		fi
+
+		# Keep this entry for future runs (transcript still exists)
+		printf '%s\t%s\n' "$sid" "$tp" >> "$KEEP_FILE"
+
+		# Aggregate tokens from assistant entries in the transcript
+		aggregated=$(jq -s '
+			[.[] | select(.type == "assistant" and .message.usage != null)] |
+			{
+				input_tokens: (map(.message.usage.input_tokens // 0) | add // 0),
+				output_tokens: (map(.message.usage.output_tokens // 0) | add // 0),
+				cache_read_input_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add // 0),
+				cache_creation_input_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add // 0),
+				model: (last(.[].message.model) // "unknown"),
+				assistant_turns: length
+			}
+		' "$tp" 2>/dev/null) || continue
+
+		turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
+		[ "$turns" -gt 0 ] 2>/dev/null || continue
+
+		input_tok=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
+		output_tok=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
+		cache_read=$(printf '%s' "$aggregated" | jq -r '.cache_read_input_tokens')
+		cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
+		model=$(printf '%s' "$aggregated" | jq -r '.model')
+
+		cost=$(_estimate_cost "$input_tok" "$output_tok" "$cache_read" "$cache_create" "$model")
+
+		# Update the sessions row — always overwrite with latest transcript state
+		sqlite3 "$DB_FILE" "
+			UPDATE sessions SET
+				input_tokens = ${input_tok},
+				output_tokens = ${output_tok},
+				cache_read_tokens = ${cache_read},
+				cache_create_tokens = ${cache_create},
+				estimated_cost_usd = ${cost},
+				model = '${model//\'/\'\'}',
+				assistant_turns = ${turns}
+			WHERE session_id = '${sid}';
+		" 2>/dev/null || true
+	done < "$TRANSCRIPT_PATHS_FILE"
+
+	# Replace the paths file with only entries whose transcripts still exist
+	mv "$KEEP_FILE" "$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
+	harden_private_file "$TRANSCRIPT_PATHS_FILE"
+fi
 
 # Rotate if file exceeds size limit
 if [ "$FILE_SIZE" -gt "$ROTATE_AT_BYTES" ]; then

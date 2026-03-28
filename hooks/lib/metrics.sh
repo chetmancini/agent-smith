@@ -63,6 +63,42 @@ truncate_str() {
 	fi
 }
 
+# Estimate USD cost from token counts and model name
+# Usage: _estimate_cost <input_tokens> <output_tokens> <cache_read> <cache_create> <model>
+# Prices per 1M tokens (2026-03). Update as pricing changes.
+_estimate_cost() {
+	local input_tokens="${1:-0}"
+	local output_tokens="${2:-0}"
+	local cache_read="${3:-0}"
+	local cache_create="${4:-0}"
+	local model="${5:-unknown}"
+
+	local input_rate=0 output_rate=0 cache_read_rate=0 cache_create_rate=0
+
+	case "$model" in
+	claude-opus-4-6*)
+		input_rate=15000000 output_rate=75000000
+		cache_read_rate=1500000 cache_create_rate=18750000
+		;;
+	claude-sonnet-4-6* | claude-sonnet-4-5*)
+		input_rate=3000000 output_rate=15000000
+		cache_read_rate=300000 cache_create_rate=3750000
+		;;
+	claude-haiku-4-5*)
+		input_rate=800000 output_rate=4000000
+		cache_read_rate=80000 cache_create_rate=1000000
+		;;
+	*) ;;
+	esac
+
+	# rates are price-per-1M-tokens * 1000000 (integer microdollars-per-token)
+	# to avoid floating point in bash, compute in awk
+	awk "BEGIN {
+		cost = ($input_tokens * $input_rate + $output_tokens * $output_rate + $cache_read * $cache_read_rate + $cache_create * $cache_create_rate) / 1000000000000;
+		printf \"%.6f\", cost
+	}"
+}
+
 # Derive a stable session ID from a transcript path or fallback to date-PID
 derive_session_id() {
 	local transcript_path="${1:-}"
@@ -214,4 +250,61 @@ metrics_on_permission_denied() {
 	local escaped_tool
 	escaped_tool=$(json_escape "$tool_name")
 	emit_metric "claude" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
+}
+
+# Call from: hooks/session-stop.sh (after session_stop, when transcript_path is available)
+# Args: <transcript_path>
+metrics_on_session_cost() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local transcript_path="${1:-}"
+	[ -n "$transcript_path" ] && [ -f "$transcript_path" ] || return 0
+
+	# Single jq pass: aggregate tokens from all assistant entries
+	local aggregated
+	aggregated=$(jq -s '
+		[.[] | select(.type == "assistant" and .message.usage != null)] |
+		{
+			input_tokens: (map(.message.usage.input_tokens // 0) | add // 0),
+			output_tokens: (map(.message.usage.output_tokens // 0) | add // 0),
+			cache_read_input_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add // 0),
+			cache_creation_input_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add // 0),
+			model: (last(.[].message.model) // "unknown"),
+			assistant_turns: length
+		}
+	' "$transcript_path" 2>/dev/null) || return 0
+
+	local turns
+	turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
+	[ "$turns" -gt 0 ] 2>/dev/null || return 0
+
+	local input_tokens output_tokens cache_read cache_create model
+	input_tokens=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
+	output_tokens=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
+	cache_read=$(printf '%s' "$aggregated" | jq -r '.cache_read_input_tokens')
+	cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
+	model=$(printf '%s' "$aggregated" | jq -r '.model')
+
+	local cost
+	cost=$(_estimate_cost "$input_tokens" "$output_tokens" "$cache_read" "$cache_create" "$model")
+
+	local escaped_model
+	escaped_model=$(json_escape "$model")
+	emit_metric "claude" "session_cost" "{\"input_tokens\":${input_tokens},\"output_tokens\":${output_tokens},\"cache_read_input_tokens\":${cache_read},\"cache_creation_input_tokens\":${cache_create},\"model\":\"${escaped_model}\",\"assistant_turns\":${turns},\"estimated_cost_usd\":${cost}}"
+}
+
+# Call from: hooks/compact.sh (PostCompact hook)
+# Args: <trigger: auto|compact> <transcript_path>
+metrics_on_context_compression() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local trigger="${1:-unknown}"
+	local transcript_path="${2:-}"
+
+	local transcript_lines=0
+	if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+		transcript_lines=$(wc -l < "$transcript_path" | tr -d ' ')
+	fi
+
+	local escaped_trigger
+	escaped_trigger=$(json_escape "$trigger")
+	emit_metric "claude" "context_compression" "{\"trigger\":\"${escaped_trigger}\",\"transcript_lines\":${transcript_lines}}"
 }
