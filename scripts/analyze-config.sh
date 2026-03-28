@@ -183,17 +183,14 @@ query_session_costs() {
             ROUND(SUM(estimated_cost_usd), 4) as total_cost_usd,
             ROUND(AVG(estimated_cost_usd), 4) as avg_cost_usd,
             ROUND(MAX(estimated_cost_usd), 4) as max_cost_usd,
-            ROUND(SUM(input_tokens + output_tokens + cache_read_tokens + cache_create_tokens), 0) as total_tokens,
-            model as primary_model
+            ROUND(SUM(input_tokens + output_tokens + cache_read_tokens + cache_create_tokens), 0) as total_tokens
         FROM sessions
         WHERE session_id IN (
             SELECT DISTINCT session_id FROM events
             WHERE event_type = 'session_start'
             ORDER BY ts DESC LIMIT $SESSIONS
         )
-        AND estimated_cost_usd > 0
-        GROUP BY model
-        ORDER BY total_cost_usd DESC;
+        AND estimated_cost_usd > 0;
     " 2>/dev/null || echo "(no data)"
 }
 
