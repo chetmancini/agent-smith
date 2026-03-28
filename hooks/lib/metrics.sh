@@ -138,24 +138,34 @@ emit_metric() {
 # ============================================================================
 
 # Call from: hooks/session-start.sh (after detect_project_type)
-# Args: <cwd> <project_type> [session_hint]
+# Args: <cwd> <project_type> [session_hint] [transcript_path]
 metrics_on_session_start() {
 	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
 	local cwd="${1:-$(pwd)}"
 	local project_type="${2:-unknown}"
 	local session_hint="${3:-}"
+	local transcript_path="${4:-}"
 
 	METRICS_SESSION_ID=$(derive_session_id "$session_hint")
 	export METRICS_SESSION_ID
 
-	# Persist start timestamp for duration calculation in session_stop
-	printf '%s' "$(date +%s)" >"${METRICS_DIR}/.session_start_ts" 2>/dev/null || true
-	_harden_path "${METRICS_DIR}/.session_start_ts" 600
+	# Persist start timestamp for duration calculation in session_stop.
+	# Scoped by session_id so overlapping sessions don't corrupt each other.
+	_ensure_metrics_dir
+	printf '%s' "$(date +%s)" >"${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}" 2>/dev/null || true
+	_harden_path "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}" 600
+
+	# Store a hash of the transcript path (not the raw path) in event metadata
+	# so rollup can verify identity without exposing the file location.
+	local tp_hash=""
+	if [ -n "$transcript_path" ]; then
+		tp_hash=$(printf '%s' "$transcript_path" | shasum -a 256 2>/dev/null | cut -c1-12)
+	fi
 
 	local escaped_cwd escaped_type
 	escaped_cwd=$(json_escape "$cwd")
 	escaped_type=$(json_escape "$project_type")
-	emit_metric "claude" "session_start" "{\"cwd\":\"${escaped_cwd}\",\"project_type\":\"${escaped_type}\"}"
+	emit_metric "claude" "session_start" "{\"cwd\":\"${escaped_cwd}\",\"project_type\":\"${escaped_type}\",\"transcript_hash\":\"${tp_hash}\"}"
 }
 
 # Call from: hooks/session-stop.sh (after notification)
@@ -165,15 +175,16 @@ metrics_on_session_stop() {
 	local stop_reason="${1:-unknown}"
 
 	local duration_seconds=0
-	if [ -f "${METRICS_DIR}/.session_start_ts" ]; then
+	local ts_file="${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID:-}"
+	if [ -n "${METRICS_SESSION_ID:-}" ] && [ -f "$ts_file" ]; then
 		local start_ts now_ts
-		start_ts=$(cat "${METRICS_DIR}/.session_start_ts" 2>/dev/null || echo "0")
+		start_ts=$(cat "$ts_file" 2>/dev/null || echo "0")
 		now_ts=$(date +%s)
 		duration_seconds=$((now_ts - start_ts))
-		# Do NOT delete .session_start_ts here. Stop fires on every turn,
+		# Do NOT delete the timestamp file. Stop fires on every turn,
 		# not just session end. Deleting it would make subsequent turns emit
-		# duration_seconds=0, and the rollup UPSERT would overwrite the
-		# correct duration. The file is overwritten by the next session-start.
+		# duration_seconds=0. The file is scoped by session_id so overlapping
+		# sessions don't corrupt each other.
 	fi
 
 	local escaped_reason

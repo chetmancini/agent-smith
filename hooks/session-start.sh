@@ -12,7 +12,7 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 input=$(cat)
 transcript_path=$(echo "$input" | jq -r '.transcript_path // ""')
 
-metrics_on_session_start "${CLAUDE_PROJECT_DIR:-$(pwd)}" "${PROJECT_TYPE:-unknown}" "${CLAUDE_SESSION_ID:-}"
+metrics_on_session_start "${CLAUDE_PROJECT_DIR:-$(pwd)}" "${PROJECT_TYPE:-unknown}" "${CLAUDE_SESSION_ID:-}" "$transcript_path"
 
 # Persist session_id + transcript_path so rollup can calculate session cost.
 # METRICS_SESSION_ID was set by metrics_on_session_start using derive_session_id

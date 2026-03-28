@@ -220,13 +220,13 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	while IFS=$'\t' read -r sid tp; do
 		[ -n "$sid" ] && [ -n "$tp" ] || continue
 
-		# If the transcript file is gone, the session is over — drop the entry
+		# If the transcript file is gone, drop the entry. The DB retains
+		# whatever cost was written by a previous rollup run. If no rollup
+		# ever ran while the transcript existed, the cost is lost — but
+		# the source data is gone so there's nothing to recover.
 		if [ ! -f "$tp" ]; then
 			continue
 		fi
-
-		# Keep this entry for future runs (transcript still exists)
-		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
 
 		# Aggregate tokens and compute per-entry cost to handle mixed-model sessions.
 		# Each assistant turn's tokens are priced at its own model rate, then summed.
@@ -247,10 +247,17 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 					model: (.message.model // "unknown")
 				}]
 			}
-		' "$tp" 2>/dev/null) || continue
+		' "$tp" 2>/dev/null) || {
+			printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
+			continue
+		}
 
 		turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
-		[ "$turns" -gt 0 ] 2>/dev/null || continue
+		if [ "$turns" -le 0 ] 2>/dev/null; then
+			# No assistant turns yet — keep entry for next rollup
+			printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
+			continue
+		fi
 
 		input_tok=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
 		output_tok=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
@@ -277,6 +284,10 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 				assistant_turns = ${turns}
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
+
+		# Cost is now durable in the DB. Keep entry only while transcript
+		# still exists (for future recalculation as the session grows).
+		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
 	done <"$WORK_FILE"
 	rm -f "$WORK_FILE" 2>/dev/null || true
 

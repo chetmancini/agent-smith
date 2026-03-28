@@ -226,17 +226,28 @@ teardown() {
     assert_output "nodejs"
 }
 
-@test "metrics_on_session_start writes start timestamp file" {
+@test "metrics_on_session_start writes session-scoped timestamp file" {
     metrics_on_session_start "/tmp" "python" ""
-    [ -f "${METRICS_DIR}/.session_start_ts" ]
+    # Session ID is derived from empty hint, uses date-PID fallback
+    # Use the exported METRICS_SESSION_ID to find the file
+    [ -f "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}" ]
     local ts
-    ts=$(cat "${METRICS_DIR}/.session_start_ts")
+    ts=$(cat "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}")
     [[ "$ts" =~ ^[0-9]+$ ]]
 }
 
+@test "metrics_on_session_start includes transcript_hash in metadata" {
+    metrics_on_session_start "/tmp" "python" "hint" "/some/transcript.jsonl"
+
+    run jq -r '.metadata.transcript_hash' "$METRICS_FILE"
+    assert_success
+    # Should be a 12-char hex hash
+    [[ "$output" =~ ^[0-9a-f]{12}$ ]]
+}
+
 @test "metrics_on_session_stop emits session_stop with duration" {
-    # Simulate a prior session start
-    printf '%s' "$(( $(date +%s) - 60 ))" > "${METRICS_DIR}/.session_start_ts"
+    # Simulate a prior session start with known session ID
+    printf '%s' "$(( $(date +%s) - 60 ))" > "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}"
 
     metrics_on_session_stop "end_turn"
 
@@ -253,14 +264,14 @@ teardown() {
 }
 
 @test "metrics_on_session_stop preserves timestamp file for subsequent turns" {
-    printf '%s' "$(date +%s)" > "${METRICS_DIR}/.session_start_ts"
+    printf '%s' "$(date +%s)" > "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}"
     metrics_on_session_stop "end_turn"
     # Stop fires per-turn; timestamp must survive for correct duration on later turns
-    [ -f "${METRICS_DIR}/.session_start_ts" ]
+    [ -f "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}" ]
 }
 
 @test "metrics_on_session_stop emits correct duration on second call" {
-    printf '%s' "$(( $(date +%s) - 120 ))" > "${METRICS_DIR}/.session_start_ts"
+    printf '%s' "$(( $(date +%s) - 120 ))" > "${METRICS_DIR}/.session_start_ts_${METRICS_SESSION_ID}"
 
     # First turn
     metrics_on_session_stop "end_turn"
