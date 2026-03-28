@@ -231,8 +231,11 @@ expected_session_id() {
 # Session-stop does NOT emit session_cost (moved to rollup)
 # ============================================================================
 
-@test "session-stop does not emit session_cost event" {
+@test "session-stop emits session_stop event and writes cost snapshot" {
     local transcript="$TEST_TMPDIR/transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "hint")
+
     cat > "$transcript" <<'JSONL'
 {"type":"assistant","message":{"role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}
 JSONL
@@ -241,13 +244,16 @@ JSONL
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/session-stop.sh"
 
-    # Should only have session_stop, NOT session_cost
+    # Should only have session_stop in events (no session_cost event)
     local event_count
-    event_count=$(wc -l < "$METRICS_FILE" | tr -d ' ')
+    event_count=$(wc -l <"$METRICS_FILE" | tr -d ' ')
     [ "$event_count" -eq 1 ]
 
     run jq -r '.event_type' "$METRICS_FILE"
     assert_output "session_stop"
+
+    # But should have written a cost snapshot file
+    [ -f "$METRICS_DIR/.cost_snapshot_${expected_sid}" ]
 }
 
 # ============================================================================
@@ -348,9 +354,11 @@ JSONL
     [ "$(awk "BEGIN { print ($cost_2 > 0) }")" = "1" ]
 }
 
-@test "rollup drops entry when transcript file is deleted" {
-    local session_hint="deleted-session"
+@test "rollup drops entry when transcript is deleted and no snapshot exists" {
+    local session_hint="deleted-no-snapshot"
     local transcript="$TEST_TMPDIR/transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
 
     cat > "$transcript" <<'JSONL'
 {"type":"assistant","message":{"role":"assistant","type":"message","model":"claude-sonnet-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}
@@ -362,18 +370,66 @@ JSONL
         METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/session-start.sh"
 
-    # Delete transcript before rollup
+    # Delete transcript AND ensure no snapshot exists
     rm -f "$transcript"
 
     run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
     assert_success
 
-    # Entry should be removed from .transcript_paths
-    if [ -f "$METRICS_DIR/.transcript_paths" ]; then
-        local content
-        content=$(cat "$METRICS_DIR/.transcript_paths")
-        [ -z "$content" ]
-    fi
+    # Cost should be 0 — no transcript, no snapshot, data lost
+    local cost
+    cost=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT estimated_cost_usd FROM sessions WHERE session_id = '${expected_sid}';" 2>/dev/null)
+    [ "${cost:-0}" = "0" ] || [ "${cost:-0.0}" = "0.0" ]
+}
+
+@test "rollup uses cost snapshot when transcript is deleted before rollup" {
+    local session_hint="snapshot-fallback"
+    local transcript="$TEST_TMPDIR/transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    # Create transcript
+    cat > "$transcript" <<'JSONL'
+{"type":"assistant","message":{"role":"assistant","type":"message","model":"claude-sonnet-4-6","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}
+JSONL
+
+    # session-start persists transcript path
+    printf '{"transcript_path":"%s"}' "$transcript" | \
+        env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    # session-stop writes cost snapshot (fires per-turn)
+    printf '{"stop_reason":"end_turn","session_id":"%s","transcript_path":"%s"}' \
+        "$session_hint" "$transcript" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-stop.sh"
+
+    # Verify snapshot was written
+    [ -f "$METRICS_DIR/.cost_snapshot_${expected_sid}" ]
+
+    # Delete transcript BEFORE rollup — simulating cleanup race
+    rm -f "$transcript"
+
+    # Run rollup — should use snapshot as fallback
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    # Cost should be non-zero despite transcript being gone
+    local cost
+    cost=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT estimated_cost_usd FROM sessions WHERE session_id = '${expected_sid}';" 2>/dev/null)
+    [ "$(awk "BEGIN { print ($cost > 0) }")" = "1" ]
+
+    local turns
+    turns=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT assistant_turns FROM sessions WHERE session_id = '${expected_sid}';" 2>/dev/null)
+    [ "$turns" = "1" ]
+
+    # Snapshot should be cleaned up after use
+    [ ! -f "$METRICS_DIR/.cost_snapshot_${expected_sid}" ]
 }
 
 @test "rollup prices mixed-model sessions per-entry, not per-session" {

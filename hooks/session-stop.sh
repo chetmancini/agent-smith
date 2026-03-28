@@ -1,7 +1,7 @@
 #!/bin/bash
-# Stop hook: emit session_stop metric with stop reason and duration
-# Session cost is calculated during rollup, not here — Stop fires on every
-# turn, and re-parsing the full transcript each time would be expensive.
+# Stop hook: emit session_stop metric and snapshot session cost
+# Stop fires on every turn. The cost snapshot is a lightweight file that
+# rollup uses as a fallback when the transcript has been deleted.
 # Never blocks the agent — exits 0 always
 
 set -euo pipefail
@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
 stop_reason=$(echo "$input" | jq -r '.stop_reason // "completed"')
+transcript_path=$(echo "$input" | jq -r '.transcript_path // ""')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
 
 # Each hook runs in a separate process, so METRICS_SESSION_ID from session-start
@@ -21,5 +22,6 @@ METRICS_SESSION_ID=$(derive_session_id "$session_id")
 export METRICS_SESSION_ID
 
 metrics_on_session_stop "$stop_reason"
+snapshot_session_cost "$transcript_path"
 
 exit 0

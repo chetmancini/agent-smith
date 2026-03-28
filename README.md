@@ -132,7 +132,9 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 ├── rollup.db             # SQLite database (queryable)
 ├── reports/              # Analysis reports
 │   └── 2026-03-27-analysis.md
-├── .session_start_ts     # Temporary: session timing
+├── .session_start_ts_*   # Temporary: per-session timing
+├── .cost_snapshot_*      # Temporary: per-session cost snapshots
+├── .transcript_paths     # Temporary: session→transcript mapping
 └── .test_fail_count      # Temporary: consecutive test failures
 ```
 

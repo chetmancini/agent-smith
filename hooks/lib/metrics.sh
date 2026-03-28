@@ -266,14 +266,17 @@ metrics_on_permission_denied() {
 	emit_metric "claude" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
 }
 
-# Call from: hooks/session-stop.sh (after session_stop, when transcript_path is available)
+# Call from: hooks/session-stop.sh (per-turn, writes a durable cost snapshot)
 # Args: <transcript_path>
-metrics_on_session_cost() {
+# Writes a session-scoped snapshot file so rollup has cost data even if
+# the transcript is deleted before rollup runs. Updated on each turn.
+snapshot_session_cost() {
 	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
 	local transcript_path="${1:-}"
 	[ -n "$transcript_path" ] && [ -f "$transcript_path" ] || return 0
+	[ -n "${METRICS_SESSION_ID:-}" ] || return 0
 
-	# Single jq pass: aggregate tokens from all assistant entries
+	# Single jq pass: aggregate tokens and per-entry costs
 	local aggregated
 	aggregated=$(jq -s '
 		[.[] | select(.type == "assistant" and .message.usage != null)] |
@@ -283,7 +286,14 @@ metrics_on_session_cost() {
 			cache_read_input_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add // 0),
 			cache_creation_input_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add // 0),
 			model: (last(.[].message.model) // "unknown"),
-			assistant_turns: length
+			assistant_turns: length,
+			per_entry: [.[] | {
+				input: (.message.usage.input_tokens // 0),
+				output: (.message.usage.output_tokens // 0),
+				cache_read: (.message.usage.cache_read_input_tokens // 0),
+				cache_create: (.message.usage.cache_creation_input_tokens // 0),
+				model: (.message.model // "unknown")
+			}]
 		}
 	' "$transcript_path" 2>/dev/null) || return 0
 
@@ -298,12 +308,21 @@ metrics_on_session_cost() {
 	cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
 	model=$(printf '%s' "$aggregated" | jq -r '.model')
 
-	local cost
-	cost=$(_estimate_cost "$input_tokens" "$output_tokens" "$cache_read" "$cache_create" "$model")
+	# Sum cost per entry so mixed-model sessions are priced correctly
+	local cost=0
+	while IFS=$'\t' read -r e_in e_out e_cr e_cc e_model; do
+		local entry_cost
+		entry_cost=$(_estimate_cost "$e_in" "$e_out" "$e_cr" "$e_cc" "$e_model")
+		cost=$(awk "BEGIN { printf \"%.6f\", $cost + $entry_cost }")
+	done < <(printf '%s' "$aggregated" | jq -r '.per_entry[] | [.input, .output, .cache_read, .cache_create, .model] | @tsv')
 
-	local escaped_model
-	escaped_model=$(json_escape "$model")
-	emit_metric "claude" "session_cost" "{\"input_tokens\":${input_tokens},\"output_tokens\":${output_tokens},\"cache_read_input_tokens\":${cache_read},\"cache_creation_input_tokens\":${cache_create},\"model\":\"${escaped_model}\",\"assistant_turns\":${turns},\"estimated_cost_usd\":${cost}}"
+	# Write snapshot — tab-separated, one line, overwritten each turn
+	_ensure_metrics_dir
+	local snapshot="${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}"
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$input_tokens" "$output_tokens" "$cache_read" "$cache_create" \
+		"$model" "$turns" "$cost" >"$snapshot" 2>/dev/null || true
+	_harden_path "$snapshot" 600
 }
 
 # Call from: hooks/compact.sh (PostCompact hook)

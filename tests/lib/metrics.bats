@@ -398,7 +398,7 @@ teardown() {
 }
 
 # ============================================================================
-# metrics_on_session_cost
+# snapshot_session_cost
 # ============================================================================
 
 _create_mock_transcript() {
@@ -413,79 +413,70 @@ _create_mock_transcript() {
 JSONL
 }
 
-@test "metrics_on_session_cost emits session_cost event" {
+@test "snapshot_session_cost writes snapshot file" {
     local transcript="${METRICS_DIR}/transcript.jsonl"
     _create_mock_transcript "$transcript"
 
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    run jq -r '.event_type' "$METRICS_FILE"
-    assert_output "session_cost"
+    [ -f "${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}" ]
 }
 
-@test "metrics_on_session_cost aggregates tokens correctly" {
+@test "snapshot_session_cost aggregates tokens correctly" {
     local transcript="${METRICS_DIR}/transcript.jsonl"
     _create_mock_transcript "$transcript"
 
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    run jq -r '.metadata.input_tokens' "$METRICS_FILE"
-    assert_output "300"
-
-    run jq -r '.metadata.output_tokens' "$METRICS_FILE"
-    assert_output "150"
-
-    run jq -r '.metadata.cache_read_input_tokens' "$METRICS_FILE"
-    assert_output "3000"
-
-    run jq -r '.metadata.cache_creation_input_tokens' "$METRICS_FILE"
-    assert_output "500"
+    local snapshot="${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}"
+    IFS=$'\t' read -r in out cr cc model turns cost < "$snapshot"
+    [ "$in" = "300" ]
+    [ "$out" = "150" ]
+    [ "$cr" = "3000" ]
+    [ "$cc" = "500" ]
 }
 
-@test "metrics_on_session_cost records model and turn count" {
+@test "snapshot_session_cost records model and turn count" {
     local transcript="${METRICS_DIR}/transcript.jsonl"
     _create_mock_transcript "$transcript"
 
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    run jq -r '.metadata.model' "$METRICS_FILE"
-    assert_output "claude-sonnet-4-6"
-
-    run jq -r '.metadata.assistant_turns' "$METRICS_FILE"
-    assert_output "2"
+    local snapshot="${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}"
+    IFS=$'\t' read -r in out cr cc model turns cost < "$snapshot"
+    [ "$model" = "claude-sonnet-4-6" ]
+    [ "$turns" = "2" ]
 }
 
-@test "metrics_on_session_cost estimates cost" {
+@test "snapshot_session_cost estimates cost > 0" {
     local transcript="${METRICS_DIR}/transcript.jsonl"
     _create_mock_transcript "$transcript"
 
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    # Cost should be > 0 for valid model
-    local cost
-    cost=$(jq -r '.metadata.estimated_cost_usd' "$METRICS_FILE")
+    local snapshot="${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}"
+    IFS=$'\t' read -r in out cr cc model turns cost < "$snapshot"
     [ "$(awk "BEGIN { print ($cost > 0) }")" = "1" ]
 }
 
-@test "metrics_on_session_cost is a no-op when disabled" {
+@test "snapshot_session_cost is a no-op when disabled" {
     export AGENT_METRICS_ENABLED=0
-    metrics_on_session_cost "/nonexistent/transcript.jsonl"
-    [ ! -f "$METRICS_FILE" ]
+    snapshot_session_cost "/nonexistent/transcript.jsonl"
+    [ ! -f "${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}" ]
 }
 
-@test "metrics_on_session_cost is a no-op when transcript missing" {
-    metrics_on_session_cost ""
-    [ ! -f "$METRICS_FILE" ]
+@test "snapshot_session_cost is a no-op when transcript missing" {
+    snapshot_session_cost ""
+    [ ! -f "${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}" ]
 }
 
-@test "metrics_on_session_cost handles transcript with no assistant entries" {
+@test "snapshot_session_cost skips transcript with no assistant entries" {
     local transcript="${METRICS_DIR}/transcript.jsonl"
     echo '{"type":"system","message":{"role":"system","content":"hi"}}' > "$transcript"
 
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    # No event should be emitted for zero turns
-    [ ! -f "$METRICS_FILE" ]
+    [ ! -f "${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}" ]
 }
 
 # ============================================================================
@@ -545,35 +536,17 @@ JSONL
 # Session ID consistency across hooks
 # ============================================================================
 
-@test "session_cost uses same session_id as session_start when derived from same hint" {
+@test "snapshot_session_cost uses METRICS_SESSION_ID for file naming" {
     local hint="test-transcript-path"
-    local expected_id
-    expected_id=$(derive_session_id "$hint")
-
-    # Simulate what session-start does
-    METRICS_SESSION_ID=$(derive_session_id "$hint")
-    export METRICS_SESSION_ID
-    metrics_on_session_start "/tmp" "test" "$hint"
-
-    local start_sid
-    start_sid=$(jq -r '.session_id' "$METRICS_FILE")
-
-    # Reset file for next event
-    : > "$METRICS_FILE"
-
-    # Simulate what session-stop does: re-derive from same session_id
     METRICS_SESSION_ID=$(derive_session_id "$hint")
     export METRICS_SESSION_ID
 
     local transcript="${METRICS_DIR}/transcript.jsonl"
     _create_mock_transcript "$transcript"
-    metrics_on_session_cost "$transcript"
+    snapshot_session_cost "$transcript"
 
-    local cost_sid
-    cost_sid=$(jq -r '.session_id' "$METRICS_FILE")
-
-    [ "$start_sid" = "$cost_sid" ]
-    [ "$start_sid" = "$expected_id" ]
+    # Snapshot file should be named with the session ID
+    [ -f "${METRICS_DIR}/.cost_snapshot_${METRICS_SESSION_ID}" ]
 }
 
 @test "context_compression uses same session_id as session_start when derived from same hint" {

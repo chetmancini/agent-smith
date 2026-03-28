@@ -220,11 +220,26 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	while IFS=$'\t' read -r sid tp; do
 		[ -n "$sid" ] && [ -n "$tp" ] || continue
 
-		# If the transcript file is gone, drop the entry. The DB retains
-		# whatever cost was written by a previous rollup run. If no rollup
-		# ever ran while the transcript existed, the cost is lost — but
-		# the source data is gone so there's nothing to recover.
+		# If the transcript is gone, check for a cost snapshot written by
+		# the Stop hook. This covers sessions where rollup never ran while
+		# the transcript existed (short sessions, cleanup races).
 		if [ ! -f "$tp" ]; then
+			snapshot="${METRICS_DIR}/.cost_snapshot_${sid}"
+			if [ -f "$snapshot" ]; then
+				IFS=$'\t' read -r s_in s_out s_cr s_cc s_model s_turns s_cost <"$snapshot"
+				sqlite3 "$DB_FILE" "
+					UPDATE sessions SET
+						input_tokens = ${s_in:-0},
+						output_tokens = ${s_out:-0},
+						cache_read_tokens = ${s_cr:-0},
+						cache_create_tokens = ${s_cc:-0},
+						estimated_cost_usd = ${s_cost:-0},
+						model = '${s_model//\'/\'\'}',
+						assistant_turns = ${s_turns:-0}
+					WHERE session_id = '${sid}';
+				" 2>/dev/null || true
+				rm -f "$snapshot" 2>/dev/null || true
+			fi
 			continue
 		fi
 
@@ -285,8 +300,11 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
 
-		# Cost is now durable in the DB. Keep entry only while transcript
-		# still exists (for future recalculation as the session grows).
+		# Cost is now durable in the DB. Clean up snapshot if it exists
+		# (redundant now that DB has fresh transcript-based data).
+		rm -f "${METRICS_DIR}/.cost_snapshot_${sid}" 2>/dev/null || true
+
+		# Keep entry while transcript still exists (for recalculation as session grows).
 		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
 	done <"$WORK_FILE"
 	rm -f "$WORK_FILE" 2>/dev/null || true
