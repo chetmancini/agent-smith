@@ -18,7 +18,9 @@ metrics_on_session_start "${CLAUDE_PROJECT_DIR:-$(pwd)}" "${PROJECT_TYPE:-unknow
 # METRICS_SESSION_ID was set by metrics_on_session_start using derive_session_id
 # on CLAUDE_SESSION_ID. Rollup must use this exact ID (not re-derive from the
 # transcript path, which would produce a different hash).
-if [ -n "$transcript_path" ]; then
+# Guard: when AGENT_METRICS_ENABLED=0, metrics_on_session_start returns before
+# setting METRICS_SESSION_ID, so skip this to avoid an unbound variable error.
+if [ -n "$transcript_path" ] && [ -n "${METRICS_SESSION_ID:-}" ]; then
 	_ensure_metrics_dir
 	printf '%s\t%s\n' "$METRICS_SESSION_ID" "$transcript_path" >>"${METRICS_DIR}/.transcript_paths" 2>/dev/null || true
 	_harden_path "${METRICS_DIR}/.transcript_paths" 600

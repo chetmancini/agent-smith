@@ -207,6 +207,11 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 	source "${SCRIPT_DIR}/../hooks/lib/metrics.sh"
 
+	# Atomically claim the file so concurrent session-start.sh appends go to
+	# a fresh .transcript_paths instead of the one we're processing.
+	WORK_FILE="${TRANSCRIPT_PATHS_FILE}.processing"
+	mv "$TRANSCRIPT_PATHS_FILE" "$WORK_FILE" 2>/dev/null || true
+
 	# Track entries to keep (transcript still exists)
 	KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
 	: >"$KEEP_FILE" 2>/dev/null || true
@@ -223,7 +228,8 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 		# Keep this entry for future runs (transcript still exists)
 		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
 
-		# Aggregate tokens from assistant entries in the transcript
+		# Aggregate tokens and compute per-entry cost to handle mixed-model sessions.
+		# Each assistant turn's tokens are priced at its own model rate, then summed.
 		aggregated=$(jq -s '
 			[.[] | select(.type == "assistant" and .message.usage != null)] |
 			{
@@ -232,7 +238,14 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 				cache_read_input_tokens: (map(.message.usage.cache_read_input_tokens // 0) | add // 0),
 				cache_creation_input_tokens: (map(.message.usage.cache_creation_input_tokens // 0) | add // 0),
 				model: (last(.[].message.model) // "unknown"),
-				assistant_turns: length
+				assistant_turns: length,
+				per_entry: [.[] | {
+					input: (.message.usage.input_tokens // 0),
+					output: (.message.usage.output_tokens // 0),
+					cache_read: (.message.usage.cache_read_input_tokens // 0),
+					cache_create: (.message.usage.cache_creation_input_tokens // 0),
+					model: (.message.model // "unknown")
+				}]
 			}
 		' "$tp" 2>/dev/null) || continue
 
@@ -245,7 +258,12 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 		cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
 		model=$(printf '%s' "$aggregated" | jq -r '.model')
 
-		cost=$(_estimate_cost "$input_tok" "$output_tok" "$cache_read" "$cache_create" "$model")
+		# Sum cost per entry so mixed-model sessions are priced correctly
+		cost=0
+		while IFS=$'\t' read -r e_in e_out e_cr e_cc e_model; do
+			entry_cost=$(_estimate_cost "$e_in" "$e_out" "$e_cr" "$e_cc" "$e_model")
+			cost=$(awk "BEGIN { printf \"%.6f\", $cost + $entry_cost }")
+		done < <(printf '%s' "$aggregated" | jq -r '.per_entry[] | [.input, .output, .cache_read, .cache_create, .model] | @tsv')
 
 		# Update the sessions row — always overwrite with latest transcript state
 		sqlite3 "$DB_FILE" "
@@ -259,11 +277,16 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 				assistant_turns = ${turns}
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
-	done <"$TRANSCRIPT_PATHS_FILE"
+	done <"$WORK_FILE"
+	rm -f "$WORK_FILE" 2>/dev/null || true
 
-	# Replace the paths file with only entries whose transcripts still exist
-	mv "$KEEP_FILE" "$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
-	harden_private_file "$TRANSCRIPT_PATHS_FILE"
+	# Merge surviving entries back. A new .transcript_paths may have been
+	# created by session-start.sh while we were processing — append to it.
+	if [ -s "$KEEP_FILE" ]; then
+		cat "$KEEP_FILE" >>"$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
+		harden_private_file "$TRANSCRIPT_PATHS_FILE"
+	fi
+	rm -f "$KEEP_FILE" 2>/dev/null || true
 fi
 
 # Rotate if file exceeds size limit

@@ -170,7 +170,10 @@ metrics_on_session_stop() {
 		start_ts=$(cat "${METRICS_DIR}/.session_start_ts" 2>/dev/null || echo "0")
 		now_ts=$(date +%s)
 		duration_seconds=$((now_ts - start_ts))
-		rm -f "${METRICS_DIR}/.session_start_ts" 2>/dev/null || true
+		# Do NOT delete .session_start_ts here. Stop fires on every turn,
+		# not just session end. Deleting it would make subsequent turns emit
+		# duration_seconds=0, and the rollup UPSERT would overwrite the
+		# correct duration. The file is overwritten by the next session-start.
 	fi
 
 	local escaped_reason

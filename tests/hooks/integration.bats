@@ -152,6 +152,19 @@ expected_session_id() {
     fi
 }
 
+@test "session-start with metrics disabled does not fail on unbound METRICS_SESSION_ID" {
+    printf '{"transcript_path":"/tmp/some-transcript.jsonl"}' | \
+        env AGENT_METRICS_ENABLED=0 \
+        CLAUDE_SESSION_ID="sess-disabled" \
+        CLAUDE_PROJECT_DIR="/tmp" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    # Hook should exit 0 and not create transcript_paths or events
+    [ ! -f "$METRICS_FILE" ]
+    [ ! -f "$METRICS_DIR/.transcript_paths" ]
+}
+
 @test "session-stop reads stop_reason from stdin payload" {
     printf '{"stop_reason":"max_tokens","session_id":"hint","transcript_path":""}' | \
         env METRICS_DIR="$METRICS_DIR" \
@@ -361,4 +374,38 @@ JSONL
         content=$(cat "$METRICS_DIR/.transcript_paths")
         [ -z "$content" ]
     fi
+}
+
+@test "rollup prices mixed-model sessions per-entry, not per-session" {
+    local session_hint="mixed-model-session"
+    local transcript="$TEST_TMPDIR/transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    # Two turns: one Haiku (cheap), one Opus (expensive), same token counts
+    cat > "$transcript" <<'JSONL'
+{"type":"assistant","message":{"role":"assistant","type":"message","model":"claude-haiku-4-5","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}
+{"type":"assistant","message":{"role":"assistant","type":"message","model":"claude-opus-4-6","content":[{"type":"text","text":"bye"}],"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}
+JSONL
+
+    printf '{"transcript_path":"%s"}' "$transcript" | \
+        env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    local cost
+    cost=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT estimated_cost_usd FROM sessions WHERE session_id = '${expected_sid}';" 2>/dev/null)
+
+    # Haiku: 1M*0.80/1M + 1M*4.00/1M = 4.80
+    # Opus:  1M*15/1M + 1M*75/1M = 90.00
+    # Total should be 94.80
+    # If priced all at Opus (last model): would be 180.00
+    # If priced all at Haiku: would be 9.60
+    # So cost must be between those extremes
+    [ "$(awk "BEGIN { print ($cost > 90 && $cost < 100) }")" = "1" ]
 }

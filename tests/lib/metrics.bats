@@ -252,10 +252,25 @@ teardown() {
     [ "$dur" -ge 59 ]
 }
 
-@test "metrics_on_session_stop cleans up timestamp file" {
+@test "metrics_on_session_stop preserves timestamp file for subsequent turns" {
     printf '%s' "$(date +%s)" > "${METRICS_DIR}/.session_start_ts"
     metrics_on_session_stop "end_turn"
-    [ ! -f "${METRICS_DIR}/.session_start_ts" ]
+    # Stop fires per-turn; timestamp must survive for correct duration on later turns
+    [ -f "${METRICS_DIR}/.session_start_ts" ]
+}
+
+@test "metrics_on_session_stop emits correct duration on second call" {
+    printf '%s' "$(( $(date +%s) - 120 ))" > "${METRICS_DIR}/.session_start_ts"
+
+    # First turn
+    metrics_on_session_stop "end_turn"
+    # Second turn — should still have a valid duration, not 0
+    : > "$METRICS_FILE"
+    metrics_on_session_stop "end_turn"
+
+    local dur
+    dur=$(jq -r '.metadata.duration_seconds' "$METRICS_FILE")
+    [ "$dur" -ge 119 ]
 }
 
 @test "metrics_on_clarifying_question emits truncated prompt" {
