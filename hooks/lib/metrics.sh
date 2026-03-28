@@ -301,7 +301,7 @@ metrics_on_context_compression() {
 
 	local transcript_lines=0
 	if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-		transcript_lines=$(wc -l < "$transcript_path" | tr -d ' ')
+		transcript_lines=$(wc -l <"$transcript_path" | tr -d ' ')
 	fi
 
 	local escaped_trigger

@@ -138,10 +138,10 @@ fi
 
 # Extract new lines and transform to SQL in a single jq pass, wrapped in a transaction
 if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
-{
-	echo "BEGIN TRANSACTION;"
+	{
+		echo "BEGIN TRANSACTION;"
 
-	tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
+		tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
         # Skip malformed lines
         select(.ts != null and .tool != null and .event_type != null) |
 
@@ -182,13 +182,13 @@ if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
         ";"
     ' 2>/dev/null || true
 
-	# Update ingestion state
-	echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
+		# Update ingestion state
+		echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
 
-	echo "COMMIT;"
-} | sqlite3 "$DB_FILE" 2>/dev/null
+		echo "COMMIT;"
+	} | sqlite3 "$DB_FILE" 2>/dev/null
 
-harden_private_file "$DB_FILE"
+	harden_private_file "$DB_FILE"
 fi # HAVE_NEW_EVENTS
 
 # --- Session cost calculation from transcripts ---
@@ -209,7 +209,7 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 
 	# Track entries to keep (transcript still exists)
 	KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
-	: > "$KEEP_FILE" 2>/dev/null || true
+	: >"$KEEP_FILE" 2>/dev/null || true
 
 	# File format: <session_id>\t<transcript_path> (one per session)
 	while IFS=$'\t' read -r sid tp; do
@@ -221,7 +221,7 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 		fi
 
 		# Keep this entry for future runs (transcript still exists)
-		printf '%s\t%s\n' "$sid" "$tp" >> "$KEEP_FILE"
+		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
 
 		# Aggregate tokens from assistant entries in the transcript
 		aggregated=$(jq -s '
@@ -259,7 +259,7 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 				assistant_turns = ${turns}
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
-	done < "$TRANSCRIPT_PATHS_FILE"
+	done <"$TRANSCRIPT_PATHS_FILE"
 
 	# Replace the paths file with only entries whose transcripts still exist
 	mv "$KEEP_FILE" "$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
