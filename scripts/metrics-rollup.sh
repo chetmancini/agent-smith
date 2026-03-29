@@ -211,8 +211,8 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	# a fresh .transcript_paths instead of the one we're processing.
 	# If another rollup already claimed it, skip this pass — the winner will
 	# process the data, and the next run will pick up anything new.
-	WORK_FILE="${TRANSCRIPT_PATHS_FILE}.processing"
-	mv "$TRANSCRIPT_PATHS_FILE" "$WORK_FILE" 2>/dev/null || {
+	WORK_FILE="${TRANSCRIPT_PATHS_FILE}.processing.$$"
+	mv -n "$TRANSCRIPT_PATHS_FILE" "$WORK_FILE" 2>/dev/null || {
 		# Claim failed — another process got it first, or file vanished.
 		# Nothing to process this pass.
 		WORK_FILE=""
