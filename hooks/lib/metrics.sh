@@ -371,7 +371,7 @@ snapshot_session_cost() {
 
 	# Extract delta values and add to previous totals (single awk call)
 	local result
-	result=$(printf '%s' "$delta" | jq -r '[.input, .output, .cache_read, .cache_create, .model, .turns, .cost] | @tsv' | \
+	result=$(printf '%s' "$delta" | jq -r '[.input, .output, .cache_read, .cache_create, .model, .turns, .cost] | @tsv' |
 		awk -F'\t' -v pi="$prev_input" -v po="$prev_output" -v pcr="$prev_cr" -v pcc="$prev_cc" \
 			-v pt="$prev_turns" -v pc="$prev_cost" '{
 			printf "%d\t%d\t%d\t%d\t%s\t%d\t%.6f\n",

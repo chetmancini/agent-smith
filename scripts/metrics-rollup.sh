@@ -223,22 +223,22 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 		:
 	else
 
-	# Track entries to keep (transcript still exists)
-	KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
-	: >"$KEEP_FILE" 2>/dev/null || true
+		# Track entries to keep (transcript still exists)
+		KEEP_FILE="${TRANSCRIPT_PATHS_FILE}.keep"
+		: >"$KEEP_FILE" 2>/dev/null || true
 
-	# File format: <session_id>\t<transcript_path> (one per session)
-	while IFS=$'\t' read -r sid tp; do
-		[ -n "$sid" ] && [ -n "$tp" ] || continue
+		# File format: <session_id>\t<transcript_path> (one per session)
+		while IFS=$'\t' read -r sid tp; do
+			[ -n "$sid" ] && [ -n "$tp" ] || continue
 
-		# If the transcript is gone, check for a cost snapshot written by
-		# the Stop hook. This covers sessions where rollup never ran while
-		# the transcript existed (short sessions, cleanup races).
-		if [ ! -f "$tp" ]; then
-			snapshot="${METRICS_DIR}/.cost_snapshot_${sid}"
-			if [ -f "$snapshot" ]; then
-				IFS=$'\t' read -r s_in s_out s_cr s_cc s_model s_turns s_cost <"$snapshot"
-				sqlite3 "$DB_FILE" "
+			# If the transcript is gone, check for a cost snapshot written by
+			# the Stop hook. This covers sessions where rollup never ran while
+			# the transcript existed (short sessions, cleanup races).
+			if [ ! -f "$tp" ]; then
+				snapshot="${METRICS_DIR}/.cost_snapshot_${sid}"
+				if [ -f "$snapshot" ]; then
+					IFS=$'\t' read -r s_in s_out s_cr s_cc s_model s_turns s_cost <"$snapshot"
+					sqlite3 "$DB_FILE" "
 					UPDATE sessions SET
 						input_tokens = ${s_in:-0},
 						output_tokens = ${s_out:-0},
@@ -249,14 +249,14 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 						assistant_turns = ${s_turns:-0}
 					WHERE session_id = '${sid}';
 				" 2>/dev/null || true
-				rm -f "$snapshot" 2>/dev/null || true
+					rm -f "$snapshot" 2>/dev/null || true
+				fi
+				continue
 			fi
-			continue
-		fi
 
-		# Aggregate tokens and compute per-entry cost to handle mixed-model sessions.
-		# Each assistant turn's tokens are priced at its own model rate, then summed.
-		aggregated=$(jq -s '
+			# Aggregate tokens and compute per-entry cost to handle mixed-model sessions.
+			# Each assistant turn's tokens are priced at its own model rate, then summed.
+			aggregated=$(jq -s '
 			[.[] | select(.type == "assistant" and .message.usage != null)] |
 			{
 				input_tokens: (map(.message.usage.input_tokens // 0) | add // 0),
@@ -274,32 +274,32 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 				}]
 			}
 		' "$tp" 2>/dev/null) || {
-			printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
-			continue
-		}
+				printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
+				continue
+			}
 
-		turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
-		if [ "$turns" -le 0 ] 2>/dev/null; then
-			# No assistant turns yet — keep entry for next rollup
-			printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
-			continue
-		fi
+			turns=$(printf '%s' "$aggregated" | jq -r '.assistant_turns')
+			if [ "$turns" -le 0 ] 2>/dev/null; then
+				# No assistant turns yet — keep entry for next rollup
+				printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
+				continue
+			fi
 
-		input_tok=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
-		output_tok=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
-		cache_read=$(printf '%s' "$aggregated" | jq -r '.cache_read_input_tokens')
-		cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
-		model=$(printf '%s' "$aggregated" | jq -r '.model')
+			input_tok=$(printf '%s' "$aggregated" | jq -r '.input_tokens')
+			output_tok=$(printf '%s' "$aggregated" | jq -r '.output_tokens')
+			cache_read=$(printf '%s' "$aggregated" | jq -r '.cache_read_input_tokens')
+			cache_create=$(printf '%s' "$aggregated" | jq -r '.cache_creation_input_tokens')
+			model=$(printf '%s' "$aggregated" | jq -r '.model')
 
-		# Sum cost per entry so mixed-model sessions are priced correctly
-		cost=0
-		while IFS=$'\t' read -r e_in e_out e_cr e_cc e_model; do
-			entry_cost=$(_estimate_cost "$e_in" "$e_out" "$e_cr" "$e_cc" "$e_model")
-			cost=$(awk "BEGIN { printf \"%.6f\", $cost + $entry_cost }")
-		done < <(printf '%s' "$aggregated" | jq -r '.per_entry[] | [.input, .output, .cache_read, .cache_create, .model] | @tsv')
+			# Sum cost per entry so mixed-model sessions are priced correctly
+			cost=0
+			while IFS=$'\t' read -r e_in e_out e_cr e_cc e_model; do
+				entry_cost=$(_estimate_cost "$e_in" "$e_out" "$e_cr" "$e_cc" "$e_model")
+				cost=$(awk "BEGIN { printf \"%.6f\", $cost + $entry_cost }")
+			done < <(printf '%s' "$aggregated" | jq -r '.per_entry[] | [.input, .output, .cache_read, .cache_create, .model] | @tsv')
 
-		# Update the sessions row — always overwrite with latest transcript state
-		sqlite3 "$DB_FILE" "
+			# Update the sessions row — always overwrite with latest transcript state
+			sqlite3 "$DB_FILE" "
 			UPDATE sessions SET
 				input_tokens = ${input_tok},
 				output_tokens = ${output_tok},
@@ -311,22 +311,22 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 			WHERE session_id = '${sid}';
 		" 2>/dev/null || true
 
-		# Cost is now durable in the DB. Clean up snapshot and cursor if they exist
-		# (redundant now that DB has fresh transcript-based data).
-		rm -f "${METRICS_DIR}/.cost_snapshot_${sid}" "${METRICS_DIR}/.cost_cursor_${sid}" 2>/dev/null || true
+			# Cost is now durable in the DB. Clean up snapshot and cursor if they exist
+			# (redundant now that DB has fresh transcript-based data).
+			rm -f "${METRICS_DIR}/.cost_snapshot_${sid}" "${METRICS_DIR}/.cost_cursor_${sid}" 2>/dev/null || true
 
-		# Keep entry while transcript still exists (for recalculation as session grows).
-		printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
-	done <"$WORK_FILE"
-	rm -f "$WORK_FILE" 2>/dev/null || true
+			# Keep entry while transcript still exists (for recalculation as session grows).
+			printf '%s\t%s\n' "$sid" "$tp" >>"$KEEP_FILE"
+		done <"$WORK_FILE"
+		rm -f "$WORK_FILE" 2>/dev/null || true
 
-	# Merge surviving entries back. A new .transcript_paths may have been
-	# created by session-start.sh while we were processing — append to it.
-	if [ -s "$KEEP_FILE" ]; then
-		cat "$KEEP_FILE" >>"$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
-		harden_private_file "$TRANSCRIPT_PATHS_FILE"
-	fi
-	rm -f "$KEEP_FILE" 2>/dev/null || true
+		# Merge surviving entries back. A new .transcript_paths may have been
+		# created by session-start.sh while we were processing — append to it.
+		if [ -s "$KEEP_FILE" ]; then
+			cat "$KEEP_FILE" >>"$TRANSCRIPT_PATHS_FILE" 2>/dev/null || true
+			harden_private_file "$TRANSCRIPT_PATHS_FILE"
+		fi
+		rm -f "$KEEP_FILE" 2>/dev/null || true
 
 	fi # WORK_FILE claimed successfully
 fi
