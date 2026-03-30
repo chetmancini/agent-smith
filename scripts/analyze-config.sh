@@ -176,6 +176,42 @@ query_overview() {
     " 2>/dev/null || echo "(no data)"
 }
 
+query_session_costs() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            COUNT(*) as total_sessions,
+            ROUND(SUM(estimated_cost_usd), 4) as total_cost_usd,
+            ROUND(AVG(estimated_cost_usd), 4) as avg_cost_usd,
+            ROUND(MAX(estimated_cost_usd), 4) as max_cost_usd,
+            ROUND(SUM(input_tokens + output_tokens + cache_read_tokens + cache_create_tokens), 0) as total_tokens
+        FROM sessions
+        WHERE session_id IN (
+            SELECT DISTINCT session_id FROM events
+            WHERE event_type = 'session_start'
+            ORDER BY ts DESC LIMIT $SESSIONS
+        )
+        AND estimated_cost_usd > 0;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_compressions() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            COUNT(*) as total_compressions,
+            COUNT(DISTINCT session_id) as sessions_with_compression,
+            SUM(CASE WHEN json_extract(metadata, '$.trigger') = 'auto' THEN 1 ELSE 0 END) as auto_count,
+            SUM(CASE WHEN json_extract(metadata, '$.trigger') = 'manual' THEN 1 ELSE 0 END) as manual_count,
+            ROUND(AVG(json_extract(metadata, '$.transcript_lines')), 0) as avg_transcript_lines
+        FROM events
+        WHERE event_type = 'context_compression'
+          AND session_id IN (
+              SELECT DISTINCT session_id FROM events
+              WHERE event_type = 'session_start'
+              ORDER BY ts DESC LIMIT $SESSIONS
+          );
+    " 2>/dev/null || echo "(no data)"
+}
+
 # --- Gather Data ---
 
 echo "Gathering metrics from last $SESSIONS sessions..."
@@ -192,6 +228,10 @@ echo "  -> Querying clarifying question patterns..."
 CLARIFYING_QUESTIONS=$(query_clarifying_questions)
 echo "  -> Querying session outcomes..."
 SESSION_OUTCOMES=$(query_session_outcomes)
+echo "  -> Querying session costs..."
+SESSION_COSTS=$(query_session_costs)
+echo "  -> Querying context compressions..."
+COMPRESSIONS=$(query_compressions)
 echo "  All metrics gathered."
 
 # Generate output filename with collision handling
@@ -228,6 +268,12 @@ $CLARIFYING_QUESTIONS
 
 ## Session Outcomes
 $SESSION_OUTCOMES
+
+## Session Costs
+$SESSION_COSTS
+
+## Context Compressions
+$COMPRESSIONS
 EOF
 	harden_private_file "$output_file"
 }
@@ -295,6 +341,12 @@ $CLARIFYING_QUESTIONS
 ### Session Outcomes
 $SESSION_OUTCOMES
 
+### Session Costs
+$SESSION_COSTS
+
+### Context Compressions
+$COMPRESSIONS
+
 ## Settings Context
 $SETTINGS_CONTEXT
 
@@ -305,6 +357,8 @@ Use these mappings when suggesting changes:
 - Test strategy issues -> custom commands or CLAUDE.md instructions
 - Vague prompt handling -> custom commands, CLAUDE.md instructions
 - Model/effort issues -> settings.json (model, effortLevel)
+- High session costs -> model selection, prompt optimization, cache strategy
+- Frequent compressions -> session length management, task decomposition
 
 ## Instructions
 

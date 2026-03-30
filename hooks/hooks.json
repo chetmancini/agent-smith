@@ -84,6 +84,28 @@
           }
         ]
       }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COMPACT_TRIGGER=auto bash ${CLAUDE_PLUGIN_ROOT}/hooks/compact.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "COMPACT_TRIGGER=manual bash ${CLAUDE_PLUGIN_ROOT}/hooks/compact.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
