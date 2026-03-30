@@ -280,7 +280,8 @@ while [ -f "$output_file" ]; do
 done
 
 write_raw_report() {
-	local header="# Config Metrics Report (raw) — $(date +%Y-%m-%d)"
+	local header
+	header="# Config Metrics Report (raw) — $(date +%Y-%m-%d)"
 	if [ -n "$PROJECT_FILTER" ]; then
 		header="$header (project: $PROJECT_FILTER)"
 	fi
