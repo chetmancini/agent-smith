@@ -69,8 +69,13 @@ claude plugin add https://github.com/chetmancini/agent-smith
 | `permission_denied` | PermissionRequest | Permission denials |
 | `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
 | `test_failure_loop` | PostToolUse | 3+ consecutive test failures |
+| `context_compression` | PostCompact | Context compression (auto or manual) |
 
-All events are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL. The plugin hardens files it creates to user-only permissions.
+All events above are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL. The plugin hardens files it creates to user-only permissions.
+
+### Session Cost
+
+Session cost (token usage and estimated USD cost) is calculated during `metrics-rollup.sh`, not during hooks. The session-start hook persists the transcript path, and rollup reads the transcript to aggregate token counts from all assistant turns. Cost is recalculated on each rollup run so mid-session runs capture partial progress and later runs pick up new turns. Results are written directly to the `sessions` table in `rollup.db`.
 
 ## Usage
 
@@ -127,7 +132,9 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 ├── rollup.db             # SQLite database (queryable)
 ├── reports/              # Analysis reports
 │   └── 2026-03-27-analysis.md
-├── .session_start_ts     # Temporary: session timing
+├── .session_start_ts_*   # Temporary: per-session timing
+├── .cost_snapshot_*      # Temporary: per-session cost snapshots
+├── .transcript_paths     # Temporary: session→transcript mapping
 └── .test_fail_count      # Temporary: consecutive test failures
 ```
 
@@ -152,7 +159,8 @@ agent-smith/
 │   ├── permission-denied.sh
 │   ├── vague-prompt.sh           # Prompt quality
 │   ├── test-result.sh            # Test loop detection
-│   └── analyze-trigger.sh        # Auto-trigger analysis
+│   ├── analyze-trigger.sh        # Auto-trigger analysis
+│   └── compact.sh              # Context compression
 ├── scripts/
 │   ├── metrics-rollup.sh         # JSONL → SQLite
 │   └── analyze-config.sh         # Metrics → Report

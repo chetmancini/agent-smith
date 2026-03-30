@@ -1,7 +1,5 @@
 #!/bin/bash
-# Stop hook: emit session_stop metric and snapshot session cost
-# Stop fires on every turn. The cost snapshot is a lightweight file that
-# rollup uses as a fallback when the transcript has been deleted.
+# PostCompact hook: emit context_compression metric
 # Never blocks the agent — exits 0 always
 
 set -euo pipefail
@@ -12,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-stop_reason=$(echo "$input" | jq -r '.stop_reason // "completed"')
 transcript_path=$(echo "$input" | jq -r '.transcript_path // ""')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
 
@@ -21,7 +18,15 @@ session_id=$(echo "$input" | jq -r '.session_id // ""')
 METRICS_SESSION_ID=$(derive_session_id "$session_id")
 export METRICS_SESSION_ID
 
-metrics_on_session_stop "$stop_reason"
-snapshot_session_cost "$transcript_path"
+# The matcher value tells us whether this was auto or manual compact.
+# We receive it via COMPACT_TRIGGER env var set by the hook registration,
+# or default to "unknown".
+trigger="${COMPACT_TRIGGER:-unknown}"
+
+metrics_on_context_compression "$trigger" "$transcript_path"
+
+# Compaction rewrites the transcript, invalidating the line-based cursor used
+# by snapshot_session_cost. Remove it so the next Stop does a full (cheap) rescan.
+rm -f "${METRICS_DIR}/.cost_cursor_${METRICS_SESSION_ID}" 2>/dev/null || true
 
 exit 0
