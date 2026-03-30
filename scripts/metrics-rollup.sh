@@ -110,6 +110,10 @@ CREATE TABLE IF NOT EXISTS ingestion_state (
 );
 SCHEMA
 
+# Migrate: add cwd column to sessions (idempotent)
+sqlite3 "$DB_FILE" "ALTER TABLE sessions ADD COLUMN cwd TEXT;" 2>/dev/null || true
+sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);" 2>/dev/null || true
+
 # Get last ingested byte offset
 OFFSET=$(sqlite3 "$DB_FILE" "SELECT COALESCE(byte_offset, 0) FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || echo "0")
 OFFSET="${OFFSET:-0}"
@@ -141,21 +145,21 @@ fi
 
         # Generate UPSERT for sessions
         "INSERT INTO sessions (session_id, tool, event_count" +
-            (if .event_type == "session_start" then ", started_at" else "" end) +
+            (if .event_type == "session_start" then ", started_at, cwd" else "" end) +
             (if .event_type == "session_stop" then ", stopped_at, stop_reason, duration_seconds" else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count" else "" end) +
             (if .event_type == "test_failure_loop" then ", test_loop_count" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count" else "" end) +
             (if .event_type == "permission_denied" then ", denial_count" else "" end) +
         ") VALUES ('\''" + (.session_id | sq) + "'\'', '\''" + (.tool | sq) + "'\'', 1" +
-            (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\''" else "" end) +
+            (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.cwd // "") | sq) + "'\''" else "" end) +
             (if .event_type == "session_stop" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.stop_reason // "unknown") | sq) + "'\'', " + ((.metadata.duration_seconds // 0) | tostring) else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", 1" else "" end) +
             (if .event_type == "test_failure_loop" then ", 1" else "" end) +
             (if .event_type == "clarifying_question" then ", 1" else "" end) +
             (if .event_type == "permission_denied" then ", 1" else "" end) +
         ") ON CONFLICT(session_id) DO UPDATE SET event_count = event_count + 1" +
-            (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at)" else "" end) +
+            (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at), cwd = COALESCE(sessions.cwd, excluded.cwd)" else "" end) +
             (if .event_type == "session_stop" then ", stopped_at = excluded.stopped_at, stop_reason = excluded.stop_reason, duration_seconds = excluded.duration_seconds" else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count = failure_count + 1" else "" end) +
             (if .event_type == "test_failure_loop" then ", test_loop_count = test_loop_count + 1" else "" end) +

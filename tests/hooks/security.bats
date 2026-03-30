@@ -44,14 +44,15 @@ create_metrics_db() {
             failure_count INTEGER NOT NULL DEFAULT 0,
             test_loop_count INTEGER NOT NULL DEFAULT 0,
             clarification_count INTEGER NOT NULL DEFAULT 0,
-            denial_count INTEGER NOT NULL DEFAULT 0
+            denial_count INTEGER NOT NULL DEFAULT 0,
+            cwd TEXT
         );
         INSERT INTO events (ts, tool, session_id, event_type, metadata)
         VALUES
             ('2026-03-27T00:00:00Z', 'claude', 'session-1', 'session_start', '{\"cwd\":\"/tmp/project\"}'),
             ('2026-03-27T00:05:00Z', 'claude', 'session-1', 'session_stop', '{\"stop_reason\":\"completed\",\"duration_seconds\":300}');
-        INSERT INTO sessions (session_id, tool, started_at, stopped_at, duration_seconds, stop_reason, event_count)
-        VALUES ('session-1', 'claude', '2026-03-27T00:00:00Z', '2026-03-27T00:05:00Z', 300, 'completed', 2);
+        INSERT INTO sessions (session_id, tool, started_at, stopped_at, duration_seconds, stop_reason, event_count, cwd)
+        VALUES ('session-1', 'claude', '2026-03-27T00:00:00Z', '2026-03-27T00:05:00Z', 300, 'completed', 2, '/tmp/project');
     "
 }
 
@@ -155,6 +156,68 @@ EOF
     [ "$status" -eq 0 ]
     [ -f "$marker" ]
     grep -q "super-secret-token" "$prompt_capture"
+}
+
+@test "analyze-config report includes project breakdown section" {
+    local metrics_dir db_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    create_metrics_db "$db_file"
+
+    run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10
+
+    [ "$status" -eq 0 ]
+    local report_file
+    report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
+    grep -q "Breakdown by Project" "$report_file"
+}
+
+@test "analyze-config --project filters by project basename" {
+    local metrics_dir db_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    mkdir -p "$(dirname "$db_file")"
+    sqlite3 "$db_file" "
+        CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL UNIQUE,
+            tool TEXT NOT NULL,
+            started_at TEXT,
+            stopped_at TEXT,
+            duration_seconds INTEGER,
+            stop_reason TEXT,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            test_loop_count INTEGER NOT NULL DEFAULT 0,
+            clarification_count INTEGER NOT NULL DEFAULT 0,
+            denial_count INTEGER NOT NULL DEFAULT 0,
+            cwd TEXT
+        );
+        INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES
+            ('2026-03-27T00:00:00Z', 'claude', 'session-a', 'session_start', '{\"cwd\":\"/home/user/app-a\"}'),
+            ('2026-03-27T01:00:00Z', 'claude', 'session-b', 'session_start', '{\"cwd\":\"/home/user/app-b\"}');
+        INSERT INTO sessions (session_id, tool, started_at, event_count, cwd) VALUES
+            ('session-a', 'claude', '2026-03-27T00:00:00Z', 5, '/home/user/app-a'),
+            ('session-b', 'claude', '2026-03-27T01:00:00Z', 3, '/home/user/app-b');
+    "
+
+    run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10 --project app-a
+
+    [ "$status" -eq 0 ]
+    local report_file
+    report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
+    grep -q "project: app-a" "$report_file"
 }
 
 @test "analyze-trigger is disabled by default" {

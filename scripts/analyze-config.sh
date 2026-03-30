@@ -1,6 +1,6 @@
 #!/bin/bash
 # Config analyzer: gather metrics and optionally invoke Claude for tuning suggestions
-# Usage: analyze-config.sh [--sessions N] [--llm] [--include-settings] [--auto]
+# Usage: analyze-config.sh [--sessions N] [--project NAME] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
 
@@ -10,6 +10,7 @@ SESSIONS=50
 USE_LLM=0
 INCLUDE_SETTINGS=0
 AUTO_MODE=0
+PROJECT_FILTER=""
 
 # Plugin root (script lives in scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +33,10 @@ while [ $# -gt 0 ]; do
 	--auto)
 		AUTO_MODE=1
 		shift
+		;;
+	--project)
+		PROJECT_FILTER="$2"
+		shift 2
 		;;
 	*) shift ;;
 	esac
@@ -64,6 +69,20 @@ if [ ! -f "$DB_FILE" ]; then
 	exit 1
 fi
 
+# Build the session-filter subquery used by all metric queries.
+# When --project is set, restrict to sessions whose cwd basename matches.
+session_filter_subquery() {
+	local sql="SELECT session_id FROM sessions WHERE started_at IS NOT NULL"
+	if [ -n "$PROJECT_FILTER" ]; then
+		local escaped
+		escaped=$(printf '%s' "$PROJECT_FILTER" | sed "s/'/''/g")
+		# basename(cwd): strip trailing slash, then extract text after last '/'
+		sql="$sql AND REPLACE(RTRIM(cwd,'/'), RTRIM(RTRIM(cwd,'/'), REPLACE(RTRIM(cwd,'/'),'/','')),'') = '${escaped}'"
+	fi
+	sql="$sql ORDER BY started_at DESC LIMIT $SESSIONS"
+	printf '%s' "$sql"
+}
+
 # --- SQL Queries ---
 
 query_tool_failures() {
@@ -75,9 +94,7 @@ query_tool_failures() {
         FROM events
         WHERE event_type IN ('tool_failure', 'command_failure')
           AND session_id IN (
-              SELECT DISTINCT session_id FROM events
-              WHERE event_type = 'session_start'
-              ORDER BY ts DESC LIMIT $SESSIONS
+              $(session_filter_subquery)
           )
         GROUP BY tool_name
         ORDER BY total_failures DESC
@@ -94,9 +111,7 @@ query_permission_denials() {
         FROM events
         WHERE event_type = 'permission_denied'
           AND session_id IN (
-              SELECT DISTINCT session_id FROM events
-              WHERE event_type = 'session_start'
-              ORDER BY ts DESC LIMIT $SESSIONS
+              $(session_filter_subquery)
           )
         GROUP BY tool_name
         ORDER BY denial_count DESC;
@@ -113,9 +128,7 @@ query_test_loops() {
         FROM events
         WHERE event_type = 'test_failure_loop'
           AND session_id IN (
-              SELECT DISTINCT session_id FROM events
-              WHERE event_type = 'session_start'
-              ORDER BY ts DESC LIMIT $SESSIONS
+              $(session_filter_subquery)
           )
         GROUP BY session_id
         ORDER BY max_failures DESC
@@ -128,15 +141,11 @@ query_clarifying_questions() {
         SELECT
             COUNT(*) as total_clarifications,
             COUNT(DISTINCT session_id) as sessions_with_clarification,
-            (SELECT COUNT(DISTINCT session_id) FROM events
-             WHERE event_type = 'session_start'
-             ORDER BY ts DESC LIMIT $SESSIONS) as total_sessions
+            (SELECT COUNT(*) FROM ($(session_filter_subquery))) as total_sessions
         FROM events
         WHERE event_type = 'clarifying_question'
           AND session_id IN (
-              SELECT DISTINCT session_id FROM events
-              WHERE event_type = 'session_start'
-              ORDER BY ts DESC LIMIT $SESSIONS
+              $(session_filter_subquery)
           );
     " 2>/dev/null || echo "(no data)"
 }
@@ -150,9 +159,7 @@ query_session_outcomes() {
             ROUND(MAX(duration_seconds), 0) as max_duration_s
         FROM sessions
         WHERE session_id IN (
-            SELECT DISTINCT session_id FROM events
-            WHERE event_type = 'session_start'
-            ORDER BY ts DESC LIMIT $SESSIONS
+            $(session_filter_subquery)
         )
         AND stop_reason IS NOT NULL
         GROUP BY stop_reason
@@ -171,14 +178,43 @@ query_overview() {
             SUM(clarification_count) as clarifications,
             SUM(denial_count) as denials
         FROM sessions
+        WHERE session_id IN (
+            $(session_filter_subquery)
+        )
         GROUP BY tool
         ORDER BY sessions DESC;
     " 2>/dev/null || echo "(no data)"
 }
 
+query_project_breakdown() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            REPLACE(RTRIM(cwd,'/'), RTRIM(RTRIM(cwd,'/'), REPLACE(RTRIM(cwd,'/'),'/','')),'') as project,
+            COUNT(DISTINCT session_id) as sessions,
+            SUM(event_count) as total_events,
+            SUM(failure_count) as failures,
+            SUM(test_loop_count) as test_loops,
+            SUM(clarification_count) as clarifications,
+            SUM(denial_count) as denials,
+            ROUND(AVG(duration_seconds), 0) as avg_duration_s
+        FROM sessions
+        WHERE cwd IS NOT NULL
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY project
+        ORDER BY sessions DESC
+        LIMIT 20;
+    " 2>/dev/null || echo "(no data)"
+}
+
 # --- Gather Data ---
 
-echo "Gathering metrics from last $SESSIONS sessions..."
+if [ -n "$PROJECT_FILTER" ]; then
+	echo "Gathering metrics from last $SESSIONS sessions (project: $PROJECT_FILTER)..."
+else
+	echo "Gathering metrics from last $SESSIONS sessions..."
+fi
 
 echo "  -> Querying overview by tool..."
 OVERVIEW=$(query_overview)
@@ -192,6 +228,8 @@ echo "  -> Querying clarifying question patterns..."
 CLARIFYING_QUESTIONS=$(query_clarifying_questions)
 echo "  -> Querying session outcomes..."
 SESSION_OUTCOMES=$(query_session_outcomes)
+echo "  -> Querying project breakdown..."
+PROJECT_BREAKDOWN=$(query_project_breakdown)
 echo "  All metrics gathered."
 
 # Generate output filename with collision handling
@@ -207,12 +245,19 @@ while [ -f "$output_file" ]; do
 done
 
 write_raw_report() {
+	local header="# Config Metrics Report (raw) — $(date +%Y-%m-%d)"
+	if [ -n "$PROJECT_FILTER" ]; then
+		header="$header (project: $PROJECT_FILTER)"
+	fi
 	cat >"$output_file" <<EOF
-# Config Metrics Report (raw) — $(date +%Y-%m-%d)
+$header
 Last $SESSIONS sessions analyzed.
 
 ## Overview by Tool
 $OVERVIEW
+
+## Breakdown by Project
+$PROJECT_BREAKDOWN
 
 ## Tool Failure Rates
 $TOOL_FAILURES
@@ -275,10 +320,13 @@ Claude Code settings live in:
 - Custom slash commands: ~/.claude/commands/*.md or .claude/commands/*.md
 - Hooks: registered in settings.json under the 'hooks' key
 
-## Metrics Summary (last $SESSIONS sessions)
+## Metrics Summary (last $SESSIONS sessions$([ -n "$PROJECT_FILTER" ] && echo ", project: $PROJECT_FILTER"))
 
 ### Overview by Tool
 $OVERVIEW
+
+### Breakdown by Project
+$PROJECT_BREAKDOWN
 
 ### Tool Failure Rates
 $TOOL_FAILURES
