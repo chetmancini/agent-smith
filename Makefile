@@ -4,7 +4,6 @@ SHELL := /bin/bash
 
 BATS ?= bats
 AGENT_CLI ?=
-CLAUDE ?= claude
 MARKDOWNLINT ?= markdownlint
 SHELLCHECK ?= shellcheck
 SHFMT ?= shfmt
@@ -13,7 +12,7 @@ TOOL ?=
 HELP_ASCII ?= 1
 HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
-CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),$(CLAUDE))
+CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),claude)
 CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 
@@ -53,7 +52,6 @@ help:
 		printf '  \033[2mHELP_ASCII\033[0m=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
 		printf '  \033[2mAGENT_CLI\033[0m=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
 		printf '  \033[2mHELP_HEADER\033[0m=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
-		printf '  \033[2mCLAUDE\033[0m=%s %s\n' "$(CLAUDE)" "(legacy Claude override, still supported)"; \
 	else \
 		if [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
 			cat "$(HELP_HEADER)"; \
@@ -85,7 +83,6 @@ help:
 		printf '  HELP_ASCII=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
 		printf '  AGENT_CLI=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
 		printf '  HELP_HEADER=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
-		printf '  CLAUDE=%s %s\n' "$(CLAUDE)" "(legacy Claude override, still supported)"; \
 	fi
 
 test:
@@ -117,13 +114,13 @@ validate-agent-config:
 	"$(SHELL)" scripts/validate-agent-config.sh $(TOOL_ARG) --refresh
 
 agent-analyze:
-	AGENT_CLI="$(AGENT_CLI)" CLAUDE="$(CLAUDE)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh analyze-config $(TOOL_ARG)
+	AGENT_CLI="$(AGENT_CLI)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh analyze-config $(TOOL_ARG)
 
 agent-validate-schemas:
-	AGENT_CLI="$(AGENT_CLI)" CLAUDE="$(CLAUDE)" AGENT_SMITH_TOOL="$(TOOL)" "$(SHELL)" scripts/run-agent-skill.sh validate-schemas $(TOOL_ARG)
+	AGENT_CLI="$(AGENT_CLI)" AGENT_SMITH_TOOL="$(TOOL)" "$(SHELL)" scripts/run-agent-skill.sh validate-schemas $(TOOL_ARG)
 
 agent-loop:
-	AGENT_CLI="$(AGENT_CLI)" CLAUDE="$(CLAUDE)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh loop $(TOOL_ARG)
+	AGENT_CLI="$(AGENT_CLI)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh loop $(TOOL_ARG)
 
 claude-analyze:
 	@$(MAKE) agent-analyze TOOL=claude AGENT_CLI="$(CLAUDE_CLI)" SESSIONS="$(SESSIONS)"

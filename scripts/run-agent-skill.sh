@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/lib/agent-tool.sh"
 MODE="${1:-}"
 TOOL=""
 AGENT_CLI_BIN="${AGENT_CLI:-}"
-CLAUDE_BIN="${CLAUDE:-claude}"
 SESSIONS="${SESSIONS:-50}"
 
 usage() {
@@ -71,7 +70,7 @@ esac
 
 case "${TOOL}" in
 claude)
-	AGENT_BIN="${AGENT_CLI_BIN:-${CLAUDE_BIN}}"
+	AGENT_BIN="${AGENT_CLI_BIN:-claude}"
 	;;
 codex)
 	AGENT_BIN="${AGENT_CLI_BIN:-codex}"
