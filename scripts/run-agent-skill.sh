@@ -15,7 +15,7 @@ SESSIONS="${SESSIONS:-50}"
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|loop> [--tool claude|codex]
+Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|loop> [--tool claude|codex|opencode]
 EOF
 }
 
@@ -76,6 +76,9 @@ claude)
 codex)
 	AGENT_BIN="${AGENT_CLI_BIN:-codex}"
 	;;
+opencode)
+	AGENT_BIN="${AGENT_CLI_BIN:-opencode}"
+	;;
 *)
 	echo "Error: unsupported tool '${TOOL}'" >&2
 	exit 1
@@ -95,5 +98,9 @@ claude)
 codex)
 	# Codex loads the local plugin manifest from the repo itself, so run in repo context.
 	exec "${AGENT_BIN}" exec -C "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
+	;;
+opencode)
+	# OpenCode uses `run` for one-shot execution with --dir to set the working directory.
+	exec "${AGENT_BIN}" run --dir "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
 	;;
 esac

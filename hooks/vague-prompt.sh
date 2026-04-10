@@ -68,17 +68,24 @@ if [ "$is_vague" -eq 1 ]; then
 	# side-channel so stderr noise cannot corrupt the hook payload.
 	metrics_on_clarifying_question "$trimmed" >/dev/null 2>&1 || true
 
-	if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ]; then
+	case "${AGENT_SMITH_TOOL:-claude}" in
+	codex)
 		jq -nc --arg note "$note" '{
 			hookSpecificOutput: {
 				hookEventName: "UserPromptSubmit",
 				additionalContext: $note
 			}
 		}'
-	else
+		;;
+	opencode)
+		# OpenCode expects plain text on stdout, similar to Claude Code
+		printf '\n%s\n' "$note"
+		;;
+	*)
 		# Append context to the user message (stdout is injected by Claude Code)
 		printf '\n%s\n' "$note"
-	fi
+		;;
+	esac
 fi
 
 exit 0

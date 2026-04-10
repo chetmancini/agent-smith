@@ -1,6 +1,6 @@
 #!/bin/bash
 # Config analyzer: gather metrics and optionally invoke Claude for tuning suggestions
-# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex] [--llm] [--include-settings] [--auto]
+# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
 
@@ -25,7 +25,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex] [--llm] [--include-settings] [--auto]
+Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
 
 Generate a local Agent Smith metrics report, optionally followed by Claude-backed recommendations.
 EOF
@@ -139,6 +139,13 @@ read_redacted_settings_snapshot() {
 	codex)
 		if [ -f "${HOME}/.codex/config.toml" ]; then
 			redact_settings_toml "${HOME}/.codex/config.toml"
+			return $?
+		fi
+		return 1
+		;;
+	opencode)
+		if [ -f "${HOME}/.config/opencode/opencode.json" ]; then
+			redact_settings_json "${HOME}/.config/opencode/opencode.json"
 			return $?
 		fi
 		return 1
@@ -505,6 +512,30 @@ Use these mappings when suggesting changes:
 - Do not suggest Claude-specific settings or hook changes when the filtered tool is codex
 EOF
 	)
+elif [ "$TOOL_FILTER" = "opencode" ]; then
+	CONFIG_SECTION_TITLE="OpenCode Configuration"
+	CONFIG_LOCATIONS=$(
+		cat <<'EOF'
+OpenCode settings live in:
+- Global user settings: ~/.config/opencode/opencode.json
+- Global instructions: ~/.config/opencode/instructions.md
+- Project-level instructions: instructions.md (per repo)
+- Custom agents: opencode.json (agent key with mode, description, prompt)
+- Plugins: ~/.config/opencode/plugins/ (TypeScript plugin files)
+EOF
+	)
+	CONFIG_FILE_MAPPING=$(
+		cat <<'EOF'
+Use these mappings when suggesting changes:
+- Permission friction -> opencode.json (permission key: read, edit, bash, etc.)
+- Prompt/instruction issues -> instructions.md (global or project-level), agent prompts in opencode.json
+- Model/effort issues -> opencode.json (model, small_model)
+- High session costs -> model selection, prompt optimization, compaction settings
+- Frequent compressions -> opencode.json (compaction key: auto, prune, reserved)
+- Plugin behavior -> ~/.config/opencode/plugins/ TypeScript files
+- Do not suggest Claude-specific or Codex-specific settings when the filtered tool is opencode
+EOF
+	)
 fi
 
 if [ "$INCLUDE_SETTINGS" -eq 1 ]; then
@@ -519,6 +550,8 @@ $SETTINGS_EXCERPT
 	else
 		if [ "$TOOL_FILTER" = "codex" ]; then
 			SETTINGS_CONTEXT="Codex settings snapshot omitted because ~/.codex/config.toml is unavailable. Suggest Codex changes from metrics only and do not infer from Claude settings."
+		elif [ "$TOOL_FILTER" = "opencode" ]; then
+			SETTINGS_CONTEXT="OpenCode settings snapshot omitted because ~/.config/opencode/opencode.json is unavailable. Suggest OpenCode changes from metrics only and do not infer from Claude or Codex settings."
 		else
 			SETTINGS_CONTEXT="Settings snapshot omitted. Suggest any settings changes from metrics only and note when local inspection is required."
 		fi

@@ -205,6 +205,28 @@ expected_session_id() {
     assert_output "/tmp/codex-project"
 }
 
+@test "session-start accepts OpenCode payload fields and tags the event as opencode" {
+    local session_hint="opencode-session-123"
+    local transcript="$TEST_TMPDIR/opencode-transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    printf '{"cwd":"/tmp/opencode-project","session_id":"%s","transcript_path":"%s"}' \
+        "$session_hint" "$transcript" | \
+        env AGENT_SMITH_TOOL=opencode \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    run jq -r '.tool' "$METRICS_FILE"
+    assert_output "opencode"
+
+    run jq -r '.session_id' "$METRICS_FILE"
+    assert_output "$expected_sid"
+
+    run jq -r '.metadata.cwd' "$METRICS_FILE"
+    assert_output "/tmp/opencode-project"
+}
+
 @test "session-stop can use a Codex-specific default stop reason" {
     printf '{"session_id":"codex-stop-1","transcript_path":""}' | \
         env AGENT_SMITH_TOOL=codex \
@@ -214,6 +236,45 @@ expected_session_id() {
 
     run jq -r '.metadata.stop_reason' "$METRICS_FILE"
     assert_output "turn_complete"
+}
+
+@test "session-stop can use an OpenCode-specific default stop reason" {
+    printf '{"session_id":"opencode-stop-1","transcript_path":""}' | \
+        env AGENT_SMITH_TOOL=opencode \
+        AGENT_SMITH_DEFAULT_STOP_REASON=turn_complete \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-stop.sh"
+
+    run jq -r '.metadata.stop_reason' "$METRICS_FILE"
+    assert_output "turn_complete"
+}
+
+@test "vague-prompt emits plain text for OpenCode and logs an opencode event" {
+    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=opencode METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
+    assert_success
+    local hook_output="$output"
+
+    # OpenCode gets plain text, not JSON
+    [[ "$hook_output" == *"brief and may be ambiguous"* ]]
+    # Should NOT be JSON formatted like Codex
+    ! jq -e '.hookSpecificOutput' <<<"$hook_output" 2>/dev/null || true
+
+    run jq -r '.tool' "$METRICS_FILE"
+    assert_output "opencode"
+}
+
+@test "tool-failure detects OpenCode Bash failures from post-tool-use payloads" {
+    printf '{"tool_name":"Bash","tool_input":{"command":"npm test"},"tool_response":{"exit_code":1,"stderr":"boom"}}' | \
+        env AGENT_SMITH_TOOL=opencode \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+    [ "$event_types" = $'tool_failure\ncommand_failure' ]
+
+    run jq -r 'select(.event_type == "tool_failure") | .tool' "$METRICS_FILE"
+    assert_output "opencode"
 }
 
 @test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {

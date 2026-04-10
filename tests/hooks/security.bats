@@ -190,6 +190,62 @@ EOF
     grep -q 'model = "gpt-5.4"' "$prompt_capture"
 }
 
+@test "opencode llm analysis redacts JSON secrets before sending settings" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+
+    create_metrics_db "$db_file"
+    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    mkdir -p "$home_dir/.config/opencode"
+    cat > "$home_dir/.config/opencode/opencode.json" <<'EOF'
+{
+  "model": "anthropic/claude-sonnet-4-6",
+  "apiKey": "super-secret-token",
+  "access_token": "another-secret"
+}
+EOF
+
+    run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --include-settings --sessions 1 --tool opencode
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    ! grep -q "super-secret-token" "$prompt_capture"
+    ! grep -q "another-secret" "$prompt_capture"
+    grep -q '"apiKey": "\[REDACTED\]"' "$prompt_capture"
+    grep -q '"access_token": "\[REDACTED\]"' "$prompt_capture"
+    grep -q '"model": "anthropic/claude-sonnet-4-6"' "$prompt_capture"
+}
+
+@test "opencode llm analysis does not fall back to Claude settings when OpenCode config is missing" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+
+    create_metrics_db "$db_file"
+    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    mkdir -p "$home_dir/.claude"
+    printf '{"apiKey":"claude-secret","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
+
+    run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --include-settings --sessions 1 --tool opencode
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    ! grep -q "claude-secret" "$prompt_capture"
+    ! grep -q '"model": "sonnet"' "$prompt_capture"
+    grep -q "OpenCode settings snapshot omitted because ~/.config/opencode/opencode.json is unavailable" "$prompt_capture"
+}
+
 @test "codex llm analysis does not fall back to Claude settings when Codex config is missing" {
     local metrics_dir db_file fakebin marker prompt_capture home_dir
     metrics_dir="$TEST_TMPDIR/metrics"

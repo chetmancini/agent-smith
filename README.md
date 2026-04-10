@@ -6,16 +6,16 @@
 >
 > ![Agent Smith poster](https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde)
 
-A self-tuning feedback loop plugin for Claude Code and Codex. Collects session
-metrics, analyzes patterns, and produces tuning recommendations to continuously
-improve agent reliability and autonomy.
+A self-tuning feedback loop plugin for Claude Code, Codex, and OpenCode.
+Collects session metrics, analyzes patterns, and produces tuning
+recommendations to continuously improve agent reliability and autonomy.
 
-Codex support is available now, but it does not yet cover as many features as
-the Claude Code plugin. The limiting factor is the current Codex hook surface:
-it exposes fewer event types, so some Agent Smith signals remain Claude-only
-for now. Metrics are tagged by initiating agent, and analysis should stay
-scoped to that agent so Claude findings do not drive Codex config changes or
-vice versa.
+Codex and OpenCode support is available now, but neither yet covers as many
+features as the Claude Code plugin. The limiting factor is the current hook
+surface of each tool: they expose fewer event types, so some Agent Smith
+signals remain Claude-only for now. Metrics are tagged by initiating agent,
+and analysis should stay scoped to that agent so findings from one tool do not
+drive config changes for another.
 
 ## How It Works
 
@@ -75,18 +75,33 @@ Codex support is intentionally narrower than Claude Code support today. The
 plugin is available and usable in Codex, but some metrics and automations still
 depend on Claude-specific hook events that Codex does not currently expose.
 
-Agent Smith now keeps both plugin manifests side by side:
+### OpenCode
+
+OpenCode uses a TypeScript plugin system. Install Agent Smith by pointing your
+`opencode.json` plugin array at this repo, or symlink the
+[`.opencode-plugin/`](.opencode-plugin/) directory where OpenCode can discover it.
+OpenCode also provides a hook registration file at
+[`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json).
+
+OpenCode support is similar in scope to Codex: session lifecycle, Bash failure
+tracking, vague prompt guidance, schema validation, rollup, and analysis are
+all available. Some Claude-only signals (PermissionRequest, PostCompact) are
+not yet exposed by OpenCode's hook surface.
+
+Agent Smith keeps all three plugin manifests side by side:
 
 - Claude Code: [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)
 - Codex: [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json)
+- OpenCode: [`.opencode-plugin/plugin.json`](.opencode-plugin/plugin.json)
 
-Claude keeps its existing hook registration at [`hooks/hooks.json`](hooks/hooks.json). Codex uses the root-level [`hooks.json`](hooks.json).
+Claude keeps its existing hook registration at [`hooks/hooks.json`](hooks/hooks.json). Codex uses the root-level [`hooks.json`](hooks.json). OpenCode uses [`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json).
 
 ## Support Matrix
 
 - Claude Code: full support for session lifecycle, tool failures, permission denials, vague prompts, context compression, edit-triggered test-loop detection, rollup, and analysis.
 - Codex: available now, with support for session lifecycle, Bash failure tracking, vague prompt guidance, rollup, and analysis through the Codex plugin manifest and hook shims.
-- Codex limitations: the current Codex hook surface does not expose direct equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals, so permission-denial metrics, context-compression metrics, and edit-triggered test-loop detection remain Claude-only for now.
+- OpenCode: available now, with support for session lifecycle, Bash failure tracking, vague prompt guidance, schema validation, rollup, and analysis through the OpenCode plugin manifest and hook shims.
+- Codex/OpenCode limitations: the current hook surfaces of Codex and OpenCode do not expose direct equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals, so permission-denial metrics, context-compression metrics, and edit-triggered test-loop detection remain Claude-only for now.
 
 ## What Gets Collected
 
@@ -144,7 +159,7 @@ analysis can still reason about your current configuration.
 
 ### Schema validation
 
-The plugin includes a `validate-schemas` skill that refreshes the initiating agent's schema cache and validates that agent's installed config files only. Claude validates Claude config, and Codex validates Codex config, unless you explicitly ask for a cross-agent check.
+The plugin includes a `validate-schemas` skill that refreshes the initiating agent's schema cache and validates that agent's installed config files only. Claude validates Claude config, Codex validates Codex config, and OpenCode validates OpenCode config, unless you explicitly ask for a cross-agent check.
 
 If you want the local helper scripts directly, they follow the same rule:
 
@@ -190,6 +205,7 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 - **sqlite3** — Database queries (ships with macOS)
 - **claude** CLI — Optional, required for `--llm` analysis and Claude-specific `make` helper aliases
 - **codex** CLI — Optional, required for Codex-specific `make` helper aliases
+- **opencode** CLI — Optional, required for OpenCode-specific `make` helper aliases
 
 ## Plugin Structure
 
@@ -197,6 +213,7 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 agent-smith/
 ├── .claude-plugin/plugin.json    # Claude Code manifest
 ├── .codex-plugin/plugin.json     # Codex manifest
+├── .opencode-plugin/plugin.json  # OpenCode manifest
 ├── hooks.json                    # Codex hook registration
 ├── assets/
 │   └── agent-smith.svg           # Codex plugin icon
@@ -258,7 +275,7 @@ make lint
 
 ## Plugin Entrypoints
 
-The primary interface is the plugin skill itself: ask your installed agent to use `validate-schemas` or `analyze-config`. Agent Smith keeps those workflows scoped to the initiating agent so users do not have to pass tool flags around or see config families they do not have installed.
+The primary interface is the plugin skill itself: ask your installed agent (Claude Code, Codex, or OpenCode) to use `validate-schemas` or `analyze-config`. Agent Smith keeps those workflows scoped to the initiating agent so users do not have to pass tool flags around or see config families they do not have installed.
 
 ## Local Helpers
 
@@ -272,20 +289,23 @@ make validate-agent-config
 
 ## Agent Dev Helpers
 
-The Makefile exposes generic agent helpers plus explicit Claude and Codex aliases:
+The Makefile exposes generic agent helpers plus explicit Claude, Codex, and OpenCode aliases:
 
 ```bash
-# Run the analyze-config skill through either agent
+# Run the analyze-config skill through any agent
 make agent-analyze TOOL=claude
 make agent-analyze TOOL=codex
+make agent-analyze TOOL=opencode
 
-# Run the validate-schemas skill through either agent
+# Run the validate-schemas skill through any agent
 make agent-validate-schemas TOOL=claude
 make agent-validate-schemas TOOL=codex
+make agent-validate-schemas TOOL=opencode
 
 # Run validate-schemas, then analyze-config, as one loop
 make agent-loop TOOL=claude
 make agent-loop TOOL=codex
+make agent-loop TOOL=opencode
 
 # Ergonomic aliases
 make claude-analyze
@@ -294,9 +314,12 @@ make claude-loop
 make codex-analyze
 make codex-validate-schemas
 make codex-loop
+make opencode-analyze
+make opencode-validate-schemas
+make opencode-loop
 ```
 
-`TOOL=claude` and `TOOL=codex` are the accepted values anywhere this repo exposes a tool selector, including:
+`TOOL=claude`, `TOOL=codex`, and `TOOL=opencode` are the accepted values anywhere this repo exposes a tool selector, including:
 
 - `make refresh-schemas TOOL=...`
 - `make validate-agent-config TOOL=...`

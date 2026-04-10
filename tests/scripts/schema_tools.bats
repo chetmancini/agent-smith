@@ -104,6 +104,53 @@ EOF
     [[ "$output" == *"Available top-level schema keys not set: sandbox_mode"* ]]
 }
 
+@test "refresh-schemas auto-detects OpenCode from installed config" {
+    local fakebin home_dir
+    fakebin="$TEST_TMPDIR/fakebin"
+    home_dir="$TEST_TMPDIR/home"
+
+    mkdir -p "$home_dir/.config/opencode"
+    printf '{"model":"anthropic/claude-sonnet-4-6"}\n' > "$home_dir/.config/opencode/opencode.json"
+    create_fake_curl "$fakebin" "https://opencode.ai/config.json" '{"type":"object","properties":{"model":{"type":"string"}}}'
+
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+
+    [ "$status" -eq 0 ]
+    [ -f "$home_dir/.config/agent-smith/schemas/opencode-config.schema.json" ]
+    [[ "$output" == *"Refreshed OpenCode schema"* ]]
+}
+
+@test "validate-agent-config parses OpenCode JSON config and reports schema diff" {
+    local home_dir schema_dir
+    home_dir="$TEST_TMPDIR/home"
+    schema_dir="$home_dir/.config/agent-smith/schemas"
+
+    mkdir -p "$home_dir/.config/opencode" "$schema_dir"
+    cat > "$home_dir/.config/opencode/opencode.json" <<'EOF'
+{
+  "model": "anthropic/claude-sonnet-4-6",
+  "small_model": "anthropic/claude-haiku-4-5"
+}
+EOF
+    cat > "$schema_dir/opencode-config.schema.json" <<'EOF'
+{
+  "type": "object",
+  "properties": {
+    "model": { "type": "string" },
+    "small_model": { "type": "string" },
+    "compaction": { "type": "object" }
+  }
+}
+EOF
+
+    run env HOME="$home_dir" PATH="$PATH" bash "$PROJECT_ROOT/scripts/validate-agent-config.sh"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Tool: OpenCode"* ]]
+    [[ "$output" == *"Parse: valid json"* ]]
+    [[ "$output" == *"Available top-level schema keys not set: compaction"* ]]
+}
+
 @test "validate-agent-config parses Claude settings files" {
     local home_dir schema_dir project_dir
     home_dir="$TEST_TMPDIR/home"

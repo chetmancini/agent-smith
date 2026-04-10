@@ -1,22 +1,22 @@
 ---
 name: analyze-config
-description: Analyze Agent Smith session metrics and produce tuning recommendations for Claude Code or Codex. Use when asked to analyze metrics, tune config, review agent performance, generate a performance report, or optimize agent settings.
+description: Analyze Agent Smith session metrics and produce tuning recommendations for Claude Code, Codex, or OpenCode. Use when asked to analyze metrics, tune config, review agent performance, generate a performance report, or optimize agent settings.
 ---
 
 # Analyze Config
 
-Analyze session metrics and produce tuning recommendations for Claude Code or Codex configuration.
+Analyze session metrics and produce tuning recommendations for Claude Code, Codex, or OpenCode configuration.
 
 ## Resolve Agent Smith Root
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/analyze-config.sh` plus either `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`, use the current repo root.
+- If the current repo already contains `scripts/analyze-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `.opencode-plugin/plugin.json`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 ## Process
 
-1. **Resolve the initiating agent**: use `claude` when running inside Claude Code and `codex` when running inside Codex. Do not mix them unless the user explicitly asks for a cross-agent report.
+1. **Resolve the initiating agent**: use `claude` when running inside Claude Code, `codex` when running inside Codex, and `opencode` when running inside OpenCode. Do not mix them unless the user explicitly asks for a cross-agent report.
 2. **Run rollup**: Execute `bash "${AGENT_SMITH_ROOT}/scripts/metrics-rollup.sh"` to ensure the SQLite database at `~/.config/agent-smith/rollup.db` is current
 3. **Run local analysis first**: Execute `bash "${AGENT_SMITH_ROOT}/scripts/analyze-config.sh" --sessions 50 --tool <initiating-agent>` (adjust session count as needed)
 4. **Read the report**: Read the generated report from `~/.config/agent-smith/reports/`

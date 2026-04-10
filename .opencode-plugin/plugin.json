@@ -17,32 +17,17 @@
     "analysis",
     "schema-validation",
     "feedback-loop",
-    "codex",
-    "claude-code"
+    "opencode",
+    "claude-code",
+    "codex"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks.json",
   "interface": {
     "displayName": "Agent Smith",
     "shortDescription": "Local session telemetry and tuning loop for coding agents",
     "longDescription": "Collect local session metrics, roll them up into a queryable SQLite database, and generate tuning recommendations so Claude Code, Codex, and OpenCode can be maintained side by side with one shared feedback loop.",
     "developerName": "Chet Mancini",
     "category": "Coding",
-    "capabilities": [
-      "Interactive",
-      "Read",
-      "Write"
-    ],
-    "websiteURL": "https://github.com/chetmancini/agent-smith",
-    "privacyPolicyURL": "https://github.com/chetmancini/agent-smith",
-    "defaultPrompt": [
-      "Analyze my recent agent metrics and suggest the highest-value tuning changes",
-      "Validate my current Codex config against the latest schema",
-      "Summarize where my agent sessions are failing or asking for clarification"
-    ],
-    "brandColor": "#16A34A",
-    "composerIcon": "./assets/agent-smith.svg",
-    "logo": "./assets/agent-smith.svg",
-    "screenshots": []
+    "websiteURL": "https://github.com/chetmancini/agent-smith"
   }
 }

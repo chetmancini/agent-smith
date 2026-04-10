@@ -52,6 +52,19 @@ EOF
     [[ "$output" == *"25 sessions"* ]]
 }
 
+@test "run-agent-skill dispatches OpenCode via opencode run with dir" {
+    local fakebin
+    fakebin="$TEST_TMPDIR/fakebin"
+    create_fake_agent "$fakebin" fake-opencode
+
+    run env PATH="$fakebin:$PATH" AGENT_CLI=fake-opencode SESSIONS=30 \
+        bash "$PROJECT_ROOT/scripts/run-agent-skill.sh" validate-schemas --tool opencode
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == run\ --dir\ "$PROJECT_ROOT"* ]]
+    [[ "$output" == *"validate the current opencode configuration files only"* ]]
+}
+
 @test "run-claude-skill wrapper forwards to the generic helper" {
     local fakebin
     fakebin="$TEST_TMPDIR/fakebin"

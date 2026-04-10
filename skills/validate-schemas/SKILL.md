@@ -22,12 +22,12 @@ Refresh the active agent's schema cache, validate that agent's installed config 
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/refresh-schemas.sh` and `scripts/validate-agent-config.sh` plus either `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`, use the current repo root.
+- If the current repo already contains `scripts/refresh-schemas.sh` and `scripts/validate-agent-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `.opencode-plugin/plugin.json`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 Resolve the initiating agent:
 
-- Use `claude` when running inside Claude Code and `codex` when running inside Codex.
+- Use `claude` when running inside Claude Code, `codex` when running inside Codex, and `opencode` when running inside OpenCode.
 - Unless the user explicitly asks for cross-agent validation, only inspect the initiating agent's config family.
 - Export `AGENT_SMITH_TOOL=<initiating-agent>` before running the helper scripts so they do not guess when both tools are installed.
 

@@ -13,7 +13,7 @@ input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
 
-if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ]; then
+if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ]; then
 	exit_code=$(echo "$input" | jq -r '
 		if (.tool_response | type) == "object" then
 			(.tool_response.exit_code // .tool_response.exitCode // .tool_response.status // 0)

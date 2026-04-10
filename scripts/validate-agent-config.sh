@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: validate-agent-config.sh [--tool claude|codex] [--refresh]
+Usage: validate-agent-config.sh [--tool claude|codex|opencode] [--refresh]
 
 Validate the active agent's installed config files against the cached schema.
 EOF
@@ -70,6 +70,11 @@ EOF
 			printf '%s\n' "${HOME}/.codex/config.toml"
 		fi
 		;;
+	opencode)
+		if [ -f "${HOME}/.config/opencode/opencode.json" ]; then
+			printf '%s\n' "${HOME}/.config/opencode/opencode.json"
+		fi
+		;;
 	esac
 }
 
@@ -93,7 +98,7 @@ while IFS= read -r config_path; do
 	parse_mode="json"
 	ajv_spec="draft7"
 
-	if [ "$TOOL" = "codex" ]; then
+	if [ "$TOOL" = "codex" ] && [[ "$config_path" == *.toml ]]; then
 		parse_mode="toml"
 		ajv_spec="draft2020"
 		tmp_json="$(mktemp "${TMPDIR:-/tmp}/agent-smith-config.XXXXXX.json")"
@@ -191,7 +196,7 @@ else:
     print("Available top-level schema keys not set: none")
 PY
 
-	if [ "$TOOL" = "codex" ]; then
+	if [ "$parse_mode" = "toml" ]; then
 		rm -f "$tmp_json"
 	fi
 done <<EOF
