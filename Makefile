@@ -10,6 +10,8 @@ SHELLCHECK ?= shellcheck
 SHFMT ?= shfmt
 SESSIONS ?= 50
 TOOL ?=
+HELP_ASCII ?= 1
+HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),$(CLAUDE))
 CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
@@ -19,6 +21,11 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
 	   { [ -z "$(NO_COLOR)" ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; }; then \
+		if [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
+			printf '\033[36m'; \
+			cat "$(HELP_HEADER)"; \
+			printf '\033[0m\n'; \
+		fi; \
 		printf '\033[1mAgent Smith Make Targets\033[0m\n\n'; \
 		printf '\033[36mCore\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run the Bats test suite"; \
@@ -39,9 +46,15 @@ help:
 		printf '\n\033[33mVariables\033[0m\n'; \
 		printf '  \033[2mTOOL\033[0m=%s %s\n' "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex)"; \
 		printf '  \033[2mSESSIONS\033[0m=%s %s\n' "$(SESSIONS)" "(used by analyze and loop helpers)"; \
+		printf '  \033[2mHELP_ASCII\033[0m=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
 		printf '  \033[2mAGENT_CLI\033[0m=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
+		printf '  \033[2mHELP_HEADER\033[0m=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
 		printf '  \033[2mCLAUDE\033[0m=%s %s\n' "$(CLAUDE)" "(legacy Claude override, still supported)"; \
 	else \
+		if [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
+			cat "$(HELP_HEADER)"; \
+			printf '\n'; \
+		fi; \
 		printf 'Agent Smith Make Targets\n\n'; \
 		printf 'Core\n'; \
 		printf '  %-30s %s\n' "make test" "Run the Bats test suite"; \
@@ -62,7 +75,9 @@ help:
 		printf '\nVariables\n'; \
 		printf '  TOOL=%s %s\n' "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex)"; \
 		printf '  SESSIONS=%s %s\n' "$(SESSIONS)" "(used by analyze and loop helpers)"; \
+		printf '  HELP_ASCII=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
 		printf '  AGENT_CLI=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
+		printf '  HELP_HEADER=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
 		printf '  CLAUDE=%s %s\n' "$(CLAUDE)" "(legacy Claude override, still supported)"; \
 	fi
 
