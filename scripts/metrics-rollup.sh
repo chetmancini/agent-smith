@@ -194,6 +194,20 @@ if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
 	harden_private_file "$DB_FILE"
 fi # HAVE_NEW_EVENTS
 
+# Keep daily_rollup.session_count accurate even when multiple events for the
+# same bucket come from the same session. Distinct-session counts are easier to
+# recompute from the source events than to maintain incrementally.
+sqlite3 "$DB_FILE" "
+	UPDATE daily_rollup
+	SET session_count = COALESCE((
+		SELECT COUNT(DISTINCT events.session_id)
+		FROM events
+		WHERE substr(events.ts, 1, 10) = daily_rollup.date
+		  AND events.tool = daily_rollup.tool
+		  AND events.event_type = daily_rollup.event_type
+	), 0);
+" 2>/dev/null || true
+
 # --- Session cost calculation from transcripts ---
 # Cost is calculated here (not in hooks) because the Stop hook fires on every
 # turn, and re-parsing the growing transcript each time would be expensive.
