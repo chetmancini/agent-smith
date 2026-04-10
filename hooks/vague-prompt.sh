@@ -64,8 +64,12 @@ fi
 if [ "$is_vague" -eq 1 ]; then
 	note='[System note: The request above is brief and may be ambiguous. Before making changes, ask one short clarifying question to confirm the target file, specific behavior, or desired outcome unless the prior conversation makes intent obvious.]'
 
+	# Codex expects clean JSON on stdout. Keep metrics failures entirely
+	# side-channel so stderr noise cannot corrupt the hook payload.
+	metrics_on_clarifying_question "$trimmed" >/dev/null 2>&1 || true
+
 	if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ]; then
-		jq -n --arg note "$note" '{
+		jq -nc --arg note "$note" '{
 			hookSpecificOutput: {
 				hookEventName: "UserPromptSubmit",
 				additionalContext: $note
@@ -75,8 +79,6 @@ if [ "$is_vague" -eq 1 ]; then
 		# Append context to the user message (stdout is injected by Claude Code)
 		printf '\n%s\n' "$note"
 	fi
-
-	metrics_on_clarifying_question "$trimmed"
 fi
 
 exit 0

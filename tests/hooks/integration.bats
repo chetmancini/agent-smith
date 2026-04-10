@@ -219,15 +219,28 @@ expected_session_id() {
 @test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {
     run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
     assert_success
+    local hook_output="$output"
 
-    run jq -r '.hookSpecificOutput.hookEventName' <<<"$output"
+    run jq -r '.hookSpecificOutput.hookEventName' <<<"$hook_output"
     assert_output "UserPromptSubmit"
 
-    run jq -r '.hookSpecificOutput.additionalContext' <<<"$output"
+    run jq -r '.hookSpecificOutput.additionalContext' <<<"$hook_output"
     [[ "$output" == *"brief and may be ambiguous"* ]]
 
     run jq -r '.tool' "$METRICS_FILE"
     assert_output "codex"
+}
+
+@test "vague-prompt keeps Codex JSON parseable when metrics persistence fails" {
+    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='/dev/null/metrics' bash '$HOOKS_DIR/vague-prompt.sh'"
+    assert_success
+    local hook_output="$output"
+
+    run jq -r '.hookSpecificOutput.hookEventName' <<<"$hook_output"
+    assert_output "UserPromptSubmit"
+
+    run jq -r '.hookSpecificOutput.additionalContext' <<<"$hook_output"
+    [[ "$output" == *"brief and may be ambiguous"* ]]
 }
 
 @test "tool-failure detects Codex Bash failures from post-tool-use payloads" {
