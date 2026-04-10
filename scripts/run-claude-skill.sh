@@ -31,12 +31,12 @@ analyze-config)
 Run the full skill workflow. Use ${SESSIONS} sessions for the analysis unless the local data set is smaller."
 	;;
 validate-schemas)
-	PROMPT="Use the validate-schemas skill from the loaded plugin to validate the available agent configuration files and report new, deprecated, or invalid settings."
+	PROMPT="Use the validate-schemas skill from the loaded plugin to validate the current agent configuration files only and report new, deprecated, or invalid settings."
 	;;
 loop)
 	PROMPT="Use the validate-schemas skill first, then the analyze-config skill from the loaded plugin.
 
-Validate the available agent configuration files, then analyze the latest Agent Smith metrics using ${SESSIONS} sessions. Cross-reference the two results as described in the skills and produce one combined summary with:
+Validate the current agent configuration files only, then analyze the latest Agent Smith metrics using ${SESSIONS} sessions. Cross-reference the two results as described in the skills and produce one combined summary with:
 - validation errors
 - new or deprecated config worth acting on
 - metrics-backed tuning suggestions

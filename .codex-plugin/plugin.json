@@ -37,7 +37,7 @@
     "privacyPolicyURL": "https://github.com/chetmancini/agent-smith",
     "defaultPrompt": [
       "Analyze my recent agent metrics and suggest the highest-value tuning changes",
-      "Validate my Claude Code and Codex configs against the latest schemas",
+      "Validate my current Codex config against the latest schema",
       "Summarize where my agent sessions are failing or asking for clarification"
     ],
     "brandColor": "#16A34A",

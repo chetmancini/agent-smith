@@ -59,10 +59,10 @@ jobs:
           find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
 
       - name: Lint shell scripts
-        run: shellcheck -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh tests/setup_suite.bash
+        run: shellcheck -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 
       - name: Check shell formatting
-        run: shfmt -d hooks/*.sh hooks/lib/*.sh scripts/*.sh tests/setup_suite.bash
+        run: shfmt -d hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 
       - name: Lint Markdown
         run: markdownlint README.md commands/**/*.md skills/**/*.md
@@ -83,4 +83,4 @@ jobs:
           sudo apt-get install -y bats jq sqlite3
 
       - name: Run Bats test suite
-        run: bats --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats
+        run: bats --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats

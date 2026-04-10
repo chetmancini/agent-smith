@@ -133,7 +133,7 @@ bash scripts/analyze-config.sh --sessions 50
 # Generate an LLM-backed report (explicit opt-in)
 bash scripts/analyze-config.sh --llm --sessions 50
 
-# Include your local Claude settings snapshot in the LLM prompt (explicit opt-in)
+# Include the initiating agent's local settings snapshot in the LLM prompt (explicit opt-in)
 bash scripts/analyze-config.sh --llm --include-settings --sessions 50
 ```
 
@@ -144,7 +144,17 @@ analysis can still reason about your current configuration.
 
 ### Schema validation
 
-The plugin includes a `validate-schemas` skill that fetches official JSON schemas and validates your settings files. Claude Code or Codex can invoke it when you ask to validate settings or check schemas.
+The plugin includes a `validate-schemas` skill that refreshes the initiating agent's schema cache and validates that agent's installed config files only. Claude validates Claude config, and Codex validates Codex config, unless you explicitly ask for a cross-agent check.
+
+If you want the local helper scripts directly, they follow the same rule:
+
+```bash
+# Refresh only the installed/current agent schema cache
+bash scripts/refresh-schemas.sh
+
+# Validate only the installed/current agent config files
+bash scripts/validate-agent-config.sh --refresh
+```
 
 ## Configuration
 
@@ -155,7 +165,7 @@ The plugin includes a `validate-schemas` skill that fetches official JSON schema
 | `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis runs |
 | `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` to allow background report generation |
 | `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` to opt into Claude analysis |
-| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include a redacted `~/.claude/settings*.json` snapshot in automatic LLM prompts |
+| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include a redacted snapshot of the initiating agent's local settings in automatic LLM prompts |
 
 ## Data Location
 
@@ -176,6 +186,7 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 ## Prerequisites
 
 - **jq** — JSON processing (ships with Homebrew, `brew install jq`)
+- **python3** — Used for Codex TOML parsing during schema validation
 - **sqlite3** — Database queries (ships with macOS)
 - **claude** CLI — Optional, only required for `--llm` analysis
 
@@ -202,7 +213,10 @@ agent-smith/
 │   └── compact.sh              # Context compression
 ├── scripts/
 │   ├── metrics-rollup.sh         # JSONL → SQLite
-│   └── analyze-config.sh         # Metrics → Report
+│   ├── analyze-config.sh         # Metrics → Report
+│   ├── refresh-schemas.sh        # Refresh current-agent schema cache
+│   ├── validate-agent-config.sh  # Validate current-agent config files
+│   └── lib/agent-tool.sh         # Current-agent detection helpers
 ├── skills/
 │   ├── analyze-config/SKILL.md   # Analysis skill
 │   └── validate-schemas/SKILL.md # Schema validation skill
@@ -217,7 +231,11 @@ agent-smith/
 brew install bats-core
 
 # Run tests
-bats tests/lib/metrics.bats tests/hooks/security.bats
+bats --print-output-on-failure \
+  tests/lib/metrics.bats \
+  tests/hooks/security.bats \
+  tests/hooks/integration.bats \
+  tests/scripts/schema_tools.bats
 ```
 
 Or use the Makefile:
@@ -237,9 +255,23 @@ npm install --global markdownlint-cli
 make lint
 ```
 
-## Claude Entrypoints
+## Plugin Entrypoints
 
-The Makefile exposes direct Claude entrypoints that load this repo as a plugin:
+The primary interface is the plugin skill itself: ask your installed agent to use `validate-schemas` or `analyze-config`. Agent Smith keeps those workflows scoped to the initiating agent so users do not have to pass tool flags around or see config families they do not have installed.
+
+## Local Helpers
+
+The Makefile exposes optional local developer helpers:
+
+```bash
+# Refresh and validate the installed/current agent config locally
+make refresh-schemas
+make validate-agent-config
+```
+
+## Claude Dev Helpers
+
+Claude also gets explicit dev helpers that load this repo as a plugin:
 
 ```bash
 # Run the analyze-config skill through Claude

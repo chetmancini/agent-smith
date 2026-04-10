@@ -1,11 +1,11 @@
 ---
 name: validate-schemas
-description: Validate Claude Code settings against official JSON schemas, surface new features to adopt, and flag deprecated config to remove. Use when asked to validate settings, check schema, update schemas, verify configuration files, or review config for new/deprecated options.
+description: Validate the installed agent config against the latest official schema, surface new features to adopt, and flag deprecated config to remove. Use when asked to validate settings, check schema, update schemas, verify configuration files, or review config for new/deprecated options.
 ---
 
 # Validate Schemas
 
-Fetch official JSON schemas, validate configuration files, discover new features, and flag deprecated config for removal.
+Refresh the active agent's schema cache, validate that agent's installed config files, discover new features, and flag deprecated config for removal.
 
 ## Schema Sources
 
@@ -18,39 +18,57 @@ Fetch official JSON schemas, validate configuration files, discover new features
 
 ## Process
 
-### 1. Identify config files
+### 1. Resolve Agent Smith Root and initiating agent
 
-Check which settings files exist:
-- `~/.claude/settings.json` (global Claude Code settings)
-- `~/.claude/settings.local.json` (local overrides)
-- `.claude/settings.json` (project-level settings, if in a project)
-- Other tool configs if present
+Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-### 2. Fetch the schema
+- If the current repo already contains `scripts/refresh-schemas.sh` and `scripts/validate-agent-config.sh` plus either `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`, use the current repo root.
+- Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
-Use `curl -sL <schema_url>` to download the latest schema. Cache it to `~/.config/agent-smith/schemas/` for offline use.
+Resolve the initiating agent:
+
+- Use `claude` when running inside Claude Code and `codex` when running inside Codex.
+- Unless the user explicitly asks for cross-agent validation, only inspect the initiating agent's config family.
+- Export `AGENT_SMITH_TOOL=<initiating-agent>` before running the helper scripts so they do not guess when both tools are installed.
+
+### 2. Refresh the current agent schema
+
+Use the helper script first. It refreshes only the initiating agent's schema cache and records fetch metadata.
 
 ```bash
-mkdir -p ~/.config/agent-smith/schemas
-curl -sL "https://json.schemastore.org/claude-code-settings.json" \
-  -o ~/.config/agent-smith/schemas/claude-code-settings.schema.json
+AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh"
 ```text
 
-### 3. Validate existing config
+For Codex, run the same command with `AGENT_SMITH_TOOL=codex`.
 
-**With AJV** (preferred, if available):
+### 3. Validate the installed config files
+
+Run the helper script next:
+
+```bash
+AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/validate-agent-config.sh" --refresh
+```text
+
+The helper script:
+
+- validates only the initiating agent's installed config files
+- parses Codex TOML via `python3` before validation
+- uses `ajv` when it is already installed locally
+- otherwise falls back to parse checks plus a schema-diff summary of unknown, deprecated, and currently-unused top-level keys
+
+**With AJV** (preferred, if already installed):
 ```bash
 # Check if ajv is available
-npx ajv --help 2>/dev/null
+ajv --help 2>/dev/null
 
 # Validate Claude Code settings (Draft 7)
-npx ajv validate -s schema.json -d settings.json --spec=draft7
+ajv validate -s schema.json -d settings.json --spec=draft7
 
-# For Draft 2020-12 schemas (OpenCode, Kilo)
-npx ajv validate -s schema.json -d config.json --spec=draft2020
+# Validate Codex config after converting TOML to JSON (Draft 2020-12)
+ajv validate -s schema.json -d config.json --spec=draft2020
 ```text
 
-**Manual validation** (fallback): If AJV is not available, read both the schema and the config file. Check:
+**Manual validation** (fallback): If AJV is not available or the helper reports a schema-diff fallback, read the cached schema and the initiating agent's config files. Check:
 - All required fields are present
 - Field types match schema definitions
 - Enum values are within allowed sets
@@ -150,7 +168,7 @@ New enum value Z available     →   Session outcomes suggest trying Z
 
 **When running both skills together:**
 
-1. Run validate-schemas first to get the schema diff
+1. Run validate-schemas first to refresh and validate the initiating agent's schema/config pair
 2. Run analyze-config to get metrics-based suggestions
 3. Cross-reference: if validate-schemas found a new feature AND analyze-config's metrics show a pattern that feature addresses, elevate it to a strong recommendation
 4. If analyze-config suggests a setting change, validate-schemas confirms the value is valid in the current schema
@@ -163,12 +181,9 @@ New enum value Z available     →   Session outcomes suggest trying Z
 
 ## Keeping Schemas Up to Date
 
-To refresh all cached schemas:
+Refresh only the initiating agent schema per run:
 ```bash
-mkdir -p ~/.config/agent-smith/schemas
-curl -sL "https://json.schemastore.org/claude-code-settings.json" -o ~/.config/agent-smith/schemas/claude-code-settings.schema.json
-curl -sL "https://developers.openai.com/codex/config-schema.json" -o ~/.config/agent-smith/schemas/codex-config.schema.json
-curl -sL "https://opencode.ai/config.json" -o ~/.config/agent-smith/schemas/opencode-config.schema.json
+AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh"
 ```
 
 ## When to Validate
