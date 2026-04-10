@@ -144,8 +144,13 @@ if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
 	{
 		echo "BEGIN TRANSACTION;"
 
-		tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -r '
-        # Skip malformed lines
+		tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -R -r '
+        # -R reads each line as a raw string; fromjson? parses it as JSON
+        # and silently skips lines that are malformed (truncated writes,
+        # control-char corruption, partial lines from mid-byte offsets).
+        # Without this, a single bad line aborts the jq stream and all
+        # subsequent valid events in the batch are silently lost.
+        fromjson? // empty |
         select(.ts != null and .tool != null and .event_type != null) |
 
         # Escape single quotes for SQL

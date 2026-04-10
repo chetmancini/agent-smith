@@ -45,7 +45,9 @@ metrics_tool_name() {
 	printf '%s' "${AGENT_SMITH_TOOL:-claude}"
 }
 
-# Escape a string for safe JSON embedding
+# Escape a string for safe JSON embedding.
+# Handles all characters that RFC 8259 requires to be escaped: backslash,
+# double-quote, and every ASCII control character (U+0000–U+001F, U+007F).
 json_escape() {
 	local str="$1"
 	str="${str//\\/\\\\}"
@@ -53,15 +55,39 @@ json_escape() {
 	str="${str//$'\n'/\\n}"
 	str="${str//$'\r'/\\r}"
 	str="${str//$'\t'/\\t}"
+	str="${str//$'\x08'/\\b}"
+	str="${str//$'\x0c'/\\f}"
+	# Strip remaining ASCII control characters that have no named JSON escape.
+	# These are illegal unescaped in JSON strings and cause jq (and any strict
+	# parser) to reject the entire line.  NUL (0x00) cannot appear in bash
+	# strings so it is implicitly excluded.
+	local c
+	for c in $'\x01' $'\x02' $'\x03' $'\x04' $'\x05' $'\x06' $'\x07' \
+		$'\x0b' $'\x0e' $'\x0f' $'\x10' $'\x11' $'\x12' $'\x13' \
+		$'\x14' $'\x15' $'\x16' $'\x17' $'\x18' $'\x19' $'\x1a' \
+		$'\x1b' $'\x1c' $'\x1d' $'\x1e' $'\x1f' $'\x7f'; do
+		str="${str//$c/}"
+	done
 	printf '%s' "$str"
 }
 
-# Truncate a string to N characters
+# Truncate a string to N characters.
+# Safe to call on json_escape'd output: detects an odd trailing backslash
+# (from a split escape sequence like \" cut to just \) and removes it so
+# the resulting string is still valid inside a JSON "..." value.
 truncate_str() {
 	local str="$1"
 	local max="${2:-500}"
 	if [ "${#str}" -gt "$max" ]; then
-		printf '%s...' "${str:0:$max}"
+		str="${str:0:$max}"
+		# Count trailing backslashes.  An odd count means truncation split an
+		# escape sequence (e.g. \" → \, or \\\" → \\\).  Remove the dangling
+		# backslash to keep the JSON valid.
+		local tail="${str##*[!\\]}"
+		if ((${#tail} % 2 == 1)); then
+			str="${str%\\}"
+		fi
+		printf '%s...' "$str"
 	else
 		printf '%s' "$str"
 	fi

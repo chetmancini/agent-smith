@@ -620,3 +620,55 @@ JSONL
            AND event_type = 'tool_failure';" 2>/dev/null)
     [ "$rollup_row" = "3|2" ]
 }
+
+# ============================================================================
+# Rollup resilience: malformed JSONL lines must not truncate ingestion
+# ============================================================================
+
+@test "rollup skips malformed JSONL lines and ingests surrounding valid events" {
+    cat > "$METRICS_FILE" <<'JSONL'
+{"ts":"2026-04-10T10:00:00Z","tool":"claude","session_id":"s-good-1","event_type":"session_start","metadata":{"cwd":"/tmp"}}
+THIS IS NOT JSON AT ALL
+{"ts":"2026-04-10T10:01:00Z","tool":"claude","session_id":"s-good-2","event_type":"tool_failure","metadata":{"tool_name":"Bash","error":"exit 1"}}
+{"truncated json
+{"ts":"2026-04-10T10:02:00Z","tool":"claude","session_id":"s-good-3","event_type":"session_stop","metadata":{"stop_reason":"end_turn","duration_seconds":60}}
+JSONL
+
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    # All 3 valid events should be ingested; the 2 malformed lines skipped
+    local event_count
+    event_count=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT COUNT(*) FROM events;" 2>/dev/null)
+    [ "$event_count" = "3" ]
+}
+
+@test "rollup ingests events after a line with embedded control characters" {
+    # Simulate a payload where json_escape missed a control char (pre-fix data)
+    printf '{"ts":"2026-04-10T11:00:00Z","tool":"claude","session_id":"s-pre","event_type":"session_start","metadata":{"cwd":"/tmp"}}\n' > "$METRICS_FILE"
+    printf '{"ts":"2026-04-10T11:01:00Z","tool":"claude","session_id":"s-bad","event_type":"tool_failure","metadata":{"error":"has \x07 bell"}}\n' >> "$METRICS_FILE"
+    printf '{"ts":"2026-04-10T11:02:00Z","tool":"claude","session_id":"s-post","event_type":"session_stop","metadata":{"stop_reason":"end_turn","duration_seconds":30}}\n' >> "$METRICS_FILE"
+
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    # The event before and after the bad line must be ingested
+    local count_good
+    count_good=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT COUNT(*) FROM events WHERE session_id IN ('s-pre', 's-post');" 2>/dev/null)
+    [ "$count_good" = "2" ]
+}
+
+@test "tool_failure with control chars in error produces valid JSONL after fix" {
+    source "${HOOKS_DIR}/lib/metrics.sh"
+
+    # Error message with backspace, form-feed, bell, and ESC
+    local nasty_error=$'compile error\x08\x0c\x07\x1b in module'
+    metrics_on_tool_failure "Bash" "$nasty_error" "make build"
+
+    # Every line in events.jsonl must be valid JSON
+    local bad_lines
+    bad_lines=$(jq -e . "$METRICS_FILE" 2>&1 >/dev/null | wc -l | tr -d ' ')
+    [ "$bad_lines" = "0" ]
+}

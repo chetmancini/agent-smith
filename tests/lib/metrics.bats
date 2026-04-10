@@ -51,6 +51,29 @@ teardown() {
     assert_output 'col1\tcol2'
 }
 
+@test "json_escape escapes backspace and form-feed" {
+    run json_escape $'before\x08after\x0cend'
+    assert_success
+    assert_output 'before\bafter\fend'
+}
+
+@test "json_escape strips other control characters" {
+    # BEL (0x07), VT (0x0B), ESC (0x1B), DEL (0x7F)
+    run json_escape $'a\x07b\x0bc\x1bd\x7fe'
+    assert_success
+    assert_output 'abcde'
+}
+
+@test "json_escape produces valid JSON with all control chars" {
+    # String containing every problematic control character
+    local nasty=$'quo\"te back\\slash\nnew\rret\ttab\x08bs\x0cff\x07bel\x1besc\x01soh'
+    local escaped
+    escaped=$(json_escape "$nasty")
+    # Wrap in a JSON object and verify jq can parse it
+    run jq -e '.v' <<< "{\"v\":\"${escaped}\"}"
+    assert_success
+}
+
 # ============================================================================
 # truncate_str
 # ============================================================================
@@ -76,6 +99,37 @@ teardown() {
     assert_success
     # Should be 500 chars + "..."
     [ "${#output}" -eq 503 ]
+}
+
+@test "truncate_str removes dangling backslash from split escape sequence" {
+    # Simulate json_escape'd output: 9 chars + \" = 11 chars, truncate at 10
+    # cuts between \ and " leaving a dangling backslash
+    local escaped='abcdefghi\"rest'  # \ at position 10, " at 11
+    run truncate_str "$escaped" 10
+    assert_success
+    # Should strip the trailing \ and append ...
+    assert_output 'abcdefghi...'
+}
+
+@test "truncate_str preserves valid trailing escaped backslash" {
+    # Ends with \\\\ (two escaped backslashes = 4 chars), even count is fine
+    local escaped='abcdef\\\\'
+    run truncate_str "$escaped" 10
+    assert_success
+    assert_output 'abcdef\\\\'
+}
+
+@test "truncate_str produces valid JSON when cutting escaped content" {
+    # Build a string with many escaped quotes: \"\"\"...
+    local escaped=""
+    for i in $(seq 1 100); do
+        escaped="${escaped}\\\""
+    done
+    local truncated
+    truncated=$(truncate_str "$escaped" 51)
+    # Verify it's valid inside a JSON string
+    run jq -e '.v' <<< "{\"v\":\"${truncated}\"}"
+    assert_success
 }
 
 # ============================================================================
