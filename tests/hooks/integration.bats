@@ -217,7 +217,7 @@ expected_session_id() {
 }
 
 @test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {
-    run bash -lc "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
+    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
     assert_success
 
     run jq -r '.hookSpecificOutput.hookEventName' <<<"$output"
