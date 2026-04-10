@@ -1,6 +1,6 @@
 #!/bin/bash
 # Config analyzer: gather metrics and optionally invoke Claude for tuning suggestions
-# Usage: analyze-config.sh [--sessions N] [--project NAME] [--llm] [--include-settings] [--auto]
+# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
 
@@ -22,6 +22,14 @@ while [ $# -gt 0 ]; do
 	--sessions)
 		SESSIONS="$2"
 		shift 2
+		;;
+	-h | --help)
+		cat <<'EOF'
+Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex] [--llm] [--include-settings] [--auto]
+
+Generate a local Agent Smith metrics report, optionally followed by Claude-backed recommendations.
+EOF
+		exit 0
 		;;
 	--llm)
 		USE_LLM=1

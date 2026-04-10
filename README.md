@@ -188,7 +188,8 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 - **jq** — JSON processing (ships with Homebrew, `brew install jq`)
 - **python3** — Used for Codex TOML parsing during schema validation
 - **sqlite3** — Database queries (ships with macOS)
-- **claude** CLI — Optional, only required for `--llm` analysis
+- **claude** CLI — Optional, required for `--llm` analysis and Claude-specific `make` helper aliases
+- **codex** CLI — Optional, required for Codex-specific `make` helper aliases
 
 ## Plugin Structure
 
@@ -269,26 +270,48 @@ make refresh-schemas
 make validate-agent-config
 ```
 
-## Claude Dev Helpers
+## Agent Dev Helpers
 
-Claude also gets explicit dev helpers that load this repo as a plugin:
+The Makefile exposes generic agent helpers plus explicit Claude and Codex aliases:
 
 ```bash
-# Run the analyze-config skill through Claude
-make claude-analyze
+# Run the analyze-config skill through either agent
+make agent-analyze TOOL=claude
+make agent-analyze TOOL=codex
 
-# Run the validate-schemas skill through Claude
-make claude-validate-schemas
+# Run the validate-schemas skill through either agent
+make agent-validate-schemas TOOL=claude
+make agent-validate-schemas TOOL=codex
 
 # Run validate-schemas, then analyze-config, as one loop
+make agent-loop TOOL=claude
+make agent-loop TOOL=codex
+
+# Ergonomic aliases
+make claude-analyze
+make claude-validate-schemas
 make claude-loop
+make codex-analyze
+make codex-validate-schemas
+make codex-loop
 ```
+
+`TOOL=claude` and `TOOL=codex` are the accepted values anywhere this repo exposes a tool selector, including:
+
+- `make refresh-schemas TOOL=...`
+- `make validate-agent-config TOOL=...`
+- `make agent-analyze TOOL=...`
+- `make agent-validate-schemas TOOL=...`
+- `make agent-loop TOOL=...`
+- `scripts/refresh-schemas.sh --tool ...`
+- `scripts/validate-agent-config.sh --tool ...`
+- `scripts/analyze-config.sh --tool ...`
 
 You can override the session window for the analysis targets:
 
 ```bash
-make claude-analyze SESSIONS=100
-make claude-loop SESSIONS=100
+make agent-analyze TOOL=codex SESSIONS=100
+make agent-loop TOOL=claude SESSIONS=100
 ```
 
 ## License
