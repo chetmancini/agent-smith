@@ -4,6 +4,9 @@
 >
 > [Clip on YouTube](https://www.youtube.com/watch?v=dJ4Bt2xtE9Q)
 
+<img width="250" height="376" alt="image" src="https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde" />
+
+
 A self-tuning feedback loop plugin for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to continuously improve agent reliability and autonomy.
 
 ## How It Works
