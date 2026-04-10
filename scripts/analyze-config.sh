@@ -58,6 +58,41 @@ harden_private_file() {
 	chmod 600 "$path" 2>/dev/null || true
 }
 
+redact_settings_json() {
+	local settings_path="$1"
+
+	[ -f "$settings_path" ] || return 0
+
+	if command -v jq >/dev/null 2>&1; then
+		jq '
+			def secret_key:
+				ascii_downcase
+				| test("(^|[-_])(apikey|apikeyid|token|secret|password|passwd|authorization|auth|credential|privatekey|private_key|clientsecret|client_secret|accesstoken|access_token|refreshtoken|refresh_token|sessiontoken|session_token)([-_]|$)");
+			def redact:
+				if type == "object" then
+					with_entries(
+						if (.key | secret_key) then
+							.value = "[REDACTED]"
+						else
+							.value |= redact
+						end
+					)
+				elif type == "array" then
+					map(redact)
+				else
+					.
+				end;
+			redact
+		' "$settings_path" 2>/dev/null && return 0
+	fi
+
+	# Fallback for environments without jq or malformed JSON: redact obvious
+	# quoted key/value pairs without trying to fully parse the document.
+	sed -E \
+		-e 's/("([^"]*(api[_-]?key|token|secret|password|passwd|authorization|credential|private[_-]?key|client[_-]?secret)[^"]*)"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"[REDACTED]"/Ig' \
+		"$settings_path"
+}
+
 if ! command -v sqlite3 >/dev/null 2>&1; then
 	echo "Error: sqlite3 not found" >&2
 	exit 1
@@ -340,9 +375,9 @@ if [ "$INCLUDE_SETTINGS" -eq 1 ]; then
 	echo "  -> Reading current settings for context..."
 	SETTINGS_EXCERPT=""
 	if [ -f "${HOME}/.claude/settings.json" ]; then
-		SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.json")
+		SETTINGS_EXCERPT=$(redact_settings_json "${HOME}/.claude/settings.json")
 	elif [ -f "${HOME}/.claude/settings.local.json" ]; then
-		SETTINGS_EXCERPT=$(cat "${HOME}/.claude/settings.local.json")
+		SETTINGS_EXCERPT=$(redact_settings_json "${HOME}/.claude/settings.local.json")
 	fi
 
 	SETTINGS_CONTEXT="Current settings snapshot included below.

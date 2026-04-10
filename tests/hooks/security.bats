@@ -137,7 +137,7 @@ EOF
     ! grep -q "super-secret-token" "$prompt_capture"
 }
 
-@test "llm analysis includes settings only when explicitly requested" {
+@test "llm analysis includes redacted settings only when explicitly requested" {
     local metrics_dir db_file fakebin marker prompt_capture home_dir
     metrics_dir="$TEST_TMPDIR/metrics"
     db_file="$metrics_dir/rollup.db"
@@ -149,13 +149,15 @@ EOF
     create_metrics_db "$db_file"
     create_fake_claude "$fakebin" "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.claude"
-    printf '{"apiKey":"super-secret-token"}\n' > "$home_dir/.claude/settings.json"
+    printf '{"apiKey":"super-secret-token","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
 
     run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --include-settings --sessions 1
 
     [ "$status" -eq 0 ]
     [ -f "$marker" ]
-    grep -q "super-secret-token" "$prompt_capture"
+    ! grep -q "super-secret-token" "$prompt_capture"
+    grep -q '"apiKey": "\[REDACTED\]"' "$prompt_capture"
+    grep -q '"model": "sonnet"' "$prompt_capture"
 }
 
 @test "analyze-config report includes project breakdown section" {

@@ -110,6 +110,11 @@ bash scripts/analyze-config.sh --llm --sessions 50
 bash scripts/analyze-config.sh --llm --include-settings --sessions 50
 ```
 
+When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
+keys such as API keys, tokens, passwords, and client secrets before sending the
+settings snapshot to Claude. Non-sensitive settings remain visible so the
+analysis can still reason about your current configuration.
+
 ### Schema validation
 
 The plugin includes a `validate-schemas` skill that fetches official JSON schemas and validates your settings files. Claude will invoke it automatically when you ask to validate settings or check schemas.
@@ -123,7 +128,7 @@ The plugin includes a `validate-schemas` skill that fetches official JSON schema
 | `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis runs |
 | `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` to allow background report generation |
 | `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` to opt into Claude analysis |
-| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include `~/.claude/settings*.json` in automatic LLM prompts |
+| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include a redacted `~/.claude/settings*.json` snapshot in automatic LLM prompts |
 
 ## Data Location
 

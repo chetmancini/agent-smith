@@ -465,3 +465,23 @@ JSONL
     # So cost must be between those extremes
     [ "$(awk "BEGIN { print ($cost > 90 && $cost < 100) }")" = "1" ]
 }
+
+@test "rollup daily_rollup tracks distinct session_count separately from event count" {
+    cat > "$METRICS_FILE" <<'JSONL'
+{"ts":"2026-04-10T00:00:00Z","tool":"claude","session_id":"session-1","event_type":"tool_failure","metadata":{"tool_name":"Bash","error":"exit 1"}}
+{"ts":"2026-04-10T00:01:00Z","tool":"claude","session_id":"session-1","event_type":"tool_failure","metadata":{"tool_name":"Bash","error":"exit 1"}}
+{"ts":"2026-04-10T00:02:00Z","tool":"claude","session_id":"session-2","event_type":"tool_failure","metadata":{"tool_name":"Bash","error":"exit 1"}}
+JSONL
+
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    local rollup_row
+    rollup_row=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT count || '|' || session_count
+         FROM daily_rollup
+         WHERE date = '2026-04-10'
+           AND tool = 'claude'
+           AND event_type = 'tool_failure';" 2>/dev/null)
+    [ "$rollup_row" = "3|2" ]
+}
