@@ -400,7 +400,11 @@ echo "  All metrics gathered."
 date_str=$(date +%Y-%m-%d)
 output_dir="${METRICS_DIR}/reports"
 ensure_private_dir "$output_dir"
-base_name="$date_str-analysis"
+if [ -n "$TOOL_FILTER" ]; then
+	base_name="$date_str-${TOOL_FILTER}-analysis"
+else
+	base_name="$date_str-analysis"
+fi
 output_file="${output_dir}/${base_name}.md"
 suffix=2
 while [ -f "$output_file" ]; do
