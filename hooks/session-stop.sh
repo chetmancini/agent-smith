@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-stop_reason=$(echo "$input" | jq -r '.stop_reason // "completed"')
+stop_reason=$(echo "$input" | jq -r --arg default_reason "${AGENT_SMITH_DEFAULT_STOP_REASON:-completed}" '.stop_reason // .stopReason // $default_reason')
 transcript_path=$(echo "$input" | jq -r '.transcript_path // ""')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
 

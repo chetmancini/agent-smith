@@ -39,23 +39,27 @@ if [ ! -f "$METRICS_DB" ]; then
 	exit 0
 fi
 
+agent_tool=$(metrics_tool_name)
+escaped_agent_tool=$(printf '%s' "$agent_tool" | sed "s/'/''/g")
+
 # Count sessions since last analysis run
 session_count=$(sqlite3 "$METRICS_DB" "
     SELECT COUNT(DISTINCT session_id) FROM events
     WHERE ts > COALESCE(
-        (SELECT MAX(ts) FROM events WHERE event_type = 'analysis_run'),
+        (SELECT MAX(ts) FROM events WHERE event_type = 'analysis_run' AND tool = '${escaped_agent_tool}'),
         '1970-01-01'
     )
-    AND event_type = 'session_start';
+    AND event_type = 'session_start'
+    AND tool = '${escaped_agent_tool}';
 " 2>/dev/null || echo "0")
 
 if [ "$session_count" -ge "$ANALYZE_THRESHOLD" ]; then
 	# Record the analysis run event
-	emit_metric "claude" "analysis_run" "{\"trigger\":\"auto\",\"mode\":\"${AUTO_ANALYZE_MODE}\",\"sessions\":${session_count}}"
+	emit_metric "$agent_tool" "analysis_run" "{\"trigger\":\"auto\",\"mode\":\"${AUTO_ANALYZE_MODE}\",\"sessions\":${session_count}}"
 
 	# Spawn analyzer in background — don't block
 	if [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
-		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto)
+		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto --tool "$agent_tool")
 		if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
 			command -v claude >/dev/null 2>&1 || exit 0
 			analyze_args+=(--llm)

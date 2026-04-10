@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Smith</title>
+  <desc id="desc">Green terminal-style monogram for Agent Smith.</desc>
+  <rect width="64" height="64" rx="12" fill="#03130A"/>
+  <path d="M15 18h34v6H23l7 8-7 8h26v6H15l10-14z" fill="#22C55E"/>
+  <path d="M18 12h28" stroke="#86EFAC" stroke-linecap="round" stroke-width="3"/>
+</svg>

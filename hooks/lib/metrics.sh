@@ -41,6 +41,10 @@ _ensure_metrics_dir() {
 	fi
 }
 
+metrics_tool_name() {
+	printf '%s' "${AGENT_SMITH_TOOL:-claude}"
+}
+
 # Escape a string for safe JSON embedding
 json_escape() {
 	local str="$1"
@@ -165,7 +169,7 @@ metrics_on_session_start() {
 	local escaped_cwd escaped_type
 	escaped_cwd=$(json_escape "$cwd")
 	escaped_type=$(json_escape "$project_type")
-	emit_metric "claude" "session_start" "{\"cwd\":\"${escaped_cwd}\",\"project_type\":\"${escaped_type}\",\"transcript_hash\":\"${tp_hash}\"}"
+	emit_metric "$(metrics_tool_name)" "session_start" "{\"cwd\":\"${escaped_cwd}\",\"project_type\":\"${escaped_type}\",\"transcript_hash\":\"${tp_hash}\"}"
 }
 
 # Call from: hooks/session-stop.sh (after notification)
@@ -189,7 +193,7 @@ metrics_on_session_stop() {
 
 	local escaped_reason
 	escaped_reason=$(json_escape "$stop_reason")
-	emit_metric "claude" "session_stop" "{\"stop_reason\":\"${escaped_reason}\",\"duration_seconds\":${duration_seconds}}"
+	emit_metric "$(metrics_tool_name)" "session_stop" "{\"stop_reason\":\"${escaped_reason}\",\"duration_seconds\":${duration_seconds}}"
 }
 
 # Call from: hooks/vague-prompt.sh (when is_vague=1)
@@ -200,7 +204,7 @@ metrics_on_clarifying_question() {
 
 	local snippet
 	snippet=$(truncate_str "$(json_escape "$prompt_text")" 100)
-	emit_metric "claude" "clarifying_question" "{\"prompt_snippet\":\"${snippet}\",\"is_vague\":true}"
+	emit_metric "$(metrics_tool_name)" "clarifying_question" "{\"prompt_snippet\":\"${snippet}\",\"is_vague\":true}"
 }
 
 # Call from: hooks/test-result.sh (after test execution)
@@ -230,7 +234,7 @@ metrics_on_test_result() {
 		local escaped_cmd escaped_file
 		escaped_cmd=$(truncate_str "$(json_escape "$test_command")" 300)
 		escaped_file=$(json_escape "$file_path")
-		emit_metric "claude" "test_failure_loop" "{\"test_command\":\"${escaped_cmd}\",\"failure_count\":${fail_count},\"file_path\":\"${escaped_file}\"}"
+		emit_metric "$(metrics_tool_name)" "test_failure_loop" "{\"test_command\":\"${escaped_cmd}\",\"failure_count\":${fail_count},\"file_path\":\"${escaped_file}\"}"
 	fi
 }
 
@@ -245,13 +249,13 @@ metrics_on_tool_failure() {
 	local escaped_tool escaped_error
 	escaped_tool=$(json_escape "$tool_name")
 	escaped_error=$(truncate_str "$(json_escape "$error")" 500)
-	emit_metric "claude" "tool_failure" "{\"tool_name\":\"${escaped_tool}\",\"error\":\"${escaped_error}\"}"
+	emit_metric "$(metrics_tool_name)" "tool_failure" "{\"tool_name\":\"${escaped_tool}\",\"error\":\"${escaped_error}\"}"
 
 	# For Bash tool failures, also emit a command_failure event
 	if [ "$tool_name" = "Bash" ] && [ -n "$command" ]; then
 		local escaped_cmd
 		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
-		emit_metric "claude" "command_failure" "{\"command\":\"${escaped_cmd}\",\"error\":\"${escaped_error}\"}"
+		emit_metric "$(metrics_tool_name)" "command_failure" "{\"command\":\"${escaped_cmd}\",\"error\":\"${escaped_error}\"}"
 	fi
 }
 
@@ -263,7 +267,7 @@ metrics_on_permission_denied() {
 
 	local escaped_tool
 	escaped_tool=$(json_escape "$tool_name")
-	emit_metric "claude" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
+	emit_metric "$(metrics_tool_name)" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
 }
 
 # Call from: hooks/session-stop.sh (per-turn, writes a durable cost snapshot)
@@ -398,5 +402,5 @@ metrics_on_context_compression() {
 
 	local escaped_trigger
 	escaped_trigger=$(json_escape "$trigger")
-	emit_metric "claude" "context_compression" "{\"trigger\":\"${escaped_trigger}\",\"transcript_lines\":${transcript_lines}}"
+	emit_metric "$(metrics_tool_name)" "context_compression" "{\"trigger\":\"${escaped_trigger}\",\"transcript_lines\":${transcript_lines}}"
 }

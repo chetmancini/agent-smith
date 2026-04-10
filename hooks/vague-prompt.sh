@@ -62,8 +62,19 @@ if [ "$is_vague" -eq 0 ] && [ "$word_count" -le 4 ]; then
 fi
 
 if [ "$is_vague" -eq 1 ]; then
-	# Append context to the user message (stdout is injected by Claude Code)
-	printf '\n[System note: The request above is brief and may be ambiguous. Before making changes, ask one short clarifying question to confirm the target file, specific behavior, or desired outcome — unless the prior conversation makes intent obvious.]\n'
+	note='[System note: The request above is brief and may be ambiguous. Before making changes, ask one short clarifying question to confirm the target file, specific behavior, or desired outcome unless the prior conversation makes intent obvious.]'
+
+	if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ]; then
+		jq -n --arg note "$note" '{
+			hookSpecificOutput: {
+				hookEventName: "UserPromptSubmit",
+				additionalContext: $note
+			}
+		}'
+	else
+		# Append context to the user message (stdout is injected by Claude Code)
+		printf '\n%s\n' "$note"
+	fi
 
 	metrics_on_clarifying_question "$trimmed"
 fi

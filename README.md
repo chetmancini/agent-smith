@@ -3,11 +3,19 @@
 > "Never send a human to do a machine's job." Agent Smith, *The Matrix* (1999)
 >
 > [Clip on YouTube](https://www.youtube.com/watch?v=dJ4Bt2xtE9Q)
+>
+> ![Agent Smith poster](https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde)
 
-<img width="250" height="376" alt="image" src="https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde" />
+A self-tuning feedback loop plugin for Claude Code and Codex. Collects session
+metrics, analyzes patterns, and produces tuning recommendations to continuously
+improve agent reliability and autonomy.
 
-
-A self-tuning feedback loop plugin for Claude Code. Collects session metrics, analyzes patterns, and produces tuning recommendations to continuously improve agent reliability and autonomy.
+Codex support is available now, but it does not yet cover as many features as
+the Claude Code plugin. The limiting factor is the current Codex hook surface:
+it exposes fewer event types, so some Agent Smith signals remain Claude-only
+for now. Metrics are tagged by initiating agent, and analysis should stay
+scoped to that agent so Claude findings do not drive Codex config changes or
+vice versa.
 
 ## How It Works
 
@@ -32,7 +40,7 @@ Agent Smith implements a closed-loop improvement cycle:
 ┌─────────────────────────────────────────────────────────┐
 │  3. ANALYZE                                             │
 │  SQL queries produce a local report by default          │
-│  Claude LLM analysis is explicit opt-in                 │
+│  LLM analysis is explicit opt-in                        │
 │  Generates tuning report with specific suggestions      │
 │  → ~/.config/agent-smith/reports/<date>-analysis.md     │
 └────────────────────────┬────────────────────────────────┘
@@ -41,7 +49,7 @@ Agent Smith implements a closed-loop improvement cycle:
 │  4. APPLY                                               │
 │  Auto-apply safe changes (prompt wording)               │
 │  Present structural changes for approval                │
-│  → settings.json, commands/*.md, CLAUDE.md              │
+│  → settings files, commands, and agent instructions     │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -49,17 +57,36 @@ Automatic analysis is disabled by default. You can opt in to background raw repo
 
 ## Installation
 
-### Local (development)
+### Claude Code
 
 ```bash
 claude --plugin-dir path/to/agent-smith
 ```
 
-### From a Git repo
-
 ```bash
 claude plugin add https://github.com/chetmancini/agent-smith
 ```
+
+### Codex
+
+Install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) and the plugin-root [hooks.json](hooks.json).
+
+Codex support is intentionally narrower than Claude Code support today. The
+plugin is available and usable in Codex, but some metrics and automations still
+depend on Claude-specific hook events that Codex does not currently expose.
+
+Agent Smith now keeps both plugin manifests side by side:
+
+- Claude Code: [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)
+- Codex: [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json)
+
+Claude keeps its existing hook registration at [`hooks/hooks.json`](hooks/hooks.json). Codex uses the root-level [`hooks.json`](hooks.json).
+
+## Support Matrix
+
+- Claude Code: full support for session lifecycle, tool failures, permission denials, vague prompts, context compression, edit-triggered test-loop detection, rollup, and analysis.
+- Codex: available now, with support for session lifecycle, Bash failure tracking, vague prompt guidance, rollup, and analysis through the Codex plugin manifest and hook shims.
+- Codex limitations: the current Codex hook surface does not expose direct equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals, so permission-denial metrics, context-compression metrics, and edit-triggered test-loop detection remain Claude-only for now.
 
 ## What Gets Collected
 
@@ -117,7 +144,7 @@ analysis can still reason about your current configuration.
 
 ### Schema validation
 
-The plugin includes a `validate-schemas` skill that fetches official JSON schemas and validates your settings files. Claude will invoke it automatically when you ask to validate settings or check schemas.
+The plugin includes a `validate-schemas` skill that fetches official JSON schemas and validates your settings files. Claude Code or Codex can invoke it when you ask to validate settings or check schemas.
 
 ## Configuration
 
@@ -156,9 +183,13 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 
 ```text
 agent-smith/
-├── .claude-plugin/plugin.json    # Plugin manifest
+├── .claude-plugin/plugin.json    # Claude Code manifest
+├── .codex-plugin/plugin.json     # Codex manifest
+├── hooks.json                    # Codex hook registration
+├── assets/
+│   └── agent-smith.svg           # Codex plugin icon
 ├── hooks/
-│   ├── hooks.json                # Hook registration
+│   ├── hooks.json                # Claude Code hook registration
 │   ├── lib/metrics.sh            # Core metrics library
 │   ├── lib/common.sh             # Logging utilities
 │   ├── session-start.sh          # Session lifecycle
@@ -208,7 +239,7 @@ make lint
 
 ## Claude Entrypoints
 
-The Makefile also exposes direct Claude entrypoints that load this repo as a plugin:
+The Makefile exposes direct Claude entrypoints that load this repo as a plugin:
 
 ```bash
 # Run the analyze-config skill through Claude

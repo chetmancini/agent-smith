@@ -11,8 +11,31 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
-error=$(echo "$input" | jq -r '.error // ""')
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
+
+if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ]; then
+	exit_code=$(echo "$input" | jq -r '
+		if (.tool_response | type) == "object" then
+			(.tool_response.exit_code // .tool_response.exitCode // .tool_response.status // 0)
+		else
+			0
+		end
+	')
+	case "$exit_code" in
+	'' | 0)
+		exit 0
+		;;
+	esac
+	error=$(echo "$input" | jq -r '
+		if (.tool_response | type) == "object" then
+			(.tool_response.stderr // .tool_response.error // .tool_response.message // ("exit " + ((.tool_response.exit_code // .tool_response.exitCode // .tool_response.status // 1) | tostring)))
+		else
+			"exit 1"
+		end
+	')
+else
+	error=$(echo "$input" | jq -r '.error // ""')
+fi
 
 # Skip expected non-zero exits that aren't real failures
 if [ "$tool_name" = "Bash" ]; then

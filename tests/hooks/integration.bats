@@ -183,6 +183,67 @@ expected_session_id() {
     assert_output "completed"
 }
 
+@test "session-start accepts Codex payload fields and tags the event as codex" {
+    local session_hint="codex-session-123"
+    local transcript="$TEST_TMPDIR/codex-transcript.jsonl"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    printf '{"cwd":"/tmp/codex-project","session_id":"%s","transcript_path":"%s"}' \
+        "$session_hint" "$transcript" | \
+        env AGENT_SMITH_TOOL=codex \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    run jq -r '.tool' "$METRICS_FILE"
+    assert_output "codex"
+
+    run jq -r '.session_id' "$METRICS_FILE"
+    assert_output "$expected_sid"
+
+    run jq -r '.metadata.cwd' "$METRICS_FILE"
+    assert_output "/tmp/codex-project"
+}
+
+@test "session-stop can use a Codex-specific default stop reason" {
+    printf '{"session_id":"codex-stop-1","transcript_path":""}' | \
+        env AGENT_SMITH_TOOL=codex \
+        AGENT_SMITH_DEFAULT_STOP_REASON=turn_complete \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-stop.sh"
+
+    run jq -r '.metadata.stop_reason' "$METRICS_FILE"
+    assert_output "turn_complete"
+}
+
+@test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {
+    run bash -lc "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
+    assert_success
+
+    run jq -r '.hookSpecificOutput.hookEventName' <<<"$output"
+    assert_output "UserPromptSubmit"
+
+    run jq -r '.hookSpecificOutput.additionalContext' <<<"$output"
+    [[ "$output" == *"brief and may be ambiguous"* ]]
+
+    run jq -r '.tool' "$METRICS_FILE"
+    assert_output "codex"
+}
+
+@test "tool-failure detects Codex Bash failures from post-tool-use payloads" {
+    printf '{"tool_name":"Bash","tool_input":{"command":"npm test"},"tool_response":{"exit_code":1,"stderr":"boom"}}' | \
+        env AGENT_SMITH_TOOL=codex \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+    [ "$event_types" = $'tool_failure\ncommand_failure' ]
+
+    run jq -r 'select(.event_type == "tool_failure") | .tool' "$METRICS_FILE"
+    assert_output "codex"
+}
+
 @test "compact hook reads COMPACT_TRIGGER env for trigger type" {
     printf '{"session_id":"hint","transcript_path":""}' | \
         env METRICS_DIR="$METRICS_DIR" \

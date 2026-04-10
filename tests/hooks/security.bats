@@ -160,6 +160,60 @@ EOF
     grep -q '"model": "sonnet"' "$prompt_capture"
 }
 
+@test "codex llm analysis redacts TOML secrets before sending settings" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+
+    create_metrics_db "$db_file"
+    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    mkdir -p "$home_dir/.codex"
+    cat > "$home_dir/.codex/config.toml" <<'EOF'
+model = "gpt-5.4"
+api_key = "super-secret-token"
+bearer_token = "another-secret"
+EOF
+
+    run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --include-settings --sessions 1 --tool codex
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    ! grep -q "super-secret-token" "$prompt_capture"
+    ! grep -q "another-secret" "$prompt_capture"
+    grep -q 'api_key = "\[REDACTED\]"' "$prompt_capture"
+    grep -q 'bearer_token = "\[REDACTED\]"' "$prompt_capture"
+    grep -q 'model = "gpt-5.4"' "$prompt_capture"
+}
+
+@test "codex llm analysis does not fall back to Claude settings when Codex config is missing" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+
+    create_metrics_db "$db_file"
+    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    mkdir -p "$home_dir/.claude"
+    printf '{"apiKey":"claude-secret","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
+
+    run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --include-settings --sessions 1 --tool codex
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    ! grep -q "claude-secret" "$prompt_capture"
+    ! grep -q '"model": "sonnet"' "$prompt_capture"
+    grep -q "Codex settings snapshot omitted because ~/.codex/config.toml is unavailable" "$prompt_capture"
+}
+
 @test "analyze-config report includes project breakdown section" {
     local metrics_dir db_file
     metrics_dir="$TEST_TMPDIR/metrics"
@@ -220,6 +274,79 @@ EOF
     local report_file
     report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
     grep -q "project: app-a" "$report_file"
+}
+
+@test "analyze-config --tool filters sessions to the initiating agent" {
+    local metrics_dir db_file report_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    mkdir -p "$(dirname "$db_file")"
+    sqlite3 "$db_file" "
+        CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL UNIQUE,
+            tool TEXT NOT NULL,
+            started_at TEXT,
+            stopped_at TEXT,
+            duration_seconds INTEGER,
+            stop_reason TEXT,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            test_loop_count INTEGER NOT NULL DEFAULT 0,
+            clarification_count INTEGER NOT NULL DEFAULT 0,
+            denial_count INTEGER NOT NULL DEFAULT 0,
+            cwd TEXT
+        );
+        INSERT INTO sessions (session_id, tool, started_at, event_count, cwd) VALUES
+            ('claude-session', 'claude', '2026-03-27T00:00:00Z', 5, '/home/user/app'),
+            ('codex-session', 'codex', '2026-03-27T01:00:00Z', 7, '/home/user/app');
+    "
+
+    run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10 --tool codex
+
+    [ "$status" -eq 0 ]
+    report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
+    grep -q "tool: codex" "$report_file"
+    grep -q "codex" "$report_file"
+    ! grep -q "claude-session" "$report_file"
+}
+
+@test "analyze-trigger counts only sessions from the initiating agent" {
+    local metrics_dir db_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    mkdir -p "$(dirname "$db_file")"
+    sqlite3 "$db_file" "
+        CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES
+            ('2026-03-27T00:00:00Z', 'claude', 'claude-1', 'session_start', '{}'),
+            ('2026-03-27T00:01:00Z', 'claude', 'claude-2', 'session_start', '{}'),
+            ('2026-03-27T00:02:00Z', 'codex', 'codex-1', 'session_start', '{}');
+    "
+
+    run env METRICS_DIR="$metrics_dir" AGENT_SMITH_TOOL=codex AUTO_ANALYZE_ENABLED=1 ANALYZE_THRESHOLD=2 bash "$HOOKS_DIR/analyze-trigger.sh"
+
+    [ "$status" -eq 0 ]
+    ! grep -q "analysis_run" "$metrics_dir/events.jsonl"
 }
 
 @test "analyze-trigger is disabled by default" {

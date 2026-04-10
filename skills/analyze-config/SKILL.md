@@ -1,22 +1,30 @@
 ---
 name: analyze-config
-description: Analyze Claude Code session metrics and produce tuning recommendations. Use when asked to analyze metrics, tune config, review agent performance, generate a performance report, or optimize Claude Code settings.
+description: Analyze Agent Smith session metrics and produce tuning recommendations for Claude Code or Codex. Use when asked to analyze metrics, tune config, review agent performance, generate a performance report, or optimize agent settings.
 ---
 
 # Analyze Config
 
-Analyze session metrics and produce tuning recommendations for Claude Code configuration.
+Analyze session metrics and produce tuning recommendations for Claude Code or Codex configuration.
+
+## Resolve Agent Smith Root
+
+Before running any scripts, resolve `AGENT_SMITH_ROOT`:
+
+- If the current repo already contains `scripts/analyze-config.sh` plus either `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`, use the current repo root.
+- Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 ## Process
 
-1. **Run rollup**: Execute `bash "${CLAUDE_PLUGIN_ROOT}/scripts/metrics-rollup.sh"` to ensure the SQLite database at `~/.config/agent-smith/rollup.db` is current
-2. **Run local analysis first**: Execute `bash "${CLAUDE_PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions 50` (adjust session count as needed)
-3. **Read the report**: Read the generated report from `~/.config/agent-smith/reports/`
-4. **Only use LLM analysis with explicit approval**: If the user wants AI-generated tuning suggestions, execute `bash "${CLAUDE_PLUGIN_ROOT}/scripts/analyze-config.sh" --llm --sessions 50`. Only add `--include-settings` if the user explicitly approves sending their local Claude settings snapshot.
-5. **Categorize suggestions**: Split findings into auto-apply (safe) and approval-required (structural)
-6. **Apply safe changes**: For wording improvements in custom commands (`~/.claude/commands/*.md`, `.claude/commands/*.md`) and CLAUDE.md instructions, apply directly — these are non-breaking prompt refinements
-7. **Present structural changes**: For permission changes, hook timeout adjustments, hook additions, or settings modifications — show the user a summary table with the proposed change, risk level, and rationale. Wait for explicit approval before applying
-8. **Validate**: After any changes, verify the settings.json is still valid JSON
+1. **Resolve the initiating agent**: use `claude` when running inside Claude Code and `codex` when running inside Codex. Do not mix them unless the user explicitly asks for a cross-agent report.
+2. **Run rollup**: Execute `bash "${AGENT_SMITH_ROOT}/scripts/metrics-rollup.sh"` to ensure the SQLite database at `~/.config/agent-smith/rollup.db` is current
+3. **Run local analysis first**: Execute `bash "${AGENT_SMITH_ROOT}/scripts/analyze-config.sh" --sessions 50 --tool <initiating-agent>` (adjust session count as needed)
+4. **Read the report**: Read the generated report from `~/.config/agent-smith/reports/`
+5. **Only use LLM analysis with explicit approval**: If the user wants AI-generated tuning suggestions, execute `bash "${AGENT_SMITH_ROOT}/scripts/analyze-config.sh" --llm --sessions 50 --tool <initiating-agent>`. Only add `--include-settings` if the user explicitly approves sending the relevant local settings snapshot.
+6. **Categorize suggestions**: Split findings into auto-apply (safe) and approval-required (structural)
+7. **Apply safe changes**: For wording improvements in the initiating agent's prompt/instruction files, apply directly — these are non-breaking prompt refinements
+8. **Present structural changes**: For permission changes, hook timeout adjustments, hook additions, or settings modifications — show the user a summary table with the proposed change, risk level, and rationale. Wait for explicit approval before applying
+9. **Validate**: After any changes, verify the relevant config file still parses
 
 ## What to Look For
 
@@ -44,4 +52,4 @@ Analyze session metrics and produce tuning recommendations for Claude Code confi
 
 ## Raw Data Mode
 
-Local raw analysis is the default: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions 50`
+Local raw analysis is the default: `bash "${AGENT_SMITH_ROOT}/scripts/analyze-config.sh" --sessions 50 --tool <initiating-agent>`

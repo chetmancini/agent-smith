@@ -11,6 +11,7 @@ USE_LLM=0
 INCLUDE_SETTINGS=0
 AUTO_MODE=0
 PROJECT_FILTER=""
+TOOL_FILTER="${AGENT_SMITH_TOOL:-}"
 
 # Plugin root (script lives in scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +37,10 @@ while [ $# -gt 0 ]; do
 		;;
 	--project)
 		PROJECT_FILTER="$2"
+		shift 2
+		;;
+	--tool)
+		TOOL_FILTER="$2"
 		shift 2
 		;;
 	*) shift ;;
@@ -93,6 +98,60 @@ redact_settings_json() {
 		"$settings_path"
 }
 
+redact_settings_toml() {
+	local settings_path="$1"
+
+	[ -f "$settings_path" ] || return 1
+
+	awk '
+		function is_secret_key(key, lowered) {
+			lowered = tolower(key)
+			return lowered ~ /(^|[-_])(api[_-]?key|api[_-]?keyid|token|secret|password|passwd|authorization|auth|credential|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|session[_-]?token)([-_]|$)/
+		}
+
+		{
+			line = $0
+			if (match(line, /^[[:space:]]*([[:alnum:]_.-]+)[[:space:]]*=/)) {
+				key = substr(line, RSTART, RLENGTH)
+				gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+				sub(/[[:space:]]*=$/, "", key)
+				if (is_secret_key(key)) {
+					sub(/=.*/, "= \"[REDACTED]\"", line)
+				}
+			}
+			print line
+		}
+	' "$settings_path"
+}
+
+read_redacted_settings_snapshot() {
+	local tool="$1"
+
+	case "$tool" in
+	codex)
+		if [ -f "${HOME}/.codex/config.toml" ]; then
+			redact_settings_toml "${HOME}/.codex/config.toml"
+			return $?
+		fi
+		return 1
+		;;
+	claude | "")
+		if [ -f "${HOME}/.claude/settings.json" ]; then
+			redact_settings_json "${HOME}/.claude/settings.json"
+			return $?
+		fi
+		if [ -f "${HOME}/.claude/settings.local.json" ]; then
+			redact_settings_json "${HOME}/.claude/settings.local.json"
+			return $?
+		fi
+		return 1
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
 if ! command -v sqlite3 >/dev/null 2>&1; then
 	echo "Error: sqlite3 not found" >&2
 	exit 1
@@ -104,10 +163,25 @@ if [ ! -f "$DB_FILE" ]; then
 	exit 1
 fi
 
+escaped_tool_filter() {
+	printf '%s' "$1" | sed "s/'/''/g"
+}
+
+tool_filter_label() {
+	if [ -n "$TOOL_FILTER" ]; then
+		printf ', tool: %s' "$TOOL_FILTER"
+	fi
+}
+
 # Build the session-filter subquery used by all metric queries.
 # When --project is set, restrict to sessions whose cwd basename matches.
 session_filter_subquery() {
 	local sql="SELECT session_id FROM sessions WHERE started_at IS NOT NULL"
+	if [ -n "$TOOL_FILTER" ]; then
+		local escaped_tool
+		escaped_tool=$(escaped_tool_filter "$TOOL_FILTER")
+		sql="$sql AND tool = '${escaped_tool}'"
+	fi
 	if [ -n "$PROJECT_FILTER" ]; then
 		local escaped
 		escaped=$(printf '%s' "$PROJECT_FILTER" | sed "s/'/''/g")
@@ -128,6 +202,7 @@ query_tool_failures() {
             COUNT(DISTINCT session_id) as sessions_affected
         FROM events
         WHERE event_type IN ('tool_failure', 'command_failure')
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
           )
@@ -145,6 +220,7 @@ query_permission_denials() {
             COUNT(DISTINCT session_id) as sessions_affected
         FROM events
         WHERE event_type = 'permission_denied'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
           )
@@ -162,6 +238,7 @@ query_test_loops() {
             json_extract(metadata, '$.test_command') as test_command
         FROM events
         WHERE event_type = 'test_failure_loop'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
           )
@@ -179,6 +256,7 @@ query_clarifying_questions() {
             (SELECT COUNT(*) FROM ($(session_filter_subquery))) as total_sessions
         FROM events
         WHERE event_type = 'clarifying_question'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
           );
@@ -269,6 +347,7 @@ query_compressions() {
             ROUND(AVG(json_extract(metadata, '$.transcript_lines')), 0) as avg_transcript_lines
         FROM events
         WHERE event_type = 'context_compression'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
           );
@@ -277,9 +356,9 @@ query_compressions() {
 # --- Gather Data ---
 
 if [ -n "$PROJECT_FILTER" ]; then
-	echo "Gathering metrics from last $SESSIONS sessions (project: $PROJECT_FILTER)..."
+	echo "Gathering metrics from last $SESSIONS sessions$(tool_filter_label) (project: $PROJECT_FILTER)..."
 else
-	echo "Gathering metrics from last $SESSIONS sessions..."
+	echo "Gathering metrics from last $SESSIONS sessions$(tool_filter_label)..."
 fi
 
 echo "  -> Querying overview by tool..."
@@ -318,11 +397,13 @@ write_raw_report() {
 	local header
 	header="# Config Metrics Report (raw) — $(date +%Y-%m-%d)"
 	if [ -n "$PROJECT_FILTER" ]; then
-		header="$header (project: $PROJECT_FILTER)"
+		header="$header (project: $PROJECT_FILTER$(tool_filter_label))"
+	elif [ -n "$TOOL_FILTER" ]; then
+		header="$header (tool: $TOOL_FILTER)"
 	fi
 	cat >"$output_file" <<EOF
 $header
-Last $SESSIONS sessions analyzed.
+Last $SESSIONS sessions analyzed$([ -n "$TOOL_FILTER" ] && printf ' for %s' "$TOOL_FILTER").
 
 ## Overview by Tool
 $OVERVIEW
@@ -371,33 +452,78 @@ fi
 
 # Read current config for context only when explicitly requested
 SETTINGS_CONTEXT="Settings snapshot omitted. Suggest any settings changes from metrics only and note when local inspection is required."
-if [ "$INCLUDE_SETTINGS" -eq 1 ]; then
-	echo "  -> Reading current settings for context..."
-	SETTINGS_EXCERPT=""
-	if [ -f "${HOME}/.claude/settings.json" ]; then
-		SETTINGS_EXCERPT=$(redact_settings_json "${HOME}/.claude/settings.json")
-	elif [ -f "${HOME}/.claude/settings.local.json" ]; then
-		SETTINGS_EXCERPT=$(redact_settings_json "${HOME}/.claude/settings.local.json")
-	fi
-
-	SETTINGS_CONTEXT="Current settings snapshot included below.
-
-\`\`\`json
-$SETTINGS_EXCERPT
-\`\`\`"
-fi
-
-# Build the analysis prompt
-prompt="You are an AI agent configuration tuner. Analyze the session metrics below and produce a tuning report with specific, actionable suggestions.
-
-## Claude Code Configuration
+CONFIG_SECTION_TITLE="Claude Code Configuration"
+CONFIG_LOCATIONS=$(
+	cat <<'EOF'
 Claude Code settings live in:
 - Global user settings: ~/.claude/settings.json
 - Project-level settings: .claude/settings.json (per repo)
 - Custom slash commands: ~/.claude/commands/*.md or .claude/commands/*.md
 - Hooks: registered in settings.json under the 'hooks' key
+EOF
+)
+CONFIG_FILE_MAPPING=$(
+	cat <<'EOF'
+Use these mappings when suggesting changes:
+- Hook timeout issues -> settings.json (hooks section)
+- Permission denials -> settings.json (permissions.allow)
+- Test strategy issues -> custom commands or CLAUDE.md instructions
+- Vague prompt handling -> custom commands, CLAUDE.md instructions
+- Model/effort issues -> settings.json (model, effortLevel)
+- High session costs -> model selection, prompt optimization, cache strategy
+- Frequent compressions -> session length management, task decomposition
+EOF
+)
 
-## Metrics Summary (last $SESSIONS sessions$([ -n "$PROJECT_FILTER" ] && echo ", project: $PROJECT_FILTER"))
+if [ "$TOOL_FILTER" = "codex" ]; then
+	CONFIG_SECTION_TITLE="Codex Configuration"
+	CONFIG_LOCATIONS=$(
+		cat <<'EOF'
+Codex settings live in:
+- Global user settings: ~/.codex/config.toml
+- Per-run overrides: codex -c key=value
+- Agent skills and plugin instructions: Codex skills plus plugin-local instructions
+- Tool approvals and sandbox behavior: ~/.codex/config.toml
+EOF
+	)
+	CONFIG_FILE_MAPPING=$(
+		cat <<'EOF'
+Use these mappings when suggesting changes:
+- Permission or sandbox friction -> ~/.codex/config.toml (approval_policy, sandbox_mode, app/tool settings)
+- Prompt/instruction issues -> Codex skills, AGENTS.md, or plugin instructions
+- Model/effort issues -> ~/.codex/config.toml (model, model_reasoning_effort, model_verbosity)
+- High session costs -> model selection, reasoning effort, prompt optimization, cache strategy
+- Frequent compressions -> task decomposition, memory usage, and instruction scope
+- Do not suggest Claude-specific settings or hook changes when the filtered tool is codex
+EOF
+	)
+fi
+
+if [ "$INCLUDE_SETTINGS" -eq 1 ]; then
+	echo "  -> Reading current settings for context..."
+	SETTINGS_EXCERPT=""
+	if SETTINGS_EXCERPT=$(read_redacted_settings_snapshot "$TOOL_FILTER"); then
+		SETTINGS_CONTEXT="Current settings snapshot included below.
+
+\`\`\`
+$SETTINGS_EXCERPT
+\`\`\`"
+	else
+		if [ "$TOOL_FILTER" = "codex" ]; then
+			SETTINGS_CONTEXT="Codex settings snapshot omitted because ~/.codex/config.toml is unavailable. Suggest Codex changes from metrics only and do not infer from Claude settings."
+		else
+			SETTINGS_CONTEXT="Settings snapshot omitted. Suggest any settings changes from metrics only and note when local inspection is required."
+		fi
+	fi
+fi
+
+# Build the analysis prompt
+prompt="You are an AI agent configuration tuner. Analyze the session metrics below and produce a tuning report with specific, actionable suggestions.
+
+## $CONFIG_SECTION_TITLE
+$CONFIG_LOCATIONS
+
+## Metrics Summary (last $SESSIONS sessions$([ -n "$PROJECT_FILTER" ] && echo ", project: $PROJECT_FILTER")$([ -n "$TOOL_FILTER" ] && echo ", tool: $TOOL_FILTER"))
 
 ### Overview by Tool
 $OVERVIEW
@@ -430,14 +556,7 @@ $COMPRESSIONS
 $SETTINGS_CONTEXT
 
 ## Config File Mapping
-Use these mappings when suggesting changes:
-- Hook timeout issues -> settings.json (hooks section)
-- Permission denials -> settings.json (permissions.allow)
-- Test strategy issues -> custom commands or CLAUDE.md instructions
-- Vague prompt handling -> custom commands, CLAUDE.md instructions
-- Model/effort issues -> settings.json (model, effortLevel)
-- High session costs -> model selection, prompt optimization, cache strategy
-- Frequent compressions -> session length management, task decomposition
+$CONFIG_FILE_MAPPING
 
 ## Instructions
 
