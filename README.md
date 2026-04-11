@@ -10,16 +10,81 @@ A self-tuning feedback loop plugin for Claude Code, Codex, and OpenCode.
 Collects session metrics, analyzes patterns, and produces tuning
 recommendations to continuously improve agent reliability and autonomy.
 
-Codex and OpenCode support is available now, but neither yet covers as many
-features as the Claude Code plugin. The limiting factor is the current hook
-surface of each tool: they expose fewer event types, so some Agent Smith
-signals remain Claude-only for now. Metrics are tagged by initiating agent,
-and analysis should stay scoped to that agent so findings from one tool do not
-drive config changes for another.
+## Quick Start
+
+### Installation
+
+**Claude Code:**
+
+```bash
+claude plugin add https://github.com/chetmancini/agent-smith
+# or
+claude --plugin-dir path/to/agent-smith
+```
+
+**Codex:** Install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+
+**OpenCode:** Point your `opencode.json` plugin array at this repo, or symlink [`.opencode-plugin/`](.opencode-plugin/).
+
+### Prerequisites
+
+- **jq** — `brew install jq`
+- **sqlite3** — ships with macOS
+- **python3** — for Codex TOML parsing during schema validation
+
+### Usage
+
+Metrics collection starts automatically when the plugin loads. No configuration needed.
+
+**Slash command** (inside any supported agent):
+```text
+/agent-smith:analyze
+```
+
+**Manual scripts:**
+```bash
+bash scripts/metrics-rollup.sh                          # Process events into SQLite
+bash scripts/analyze-config.sh --sessions 50             # Local raw report (default)
+bash scripts/analyze-config.sh --llm --sessions 50       # LLM-backed report (opt-in)
+bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
+```
+
+**Schema validation** (scoped to the calling agent):
+```bash
+bash scripts/refresh-schemas.sh
+bash scripts/validate-agent-config.sh --refresh
+```
+
+Or ask your agent to use the `validate-schemas` or `analyze-config` skills directly.
+
+### Configuration
+
+| Environment Variable | Default | Purpose |
+|---------------------|---------|---------|
+| `AGENT_METRICS_ENABLED` | `1` | Set to `0` to disable all metrics collection |
+| `METRICS_DIR` | `~/.config/agent-smith` | Where metrics data is stored |
+| `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis |
+| `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` for background report generation |
+| `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` for Claude analysis |
+| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include redacted settings in LLM prompts |
+
+## Support Matrix
+
+| Feature                            | Claude Code | Codex | OpenCode |
+|------------------------------------|:-----------:|:-----:|:--------:|
+| Session lifecycle                  | ✓           | ✓     | ✓        |
+| Bash failure tracking              | ✓           | ✓     | ✓        |
+| Vague prompt guidance              | ✓           | ✓     | ✓        |
+| Rollup & analysis                  | ✓           | ✓     | ✓        |
+| Schema validation                  | ✓           |       | ✓        |
+| Tool failures                      | ✓           |       |          |
+| Permission denials                 | ✓           |       |          |
+| Context compression                | ✓           |       |          |
+| Edit-triggered test-loop detection | ✓           |       |          |
+
+Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith limitations. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
-
-Agent Smith implements a closed-loop improvement cycle:
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
@@ -41,7 +106,6 @@ Agent Smith implements a closed-loop improvement cycle:
 │  3. ANALYZE                                             │
 │  SQL queries produce a local report by default          │
 │  LLM analysis is explicit opt-in                        │
-│  Generates tuning report with specific suggestions      │
 │  → ~/.config/agent-smith/reports/<date>-analysis.md     │
 └────────────────────────┬────────────────────────────────┘
                          ↓
@@ -55,65 +119,9 @@ Agent Smith implements a closed-loop improvement cycle:
 
 Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
 
-## Installation
+When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to Claude.
 
-### Claude Code
-
-```bash
-claude --plugin-dir path/to/agent-smith
-```
-
-```bash
-claude plugin add https://github.com/chetmancini/agent-smith
-```
-
-### Codex
-
-Install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) and the plugin-root [hooks.json](hooks.json).
-
-Codex support is intentionally narrower than Claude Code support today. The
-plugin is available and usable in Codex, but some metrics and automations still
-depend on Claude-specific hook events that Codex does not currently expose.
-
-### OpenCode
-
-OpenCode uses a TypeScript plugin system. Install Agent Smith by pointing your
-`opencode.json` plugin array at this repo, or symlink the
-[`.opencode-plugin/`](.opencode-plugin/) directory where OpenCode can discover it.
-OpenCode also provides a hook registration file at
-[`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json).
-
-OpenCode support is similar in scope to Codex: session lifecycle, Bash failure
-tracking, vague prompt guidance, schema validation, rollup, and analysis are
-all available. Some Claude-only signals (PermissionRequest, PostCompact) are
-not yet exposed by OpenCode's hook surface.
-
-Agent Smith keeps all three plugin manifests side by side:
-
-- Claude Code: [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)
-- Codex: [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json)
-- OpenCode: [`.opencode-plugin/plugin.json`](.opencode-plugin/plugin.json)
-
-Claude keeps its existing hook registration at [`hooks/hooks.json`](hooks/hooks.json). Codex uses the root-level [`hooks.json`](hooks.json). OpenCode uses [`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json).
-
-## Support Matrix
-
-| Feature                        | Claude Code | Codex | OpenCode |
-|--------------------------------|:-----------:|:-----:|:--------:|
-| Session lifecycle              | ✓           | ✓     | ✓        |
-| Bash failure tracking          | ✓           | ✓     | ✓        |
-| Vague prompt guidance          | ✓           | ✓     | ✓        |
-| Rollup                         | ✓           | ✓     | ✓        |
-| Analysis                       | ✓           | ✓     | ✓        |
-| Schema validation              | ✓           |       | ✓        |
-| Tool failures                  | ✓           |       |          |
-| Permission denials             | ✓           |       |          |
-| Context compression            | ✓           |       |          |
-| Edit-triggered test-loop detection | ✓       |       |          |
-
-Codex and OpenCode gaps reflect their current hook surfaces, which do not yet expose equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals.
-
-## What Gets Collected
+### What Gets Collected
 
 | Event | Hook | Trigger |
 |-------|------|---------|
@@ -126,75 +134,13 @@ Codex and OpenCode gaps reflect their current hook surfaces, which do not yet ex
 | `test_failure_loop` | PostToolUse | 3+ consecutive test failures |
 | `context_compression` | PostCompact | Context compression (auto or manual) |
 
-All events above are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL. The plugin hardens files it creates to user-only permissions.
+All events are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL with user-only file permissions.
 
 ### Session Cost
 
-Session cost (token usage and estimated USD cost) is calculated during `metrics-rollup.sh`, not during hooks. The session-start hook persists the transcript path, and rollup reads the transcript to aggregate token counts from all assistant turns. Cost is recalculated on each rollup run so mid-session runs capture partial progress and later runs pick up new turns. Results are written directly to the `sessions` table in `rollup.db`.
+Token usage and estimated USD cost are calculated during `metrics-rollup.sh`, not during hooks. The session-start hook persists the transcript path, and rollup reads transcripts to aggregate token counts. Cost is recalculated on each rollup run so mid-session runs capture partial progress. Results are written to the `sessions` table in `rollup.db`.
 
-## Usage
-
-### Automatic
-
-Metrics collection starts immediately when the plugin is loaded. Automatic analysis is off by default; set `AUTO_ANALYZE_ENABLED=1` to allow background report generation once the session threshold is reached.
-
-### Manual analysis
-
-Use the slash command:
-
-```text
-/agent-smith:analyze
-```
-
-Or run the scripts directly:
-
-```bash
-# Process events into SQLite
-bash scripts/metrics-rollup.sh
-
-# Generate a local raw report (default, no LLM)
-bash scripts/analyze-config.sh --sessions 50
-
-# Generate an LLM-backed report (explicit opt-in)
-bash scripts/analyze-config.sh --llm --sessions 50
-
-# Include the initiating agent's local settings snapshot in the LLM prompt (explicit opt-in)
-bash scripts/analyze-config.sh --llm --include-settings --sessions 50
-```
-
-When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
-keys such as API keys, tokens, passwords, and client secrets before sending the
-settings snapshot to Claude. Non-sensitive settings remain visible so the
-analysis can still reason about your current configuration.
-
-### Schema validation
-
-The plugin includes a `validate-schemas` skill that refreshes the initiating agent's schema cache and validates that agent's installed config files only. Claude validates Claude config, Codex validates Codex config, and OpenCode validates OpenCode config, unless you explicitly ask for a cross-agent check.
-
-If you want the local helper scripts directly, they follow the same rule:
-
-```bash
-# Refresh only the installed/current agent schema cache
-bash scripts/refresh-schemas.sh
-
-# Validate only the installed/current agent config files
-bash scripts/validate-agent-config.sh --refresh
-```
-
-## Configuration
-
-| Environment Variable | Default | Purpose |
-|---------------------|---------|---------|
-| `AGENT_METRICS_ENABLED` | `1` | Set to `0` to disable all metrics collection |
-| `METRICS_DIR` | `~/.config/agent-smith` | Where metrics data is stored (created with private permissions) |
-| `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis runs |
-| `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` to allow background report generation |
-| `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` to opt into Claude analysis |
-| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include a redacted snapshot of the initiating agent's local settings in automatic LLM prompts |
-
-## Data Location
-
-All data lives in `~/.config/agent-smith/` and is hardened to user-only permissions when the plugin creates it:
+### Data Location
 
 ```text
 ~/.config/agent-smith/
@@ -208,16 +154,9 @@ All data lives in `~/.config/agent-smith/` and is hardened to user-only permissi
 └── .test_fail_count      # Temporary: consecutive test failures
 ```
 
-## Prerequisites
+## Development
 
-- **jq** — JSON processing (ships with Homebrew, `brew install jq`)
-- **python3** — Used for Codex TOML parsing during schema validation
-- **sqlite3** — Database queries (ships with macOS)
-- **claude** CLI — Optional, required for `--llm` analysis and Claude-specific `make` helper aliases
-- **codex** CLI — Optional, required for Codex-specific `make` helper aliases
-- **opencode** CLI — Optional, required for OpenCode-specific `make` helper aliases
-
-## Plugin Structure
+### Plugin Structure
 
 ```text
 agent-smith/
@@ -238,7 +177,7 @@ agent-smith/
 │   ├── vague-prompt.sh           # Prompt quality
 │   ├── test-result.sh            # Test loop detection
 │   ├── analyze-trigger.sh        # Auto-trigger analysis
-│   └── compact.sh              # Context compression
+│   └── compact.sh                # Context compression
 ├── scripts/
 │   ├── metrics-rollup.sh         # JSONL → SQLite
 │   ├── analyze-config.sh         # Metrics → Report
@@ -252,13 +191,18 @@ agent-smith/
 └── tests/lib/metrics.bats        # BATS test suite
 ```
 
-## Running Tests
+### Hook Registration
+
+- Claude Code: [`hooks/hooks.json`](hooks/hooks.json)
+- Codex: root-level [`hooks.json`](hooks.json)
+- OpenCode: [`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json)
+
+### Running Tests
 
 ```bash
-# Install bats (if needed)
-brew install bats-core
-
-# Run tests
+brew install bats-core   # if needed
+make test
+# or
 bats --print-output-on-failure \
   tests/lib/metrics.bats \
   tests/hooks/security.bats \
@@ -266,86 +210,36 @@ bats --print-output-on-failure \
   tests/scripts/schema_tools.bats
 ```
 
-Or use the Makefile:
+### Linting
 
 ```bash
-make test
-```
-
-## Linting
-
-```bash
-# Install local lint dependencies if needed
 brew install jq shellcheck shfmt
 npm install --global markdownlint-cli
-
-# Run the same lint suite as CI
 make lint
 ```
 
-## Plugin Entrypoints
-
-The primary interface is the plugin skill itself: ask your installed agent (Claude Code, Codex, or OpenCode) to use `validate-schemas` or `analyze-config`. Agent Smith keeps those workflows scoped to the initiating agent so users do not have to pass tool flags around or see config families they do not have installed.
-
-## Local Helpers
-
-The Makefile exposes optional local developer helpers:
+### Makefile Helpers
 
 ```bash
-# Refresh and validate the installed/current agent config locally
+# Run skills through any agent
+make agent-analyze TOOL=claude
+make agent-validate-schemas TOOL=codex
+make agent-loop TOOL=opencode        # validate-schemas then analyze-config
+
+# Ergonomic aliases
+make claude-analyze
+make codex-validate-schemas
+make opencode-loop
+
+# Override session window
+make agent-analyze TOOL=codex SESSIONS=100
+
+# Local schema tools
 make refresh-schemas
 make validate-agent-config
 ```
 
-## Agent Dev Helpers
-
-The Makefile exposes generic agent helpers plus explicit Claude, Codex, and OpenCode aliases:
-
-```bash
-# Run the analyze-config skill through any agent
-make agent-analyze TOOL=claude
-make agent-analyze TOOL=codex
-make agent-analyze TOOL=opencode
-
-# Run the validate-schemas skill through any agent
-make agent-validate-schemas TOOL=claude
-make agent-validate-schemas TOOL=codex
-make agent-validate-schemas TOOL=opencode
-
-# Run validate-schemas, then analyze-config, as one loop
-make agent-loop TOOL=claude
-make agent-loop TOOL=codex
-make agent-loop TOOL=opencode
-
-# Ergonomic aliases
-make claude-analyze
-make claude-validate-schemas
-make claude-loop
-make codex-analyze
-make codex-validate-schemas
-make codex-loop
-make opencode-analyze
-make opencode-validate-schemas
-make opencode-loop
-```
-
-`TOOL=claude`, `TOOL=codex`, and `TOOL=opencode` are the accepted values anywhere this repo exposes a tool selector, including:
-
-- `make refresh-schemas TOOL=...`
-- `make validate-agent-config TOOL=...`
-- `make agent-analyze TOOL=...`
-- `make agent-validate-schemas TOOL=...`
-- `make agent-loop TOOL=...`
-- `scripts/refresh-schemas.sh --tool ...`
-- `scripts/validate-agent-config.sh --tool ...`
-- `scripts/analyze-config.sh --tool ...`
-
-You can override the session window for the analysis targets:
-
-```bash
-make agent-analyze TOOL=codex SESSIONS=100
-make agent-loop TOOL=claude SESSIONS=100
-```
+`TOOL=claude`, `TOOL=codex`, and `TOOL=opencode` are accepted anywhere this repo exposes a tool selector.
 
 ## License
 
