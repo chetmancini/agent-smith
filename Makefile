@@ -15,8 +15,9 @@ TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),claude)
 CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
+VERSION ?=
 
-.PHONY: help test lint refresh-schemas validate-agent-config agent-analyze agent-validate-schemas agent-loop claude-analyze claude-validate-schemas claude-loop codex-analyze codex-validate-schemas codex-loop opencode-analyze opencode-validate-schemas opencode-loop
+.PHONY: help test lint version sync-version set-version release refresh-schemas validate-agent-config agent-analyze agent-validate-schemas agent-loop claude-analyze claude-validate-schemas claude-loop codex-analyze codex-validate-schemas codex-loop opencode-analyze opencode-validate-schemas opencode-loop
 
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
@@ -30,6 +31,9 @@ help:
 		printf '\033[36mCore\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run the Bats test suite"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
 		printf '\n\033[36mAgent Helpers\033[0m\n'; \
@@ -61,6 +65,9 @@ help:
 		printf 'Core\n'; \
 		printf '  %-30s %s\n' "make test" "Run the Bats test suite"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
+		printf '  %-30s %s\n' "make version" "Print the current release version"; \
+		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
+		printf '  %-30s %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  %-30s %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  %-30s %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
 		printf '\nAgent Helpers\n'; \
@@ -106,6 +113,26 @@ lint:
 	$(SHELLCHECK) -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(SHFMT) -d hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(MARKDOWNLINT) README.md commands/**/*.md skills/**/*.md
+
+version:
+	@cat VERSION
+
+sync-version:
+	"$(SHELL)" scripts/set-version.sh --sync
+
+set-version:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make set-version VERSION=1.0.1" >&2; \
+		exit 1; \
+	fi
+	"$(SHELL)" scripts/set-version.sh "$(VERSION)"
+
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make release VERSION=1.0.1" >&2; \
+		exit 1; \
+	fi
+	"$(SHELL)" scripts/release.sh "$(VERSION)"
 
 refresh-schemas:
 	"$(SHELL)" scripts/refresh-schemas.sh $(TOOL_ARG)
