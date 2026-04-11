@@ -98,10 +98,20 @@ Claude keeps its existing hook registration at [`hooks/hooks.json`](hooks/hooks.
 
 ## Support Matrix
 
-- Claude Code: full support for session lifecycle, tool failures, permission denials, vague prompts, context compression, edit-triggered test-loop detection, rollup, and analysis.
-- Codex: available now, with support for session lifecycle, Bash failure tracking, vague prompt guidance, rollup, and analysis through the Codex plugin manifest and hook shims.
-- OpenCode: available now, with support for session lifecycle, Bash failure tracking, vague prompt guidance, schema validation, rollup, and analysis through the OpenCode plugin manifest and hook shims.
-- Codex/OpenCode limitations: the current hook surfaces of Codex and OpenCode do not expose direct equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals, so permission-denial metrics, context-compression metrics, and edit-triggered test-loop detection remain Claude-only for now.
+| Feature                        | Claude Code | Codex | OpenCode |
+|--------------------------------|:-----------:|:-----:|:--------:|
+| Session lifecycle              | ✓           | ✓     | ✓        |
+| Bash failure tracking          | ✓           | ✓     | ✓        |
+| Vague prompt guidance          | ✓           | ✓     | ✓        |
+| Rollup                         | ✓           | ✓     | ✓        |
+| Analysis                       | ✓           | ✓     | ✓        |
+| Schema validation              | ✓           |       | ✓        |
+| Tool failures                  | ✓           |       |          |
+| Permission denials             | ✓           |       |          |
+| Context compression            | ✓           |       |          |
+| Edit-triggered test-loop detection | ✓       |       |          |
+
+Codex and OpenCode gaps reflect their current hook surfaces, which do not yet expose equivalents for Claude's `PermissionRequest`, `PostToolUseFailure`, or `PostCompact` signals.
 
 ## What Gets Collected
 
