@@ -10,6 +10,7 @@
   "repository": "https://github.com/chetmancini/agent-smith",
   "license": "MIT",
   "keywords": [
+    "agent-smith",
     "metrics",
     "telemetry",
     "tuning",
@@ -18,7 +19,8 @@
     "schema-validation",
     "feedback-loop",
     "codex",
-    "claude-code"
+    "claude-code",
+    "plugin-marketplace"
   ],
   "skills": "./skills/",
   "hooks": "./hooks.json",
@@ -35,6 +37,7 @@
     ],
     "websiteURL": "https://github.com/chetmancini/agent-smith",
     "privacyPolicyURL": "https://github.com/chetmancini/agent-smith",
+    "termsOfServiceURL": "https://github.com/chetmancini/agent-smith/blob/main/LICENSE",
     "defaultPrompt": [
       "Analyze my recent agent metrics and suggest the highest-value tuning changes",
       "Validate my current Codex config against the latest schema",

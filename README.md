@@ -17,12 +17,13 @@ recommendations to continuously improve agent reliability and autonomy.
 **Claude Code:**
 
 ```bash
-claude plugin add https://github.com/chetmancini/agent-smith
-# or
+claude plugins marketplace add chetmancini/agent-smith
+claude plugins install agent-smith@agent-smith
+# local development
 claude --plugin-dir path/to/agent-smith
 ```
 
-**Codex:** Install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+**Codex:** Add `chetmancini/agent-smith` as a plugin marketplace source, then install Agent Smith from that marketplace. For local development, install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
 
 **OpenCode:** Point your `opencode.json` plugin array at this repo, or symlink [`.opencode-plugin/`](.opencode-plugin/).
 

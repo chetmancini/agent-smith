@@ -1,0 +1,37 @@
+{
+  "name": "agent-smith",
+  "owner": {
+    "name": "Chet Mancini"
+  },
+  "metadata": {
+    "description": "Marketplace for the Agent Smith feedback loop plugin for Claude Code.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-smith",
+      "source": "./",
+      "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Chet Mancini"
+      },
+      "homepage": "https://github.com/chetmancini/agent-smith",
+      "repository": "https://github.com/chetmancini/agent-smith",
+      "license": "MIT",
+      "keywords": [
+        "agent-smith",
+        "metrics",
+        "telemetry",
+        "tuning",
+        "self-improvement",
+        "analysis",
+        "schema-validation",
+        "feedback-loop",
+        "claude-code",
+        "codex"
+      ],
+      "category": "coding"
+    }
+  ]
+}
