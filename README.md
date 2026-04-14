@@ -40,13 +40,14 @@ Metrics collection starts automatically when the plugin loads. No configuration 
 **Slash command** (inside any supported agent):
 ```text
 /agent-smith:analyze
+/agent-smith:analyze-fast
 ```
 
 **Manual scripts:**
 ```bash
 bash scripts/metrics-rollup.sh                          # Process events into SQLite
 bash scripts/analyze-config.sh --sessions 50             # Local raw report (default)
-bash scripts/analyze-config.sh --llm --sessions 50       # LLM-backed report (opt-in)
+bash scripts/analyze-config.sh --llm --sessions 50       # Agent-backed report for the active tool
 bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
 ```
 
@@ -66,7 +67,7 @@ Or ask your agent to use the `validate-schemas` or `analyze-config` skills direc
 | `METRICS_DIR` | `~/.config/agent-smith` | Where metrics data is stored |
 | `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis |
 | `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` for background report generation |
-| `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` for Claude analysis |
+| `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` for agent-backed analysis |
 | `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include redacted settings in LLM prompts |
 
 ## Support Matrix
@@ -105,8 +106,8 @@ Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith lim
                          ↓
 ┌─────────────────────────────────────────────────────────┐
 │  3. ANALYZE                                             │
-│  SQL queries produce a local report by default          │
-│  LLM analysis is explicit opt-in                        │
+│  CLI runs default to a local raw report                 │
+│  /agent-smith:analyze defaults to agent-backed LLM      │
 │  → ~/.config/agent-smith/reports/<date>-analysis.md     │
 └────────────────────────┬────────────────────────────────┘
                          ↓
@@ -120,7 +121,7 @@ Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith lim
 
 Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
 
-When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to Claude.
+When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to the active agent.
 
 ### What Gets Collected
 
@@ -189,6 +190,7 @@ agent-smith/
 │   ├── analyze-config/SKILL.md   # Analysis skill
 │   └── validate-schemas/SKILL.md # Schema validation skill
 ├── commands/analyze.md           # /agent-smith:analyze
+├── commands/analyze-fast.md      # /agent-smith:analyze-fast
 └── tests/lib/metrics.bats        # BATS test suite
 ```
 

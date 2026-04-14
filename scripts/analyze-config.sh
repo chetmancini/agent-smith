@@ -1,5 +1,5 @@
 #!/bin/bash
-# Config analyzer: gather metrics and optionally invoke Claude for tuning suggestions
+# Config analyzer: gather metrics and optionally invoke the active agent for tuning suggestions
 # Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
@@ -16,6 +16,8 @@ TOOL_FILTER="${AGENT_SMITH_TOOL:-}"
 # Plugin root (script lives in scripts/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=scripts/lib/agent-tool.sh
+source "${SCRIPT_DIR}/lib/agent-tool.sh"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -27,7 +29,7 @@ while [ $# -gt 0 ]; do
 		cat <<'EOF'
 Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
 
-Generate a local Agent Smith metrics report, optionally followed by Claude-backed recommendations.
+Generate a local Agent Smith metrics report, optionally followed by active-agent recommendations.
 EOF
 		exit 0
 		;;
@@ -55,6 +57,16 @@ EOF
 	esac
 done
 
+if [ -n "$TOOL_FILTER" ] && ! agent_smith_validate_tool_name "$TOOL_FILTER"; then
+	echo "Error: unsupported tool '$TOOL_FILTER' (expected claude, codex, or opencode)" >&2
+	exit 1
+fi
+
+if [ "$USE_LLM" -eq 1 ]; then
+	# LLM-backed analysis should stay scoped to the active agent by default.
+	TOOL_FILTER="$(agent_smith_detect_tool "$TOOL_FILTER")"
+fi
+
 ensure_private_dir() {
 	local path="$1"
 	local old_umask
@@ -69,6 +81,41 @@ harden_private_file() {
 	local path="$1"
 	[ -e "$path" ] || return 0
 	chmod 600 "$path" 2>/dev/null || true
+}
+
+llm_cli_bin() {
+	case "$1" in
+	claude) printf '%s\n' "${AGENT_CLI:-claude}" ;;
+	codex) printf '%s\n' "${AGENT_CLI:-codex}" ;;
+	opencode) printf '%s\n' "${AGENT_CLI:-opencode}" ;;
+	*) return 1 ;;
+	esac
+}
+
+llm_cli_label() {
+	case "$1" in
+	claude) printf '%s\n' 'Claude' ;;
+	codex) printf '%s\n' 'Codex' ;;
+	opencode) printf '%s\n' 'OpenCode' ;;
+	*) return 1 ;;
+	esac
+}
+
+run_llm_prompt() {
+	case "$LLM_TOOL" in
+	claude)
+		"$LLM_BIN" -p --output-format text "$prompt" >"$output_file" 2>/dev/null
+		;;
+	codex)
+		"$LLM_BIN" exec -C "$PLUGIN_ROOT" "$prompt" >"$output_file" 2>/dev/null
+		;;
+	opencode)
+		"$LLM_BIN" run --dir "$PLUGIN_ROOT" "$prompt" >"$output_file" 2>/dev/null
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 redact_settings_json() {
@@ -464,8 +511,12 @@ fi
 
 # --- LLM Analysis Mode ---
 
-if ! command -v claude >/dev/null 2>&1; then
-	echo "Error: claude CLI not found. Re-run without --llm for a local raw report." >&2
+LLM_TOOL="$TOOL_FILTER"
+LLM_BIN="$(llm_cli_bin "$LLM_TOOL")"
+LLM_LABEL="$(llm_cli_label "$LLM_TOOL")"
+
+if ! command -v "$LLM_BIN" >/dev/null 2>&1; then
+	echo "Error: ${LLM_BIN} CLI not found. Re-run without --llm for a local raw report." >&2
 	exit 1
 fi
 
@@ -646,11 +697,11 @@ if [ "$AUTO_MODE" -eq 1 ]; then
 NOTE: This is an automated analysis run. Produce the report only. Do not suggest interactive actions."
 fi
 
-echo "Running analysis with Claude..."
+echo "Running analysis with $LLM_LABEL..."
 echo "  -> Building prompt ($(echo "$prompt" | wc -c | tr -d ' ') bytes)..."
-echo "  -> Sending to Claude CLI (this may take 30-60s)..."
+echo "  -> Sending to ${LLM_LABEL} CLI (this may take 30-60s)..."
 
-if claude -p --output-format text "$prompt" >"$output_file" 2>/dev/null; then
+if run_llm_prompt; then
 	harden_private_file "$output_file"
 	echo "  Analysis complete."
 	echo "Report saved: $output_file"

@@ -56,18 +56,19 @@ create_metrics_db() {
     "
 }
 
-create_fake_claude() {
+create_fake_llm_cli() {
     local fakebin="$1"
-    local marker_file="$2"
-    local prompt_capture="$3"
+    local name="$2"
+    local marker_file="$3"
+    local prompt_capture="$4"
     mkdir -p "$fakebin"
-    cat > "${fakebin}/claude" <<EOF
+    cat > "${fakebin}/${name}" <<EOF
 #!/bin/bash
 printf 'report\n'
 printf '%s\n' "\$*" > "$prompt_capture"
 touch "$marker_file"
 EOF
-    chmod 700 "${fakebin}/claude"
+    chmod 700 "${fakebin}/${name}"
 }
 
 @test "test-result hook does not execute injected commands from filenames" {
@@ -107,7 +108,7 @@ EOF
     prompt_capture="$TEST_TMPDIR/prompt.txt"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
 
     run env PATH="$fakebin:$PATH" METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 1
 
@@ -126,7 +127,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.claude"
     printf '{"apiKey":"super-secret-token"}\n' > "$home_dir/.claude/settings.json"
 
@@ -147,7 +148,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.claude"
     printf '{"apiKey":"super-secret-token","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
 
@@ -160,7 +161,7 @@ EOF
     grep -q '"model": "sonnet"' "$prompt_capture"
 }
 
-@test "codex llm analysis redacts TOML secrets before sending settings" {
+@test "codex llm analysis uses the codex cli and redacts TOML secrets before sending settings" {
     local metrics_dir db_file fakebin marker prompt_capture home_dir
     metrics_dir="$TEST_TMPDIR/metrics"
     db_file="$metrics_dir/rollup.db"
@@ -170,7 +171,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" codex "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.codex"
     cat > "$home_dir/.codex/config.toml" <<'EOF'
 model = "gpt-5.4"
@@ -183,6 +184,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [ -f "$marker" ]
+    grep -q '^exec -C ' "$prompt_capture"
     ! grep -q "super-secret-token" "$prompt_capture"
     ! grep -q "another-secret" "$prompt_capture"
     grep -q 'api_key = "\[REDACTED\]"' "$prompt_capture"
@@ -200,7 +202,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" opencode "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.config/opencode"
     cat > "$home_dir/.config/opencode/opencode.json" <<'EOF'
 {
@@ -215,6 +217,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [ -f "$marker" ]
+    grep -q '^run --dir ' "$prompt_capture"
     ! grep -q "super-secret-token" "$prompt_capture"
     ! grep -q "another-secret" "$prompt_capture"
     grep -q '"apiKey": "\[REDACTED\]"' "$prompt_capture"
@@ -232,7 +235,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" opencode "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.claude"
     printf '{"apiKey":"claude-secret","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
 
@@ -256,7 +259,7 @@ EOF
     home_dir="$TEST_TMPDIR/home"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" codex "$marker" "$prompt_capture"
     mkdir -p "$home_dir/.claude"
     printf '{"apiKey":"claude-secret","model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
 
@@ -268,6 +271,26 @@ EOF
     ! grep -q "claude-secret" "$prompt_capture"
     ! grep -q '"model": "sonnet"' "$prompt_capture"
     grep -q "Codex settings snapshot omitted because ~/.codex/config.toml is unavailable" "$prompt_capture"
+}
+
+@test "llm analysis defaults to the active agent cli when AGENT_SMITH_TOOL is set" {
+    local metrics_dir db_file fakebin marker prompt_capture
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/codex_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+
+    create_metrics_db "$db_file"
+    create_fake_llm_cli "$fakebin" codex "$marker" "$prompt_capture"
+
+    run env PATH="$fakebin:$PATH" METRICS_DIR="$metrics_dir" AGENT_SMITH_TOOL=codex \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --sessions 1
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    grep -q '^exec -C ' "$prompt_capture"
+    grep -q 'tool: codex' "$prompt_capture"
 }
 
 @test "analyze-config report includes project breakdown section" {
@@ -414,7 +437,7 @@ EOF
     prompt_capture="$TEST_TMPDIR/prompt.txt"
 
     create_metrics_db "$db_file"
-    create_fake_claude "$fakebin" "$marker" "$prompt_capture"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
 
     run env PATH="$fakebin:$PATH" METRICS_DIR="$metrics_dir" ANALYZE_THRESHOLD=1 bash "$HOOKS_DIR/analyze-trigger.sh"
 
