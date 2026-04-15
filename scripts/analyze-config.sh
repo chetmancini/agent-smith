@@ -432,6 +432,89 @@ query_compressions() {
           );
     " 2>/dev/null || echo "(no data)"
 }
+
+query_stop_failures() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            json_extract(metadata, '$.error_type') as error_type,
+            COUNT(*) as total,
+            COUNT(DISTINCT session_id) as sessions_affected
+        FROM events
+        WHERE event_type = 'stop_failure'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY error_type
+        ORDER BY total DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_tool_success_rates() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            a.tool_name,
+            a.attempts,
+            COALESCE(f.failures, 0) as failures,
+            ROUND(100.0 * COALESCE(f.failures, 0) / a.attempts, 1) as failure_rate_pct
+        FROM (
+            SELECT
+                json_extract(metadata, '$.tool_name') as tool_name,
+                COUNT(*) as attempts
+            FROM events
+            WHERE event_type = 'tool_attempt'
+              $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+              AND session_id IN ($(session_filter_subquery))
+            GROUP BY tool_name
+        ) a
+        LEFT JOIN (
+            SELECT
+                json_extract(metadata, '$.tool_name') as tool_name,
+                COUNT(*) as failures
+            FROM events
+            WHERE event_type = 'tool_failure'
+              $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+              AND session_id IN ($(session_filter_subquery))
+            GROUP BY tool_name
+        ) f ON a.tool_name = f.tool_name
+        ORDER BY a.attempts DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_subagent_usage() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            json_extract(metadata, '$.agent_type') as agent_type,
+            COUNT(*) as spawns,
+            COUNT(DISTINCT session_id) as sessions
+        FROM events
+        WHERE event_type = 'subagent_start'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY agent_type
+        ORDER BY spawns DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_subagent_durations() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            json_extract(metadata, '$.agent_type') as agent_type,
+            COUNT(*) as completed,
+            ROUND(AVG(json_extract(metadata, '$.duration_seconds')), 1) as avg_duration_s,
+            ROUND(MAX(json_extract(metadata, '$.duration_seconds')), 0) as max_duration_s
+        FROM events
+        WHERE event_type = 'subagent_stop'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY agent_type
+        ORDER BY completed DESC;
+    " 2>/dev/null || echo "(no data)"
+}
 # --- Gather Data ---
 
 if [ -n "$PROJECT_FILTER" ]; then
@@ -460,6 +543,14 @@ echo "  -> Querying session costs..."
 SESSION_COSTS=$(query_session_costs)
 echo "  -> Querying context compressions..."
 COMPRESSIONS=$(query_compressions)
+echo "  -> Querying API errors..."
+STOP_FAILURES=$(query_stop_failures)
+echo "  -> Querying tool success rates..."
+TOOL_SUCCESS_RATES=$(query_tool_success_rates)
+echo "  -> Querying subagent usage..."
+SUBAGENT_USAGE=$(query_subagent_usage)
+echo "  -> Querying subagent durations..."
+SUBAGENT_DURATIONS=$(query_subagent_durations)
 echo "  All metrics gathered."
 
 # Generate output filename with collision handling
@@ -519,6 +610,18 @@ $SESSION_COSTS
 
 ## Context Compressions
 $COMPRESSIONS
+
+## API Errors
+$STOP_FAILURES
+
+## Tool Success Rates
+$TOOL_SUCCESS_RATES
+
+## Subagent Usage
+$SUBAGENT_USAGE
+
+## Subagent Durations
+$SUBAGENT_DURATIONS
 EOF
 	harden_private_file "$output_file"
 }
