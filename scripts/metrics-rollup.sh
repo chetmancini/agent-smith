@@ -9,6 +9,9 @@ set -euo pipefail
 METRICS_DIR="${METRICS_DIR:-${HOME}/.config/agent-smith}"
 EVENTS_FILE="${METRICS_DIR}/events.jsonl"
 DB_FILE="${METRICS_DIR}/rollup.db"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/metrics-db.sh
+source "${SCRIPT_DIR}/lib/metrics-db.sh"
 
 ensure_private_dir() {
 	local path="$1"
@@ -144,22 +147,7 @@ CREATE TABLE IF NOT EXISTS ingestion_state (
 );
 SCHEMA
 
-# Migrate: add cwd column to sessions (idempotent)
-sqlite3 "$DB_FILE" "ALTER TABLE sessions ADD COLUMN cwd TEXT;" 2>/dev/null || true
-sqlite3 "$DB_FILE" "CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);" 2>/dev/null || true
-
-# Idempotent column additions for session cost and compression tracking
-for col_def in \
-	"input_tokens INTEGER DEFAULT 0" \
-	"output_tokens INTEGER DEFAULT 0" \
-	"cache_read_tokens INTEGER DEFAULT 0" \
-	"cache_create_tokens INTEGER DEFAULT 0" \
-	"estimated_cost_usd REAL DEFAULT 0.0" \
-	"model TEXT" \
-	"assistant_turns INTEGER DEFAULT 0" \
-	"compression_count INTEGER DEFAULT 0"; do
-	sqlite3 "$DB_FILE" "ALTER TABLE sessions ADD COLUMN $col_def;" 2>/dev/null || true
-done
+agent_smith_metrics_apply_reporting_views "$DB_FILE"
 
 # Atomically move the current live file out of the way so concurrent hook
 # writes land in a fresh events.jsonl instead of racing with this ingest pass.
@@ -266,7 +254,6 @@ sqlite3 "$DB_FILE" "
 TRANSCRIPT_PATHS_FILE="${METRICS_DIR}/.transcript_paths"
 if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	# Source metrics.sh for _estimate_cost
-	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 	# shellcheck source=hooks/lib/metrics.sh
 	source "${SCRIPT_DIR}/../hooks/lib/metrics.sh"
 

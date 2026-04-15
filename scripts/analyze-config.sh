@@ -18,6 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=scripts/lib/agent-tool.sh
 source "${SCRIPT_DIR}/lib/agent-tool.sh"
+# shellcheck source=scripts/lib/metrics-db.sh
+source "${SCRIPT_DIR}/lib/metrics-db.sh"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -220,6 +222,8 @@ if [ ! -f "$DB_FILE" ]; then
 	exit 1
 fi
 
+agent_smith_metrics_apply_reporting_views "$DB_FILE"
+
 escaped_tool_filter() {
 	printf '%s' "$1" | sed "s/'/''/g"
 }
@@ -233,7 +237,7 @@ tool_filter_label() {
 # Build the session-filter subquery used by all metric queries.
 # When --project is set, restrict to sessions whose cwd basename matches.
 session_filter_subquery() {
-	local sql="SELECT session_id FROM sessions WHERE started_at IS NOT NULL"
+	local sql="SELECT session_id FROM reporting_sessions WHERE started_at IS NOT NULL"
 	if [ -n "$TOOL_FILTER" ]; then
 		local escaped_tool
 		escaped_tool=$(escaped_tool_filter "$TOOL_FILTER")
@@ -242,8 +246,7 @@ session_filter_subquery() {
 	if [ -n "$PROJECT_FILTER" ]; then
 		local escaped
 		escaped=$(printf '%s' "$PROJECT_FILTER" | sed "s/'/''/g")
-		# basename(cwd): strip trailing slash, then extract text after last '/'
-		sql="$sql AND REPLACE(RTRIM(cwd,'/'), RTRIM(RTRIM(cwd,'/'), REPLACE(RTRIM(cwd,'/'),'/','')),'') = '${escaped}'"
+		sql="$sql AND project = '${escaped}'"
 	fi
 	sql="$sql ORDER BY started_at DESC LIMIT $SESSIONS"
 	printf '%s' "$sql"
@@ -254,10 +257,10 @@ session_filter_subquery() {
 query_tool_failures() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            json_extract(metadata, '$.tool_name') as tool_name,
+            tool_name,
             COUNT(*) as total_failures,
             COUNT(DISTINCT session_id) as sessions_affected
-        FROM events
+        FROM reporting_events
         WHERE event_type = 'tool_failure'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -274,13 +277,13 @@ query_recent_failure_examples() {
         SELECT
             ts,
             session_id,
-            json_extract(metadata, '$.tool_name') as tool_name,
-            COALESCE(json_extract(metadata, '$.command'), '') as command,
-            COALESCE(json_extract(metadata, '$.exit_code'), '') as exit_code,
-            COALESCE(json_extract(metadata, '$.file_path'), '') as file_path,
-            COALESCE(json_extract(metadata, '$.stderr_snippet'), json_extract(metadata, '$.error'), '') as stderr_or_error,
-            COALESCE(json_extract(metadata, '$.stdout_snippet'), '') as stdout_snippet
-        FROM events
+            tool_name,
+            COALESCE(command, '') as command,
+            COALESCE(exit_code, '') as exit_code,
+            COALESCE(file_path, '') as file_path,
+            stderr_or_error,
+            COALESCE(stdout_snippet, '') as stdout_snippet
+        FROM reporting_events
         WHERE event_type = 'tool_failure'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -294,10 +297,10 @@ query_recent_failure_examples() {
 query_permission_denials() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            json_extract(metadata, '$.tool_name') as tool_name,
+            tool_name,
             COUNT(*) as denial_count,
             COUNT(DISTINCT session_id) as sessions_affected
-        FROM events
+        FROM reporting_events
         WHERE event_type = 'permission_denied'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -313,9 +316,9 @@ query_test_loops() {
         SELECT
             session_id,
             COUNT(*) as loop_events,
-            MAX(json_extract(metadata, '$.failure_count')) as max_failures,
-            json_extract(metadata, '$.test_command') as test_command
-        FROM events
+            MAX(failure_count) as max_failures,
+            test_command
+        FROM reporting_events
         WHERE event_type = 'test_failure_loop'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -333,7 +336,7 @@ query_clarifying_questions() {
             COUNT(*) as total_clarifications,
             COUNT(DISTINCT session_id) as sessions_with_clarification,
             (SELECT COUNT(*) FROM ($(session_filter_subquery))) as total_sessions
-        FROM events
+        FROM reporting_events
         WHERE event_type = 'clarifying_question'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -349,7 +352,7 @@ query_session_outcomes() {
             COUNT(*) as count,
             ROUND(AVG(duration_seconds), 0) as avg_duration_s,
             ROUND(MAX(duration_seconds), 0) as max_duration_s
-        FROM sessions
+        FROM reporting_sessions
         WHERE session_id IN (
             $(session_filter_subquery)
         )
@@ -369,7 +372,7 @@ query_overview() {
             SUM(test_loop_count) as test_loops,
             SUM(clarification_count) as clarifications,
             SUM(denial_count) as denials
-        FROM sessions
+        FROM reporting_sessions
         WHERE session_id IN (
             $(session_filter_subquery)
         )
@@ -381,7 +384,7 @@ query_overview() {
 query_project_breakdown() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            REPLACE(RTRIM(cwd,'/'), RTRIM(RTRIM(cwd,'/'), REPLACE(RTRIM(cwd,'/'),'/','')),'') as project,
+            project,
             COUNT(DISTINCT session_id) as sessions,
             SUM(event_count) as total_events,
             SUM(failure_count) as failures,
@@ -389,8 +392,8 @@ query_project_breakdown() {
             SUM(clarification_count) as clarifications,
             SUM(denial_count) as denials,
             ROUND(AVG(duration_seconds), 0) as avg_duration_s
-        FROM sessions
-        WHERE cwd IS NOT NULL
+        FROM reporting_sessions
+        WHERE project IS NOT NULL
           AND session_id IN (
               $(session_filter_subquery)
           )
@@ -408,7 +411,7 @@ query_session_costs() {
             ROUND(AVG(estimated_cost_usd), 4) as avg_cost_usd,
             ROUND(MAX(estimated_cost_usd), 4) as max_cost_usd,
             ROUND(SUM(input_tokens + output_tokens + cache_read_tokens + cache_create_tokens), 0) as total_tokens
-        FROM sessions
+        FROM reporting_sessions
         WHERE session_id IN (
             $(session_filter_subquery)
         )
@@ -421,10 +424,10 @@ query_compressions() {
         SELECT
             COUNT(*) as total_compressions,
             COUNT(DISTINCT session_id) as sessions_with_compression,
-            SUM(CASE WHEN json_extract(metadata, '$.trigger') = 'auto' THEN 1 ELSE 0 END) as auto_count,
-            SUM(CASE WHEN json_extract(metadata, '$.trigger') = 'manual' THEN 1 ELSE 0 END) as manual_count,
-            ROUND(AVG(json_extract(metadata, '$.transcript_lines')), 0) as avg_transcript_lines
-        FROM events
+            SUM(CASE WHEN trigger = 'auto' THEN 1 ELSE 0 END) as auto_count,
+            SUM(CASE WHEN trigger = 'manual' THEN 1 ELSE 0 END) as manual_count,
+            ROUND(AVG(transcript_lines), 0) as avg_transcript_lines
+        FROM reporting_events
         WHERE event_type = 'context_compression'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -436,10 +439,10 @@ query_compressions() {
 query_stop_failures() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            json_extract(metadata, '$.error_type') as error_type,
+            error_type,
             COUNT(*) as total,
             COUNT(DISTINCT session_id) as sessions_affected
-        FROM events
+        FROM reporting_events
         WHERE event_type = 'stop_failure'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -459,9 +462,9 @@ query_tool_success_rates() {
             ROUND(100.0 * COALESCE(f.failures, 0) / a.attempts, 1) as failure_rate_pct
         FROM (
             SELECT
-                json_extract(metadata, '$.tool_name') as tool_name,
+                tool_name,
                 COUNT(*) as attempts
-            FROM events
+            FROM reporting_events
             WHERE event_type = 'tool_attempt'
               $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
               AND session_id IN ($(session_filter_subquery))
@@ -469,9 +472,9 @@ query_tool_success_rates() {
         ) a
         LEFT JOIN (
             SELECT
-                json_extract(metadata, '$.tool_name') as tool_name,
+                tool_name,
                 COUNT(*) as failures
-            FROM events
+            FROM reporting_events
             WHERE event_type = 'tool_failure'
               $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
               AND session_id IN ($(session_filter_subquery))
@@ -484,10 +487,10 @@ query_tool_success_rates() {
 query_subagent_usage() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            json_extract(metadata, '$.agent_type') as agent_type,
+            agent_type,
             COUNT(*) as spawns,
             COUNT(DISTINCT session_id) as sessions
-        FROM events
+        FROM reporting_events
         WHERE event_type = 'subagent_start'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
@@ -501,11 +504,11 @@ query_subagent_usage() {
 query_subagent_durations() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            json_extract(metadata, '$.agent_type') as agent_type,
+            agent_type,
             COUNT(*) as completed,
-            ROUND(AVG(json_extract(metadata, '$.duration_seconds')), 1) as avg_duration_s,
-            ROUND(MAX(json_extract(metadata, '$.duration_seconds')), 0) as max_duration_s
-        FROM events
+            ROUND(AVG(duration_seconds), 1) as avg_duration_s,
+            ROUND(MAX(duration_seconds), 0) as max_duration_s
+        FROM reporting_events
         WHERE event_type = 'subagent_stop'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
