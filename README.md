@@ -42,9 +42,11 @@ make codex-upgrade-settings
 
 If you publish Agent Smith through your own Codex plugin source, point that source at this repo root so Codex can read [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json). For hook-based metrics in a checkout, Codex uses the repo-local [`.codex/hooks.json`](.codex/hooks.json) file.
 
-**OpenCode:** There are two ways to use Agent Smith with OpenCode:
+### OpenCode
 
-*Option 1: Native npm plugin (recommended)*
+There are two ways to use Agent Smith with OpenCode:
+
+#### Option 1: Native npm plugin (recommended)
 
 Add to your `opencode.json`:
 
@@ -63,7 +65,7 @@ Or from a local clone:
 }
 ```
 
-*Option 2: Shell hooks (Claude Code compatibility mode)*
+#### Option 2: Shell hooks (Claude Code compatibility mode)
 
 Symlink the plugin directory and OpenCode will auto-discover the hooks:
 
