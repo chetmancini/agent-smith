@@ -867,3 +867,79 @@ JSONL
         bash "$HOOKS_DIR/stop-failure.sh"
     [ $? -eq 0 ]
 }
+
+# ============================================================================
+# PreToolUse (tool-attempt) hook
+# ============================================================================
+
+@test "tool-attempt emits tool_attempt for Bash tool" {
+    local session_hint="test-tool-attempt-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Bash","tool_input":{"command":"git status"},"session_id":"%s","tool_use_id":"tu-1","turn_id":"t-1"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "tool_attempt" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+    [ "$(echo "$line" | jq -r '.metadata.command')" = "git status" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "tool-attempt emits tool_attempt for Edit tool with file_path" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"src/main.ts"},"session_id":"hint","tool_use_id":"tu-2"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Edit" ]
+    [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/main.ts" ]
+}
+
+@test "tool-attempt silently exits for Read tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Read","tool_input":{},"session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    # Should not emit any event
+    [ ! -s "$METRICS_FILE" ]
+}
+
+@test "tool-attempt silently exits for Grep tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Grep","tool_input":{},"session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    [ ! -s "$METRICS_FILE" ]
+}
+
+@test "tool-attempt emits for Agent tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Agent","tool_input":{},"session_id":"hint","tool_use_id":"tu-3"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Agent" ]
+}
+
+@test "tool-attempt exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+    [ $? -eq 0 ]
+}
