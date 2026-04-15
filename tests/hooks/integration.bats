@@ -115,19 +115,19 @@ EOF
         )
     done
 
-    printf '{"tool_name":"Bash","tool_input":{"command":"git status"},"tool_use_id":"tu-remaining","turn_id":"turn-remaining"}' | \
+    printf '{"tool_name":"Bash","tool_input":{"command":"git status"},"tool_use_id":"tu-continuity","turn_id":"turn-continuity"}' | \
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/tool-attempt.sh"
 
-    printf '{"error_type":"server_error","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+    printf '{"error_type":"server_error","turn_id":"turn-continuity","tool_use_id":"tu-continuity"}' | \
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/stop-failure.sh"
 
-    printf '{"agent_id":"ag-remaining","agent_type":"Explore","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+    printf '{"agent_id":"ag-continuity","agent_type":"Explore","turn_id":"turn-continuity","tool_use_id":"tu-continuity"}' | \
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/subagent-start.sh"
 
-    printf '{"agent_id":"ag-remaining","agent_type":"Explore","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+    printf '{"agent_id":"ag-continuity","agent_type":"Explore","turn_id":"turn-continuity","tool_use_id":"tu-continuity"}' | \
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/subagent-stop.sh"
 
