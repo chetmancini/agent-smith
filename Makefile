@@ -32,7 +32,7 @@ help:
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
@@ -70,7 +70,7 @@ help:
 		printf '  %-30s %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
-		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
+		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  %-30s %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  %-30s %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  %-30s %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \

@@ -103,7 +103,10 @@ See the [OpenCode Plugin Docs](https://opencode.ai/docs/plugins/) for the full h
 ### Prepare release
 
 ```bash
-# Bump version in package.json
+# Sync package version from the repo root, then verify the package
+cd ..
+make sync-version
+cd opencode-plugin
 bun run build
 bun run typecheck
 ```
@@ -118,4 +121,4 @@ The `prepublishOnly` script runs the build automatically.
 
 ### Versioning
 
-Keep the version in sync with the main `agent-smith` version in the root `VERSION` file when possible.
+The root [`VERSION`](../VERSION) file is the release source of truth. Use `make sync-version` or `make set-version VERSION=...` from the repo root to update [`package.json`](package.json) before publishing.

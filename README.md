@@ -288,9 +288,9 @@ Agent Smith now uses [`VERSION`](VERSION) as the single release source of truth.
 make release VERSION=1.0.1
 ```
 
-If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value back into the plugin manifests.
+If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude and Codex manifests plus [`opencode-plugin/package.json`](opencode-plugin/package.json).
 
-`make release` requires a clean git worktree and an authenticated `gh` session. If you only want to bump manifests without publishing yet, use `make set-version VERSION=1.0.1`.
+`make release` requires a clean git worktree and an authenticated `gh` session. If you only want to bump versioned release files without publishing yet, use `make set-version VERSION=1.0.1`.
 
 ### Makefile Helpers
 
