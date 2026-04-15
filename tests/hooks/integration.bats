@@ -809,3 +809,61 @@ JSONL
     bad_lines=$(jq -e . "$METRICS_FILE" 2>&1 >/dev/null | wc -l | tr -d ' ')
     [ "$bad_lines" = "0" ]
 }
+
+# ============================================================================
+# StopFailure hook
+# ============================================================================
+
+@test "stop-failure emits stop_failure event with error_type" {
+    local session_hint="test-stop-failure-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    # Prime session state so restore_metrics_session_id can find it
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"error_type":"rate_limit","session_id":"%s"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "stop_failure" ]
+    [ "$(echo "$line" | jq -r '.metadata.error_type')" = "rate_limit" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "stop-failure injects context for rate_limit" {
+    local output
+    output=$(printf '{"error_type":"rate_limit","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [[ "$output" == *"Rate limited"* ]]
+}
+
+@test "stop-failure injects context for max_output_tokens" {
+    local output
+    output=$(printf '{"error_type":"max_output_tokens","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [[ "$output" == *"Output truncated"* ]]
+}
+
+@test "stop-failure does not inject context for server_error" {
+    local output
+    output=$(printf '{"error_type":"server_error","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [ -z "$output" ]
+}
+
+@test "stop-failure exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh"
+    [ $? -eq 0 ]
+}
