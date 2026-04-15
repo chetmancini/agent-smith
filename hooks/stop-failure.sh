@@ -21,11 +21,11 @@ metrics_on_stop_failure "$error_type" "$turn_id" "$tool_use_id" >/dev/null 2>&1 
 
 case "$error_type" in
 rate_limit)
-    printf '\n%s\n' '[System note: Rate limited — consider switching to a smaller model or waiting before retrying.]'
-    ;;
+	printf '\n%s\n' '[System note: Rate limited — consider switching to a smaller model or waiting before retrying.]'
+	;;
 max_output_tokens)
-    printf '\n%s\n' '[System note: Output truncated — consider breaking the task into smaller steps.]'
-    ;;
+	printf '\n%s\n' '[System note: Output truncated — consider breaking the task into smaller steps.]'
+	;;
 esac
 
 exit 0

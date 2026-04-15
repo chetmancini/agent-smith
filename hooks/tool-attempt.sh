@@ -15,7 +15,7 @@ tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
 
 # Belt-and-suspenders filter (matcher already limits to Bash|Edit|Write|Agent)
 case "$tool_name" in
-Bash|Edit|Write|Agent) ;;
+Bash | Edit | Write | Agent) ;;
 *) exit 0 ;;
 esac
 
