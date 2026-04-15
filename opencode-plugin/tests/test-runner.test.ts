@@ -304,6 +304,24 @@ describe("test-runner", () => {
         expect(result.testFile).toBe(testFile)
       }
     })
+
+    test("finds nested Ruby specs using the source path relative to project root", () => {
+      const appDir = join(tempDir, "app", "models")
+      const specDir = join(tempDir, "spec", "app", "models")
+      mkdirSync(appDir, { recursive: true })
+      mkdirSync(specDir, { recursive: true })
+
+      const srcFile = join(appDir, "user.rb")
+      const testFile = join(specDir, "user_spec.rb")
+      writeFileSync(srcFile, "class User; end")
+      writeFileSync(testFile, "describe User do; end")
+      mkdirSync(join(tempDir, ".git"), { recursive: true })
+
+      const result = findTestForFile(srcFile)
+      if (result) {
+        expect(result.testFile).toBe(testFile)
+      }
+    })
   })
 
   // ============================================================================
