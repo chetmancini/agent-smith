@@ -25,13 +25,22 @@ claude --plugin-dir path/to/agent-smith
 
 **Codex:** For local development, keep this repo checked out locally and run Agent Smith through the Codex helpers in this checkout. Those helpers invoke `codex exec -C` so Codex loads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) directly from the repo.
 
+Enable Codex hooks once in `~/.codex/config.toml` if you want automatic metrics collection from Codex sessions:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Codex currently discovers repo-local hooks from [`.codex/hooks.json`](.codex/hooks.json), so keep this checkout trusted and launch Codex from anywhere inside the repo when you want the automatic hook flow.
+
 ```bash
 make codex-analyze
 make codex-validate-schemas
 make codex-upgrade-settings
 ```
 
-If you publish Agent Smith through your own Codex plugin source, point that source at this repo root so Codex can read [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) and [`hooks.json`](hooks.json).
+If you publish Agent Smith through your own Codex plugin source, point that source at this repo root so Codex can read [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json). For hook-based metrics in a checkout, Codex uses the repo-local [`.codex/hooks.json`](.codex/hooks.json) file.
 
 **OpenCode:** Point your `opencode.json` plugin array at this repo, or symlink [`.opencode-plugin/`](.opencode-plugin/).
 
@@ -43,7 +52,7 @@ If you publish Agent Smith through your own Codex plugin source, point that sour
 
 ### Usage
 
-Metrics collection starts automatically when the plugin loads. No configuration needed.
+Claude Code and OpenCode start collecting metrics as soon as their hook manifests load. In Codex, the skill and helper workflow works as soon as the plugin loads, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
 
 **Slash command** (inside any supported agent):
 ```text
@@ -98,7 +107,7 @@ Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze
 | Context compression                | ✓           |       |          |
 | Edit-triggered test-loop detection | ✓           |       |          |
 
-Schema validation and upgrade planning are available for all three agents. The remaining Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith limitations. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
+Schema validation and upgrade planning are available for all three agents. As of April 14, 2026, the official Codex hooks docs expose `SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, and `Stop`, but current Codex tool-scoped hooks still only emit `Bash`. The remaining Codex and OpenCode gaps therefore reflect current hook surfaces rather than missing Agent Smith handlers. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 
@@ -144,12 +153,12 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 |-------|------|---------|
 | `session_start` | SessionStart | Every session start |
 | `session_stop` | Stop | Every session end (with duration) |
-| `tool_failure` | PostToolUseFailure | Tool errors (filters expected non-zero exits) |
-| `command_failure` | PostToolUseFailure | Bash command failures |
-| `permission_denied` | PermissionRequest | Permission denials |
+| `tool_failure` | Claude: PostToolUseFailure | Tool errors (filters expected non-zero exits) |
+| `command_failure` | Claude: PostToolUseFailure; Codex/OpenCode: PostToolUse | Bash command failures |
+| `permission_denied` | PermissionRequest | Permission denials (Claude-only today) |
 | `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
-| `test_failure_loop` | PostToolUse | 3+ consecutive test failures |
-| `context_compression` | PostCompact | Context compression (auto or manual) |
+| `test_failure_loop` | PostToolUse | 3+ consecutive test failures (Claude uses Edit-or-Write matches; Codex currently only emits `Bash`) |
+| `context_compression` | PostCompact | Context compression (auto or manual, Claude-only today) |
 
 Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation; Claude Code also exposes tool failures, permission denials, edit-triggered test loops, and compact events.
 
@@ -181,8 +190,10 @@ Token usage and estimated USD cost are calculated during `metrics-rollup.sh`, no
 agent-smith/
 ├── .claude-plugin/plugin.json    # Claude Code manifest
 ├── .codex-plugin/plugin.json     # Codex manifest
+├── .codex/
+│   └── hooks.json                # Codex repo-local hook registration
 ├── .opencode-plugin/plugin.json  # OpenCode manifest
-├── hooks.json                    # Codex hook registration
+├── hooks.json                    # Legacy Codex hook copy kept in sync with .codex/hooks.json
 ├── assets/
 │   └── agent-smith.svg           # Codex plugin icon
 ├── hooks/
@@ -216,7 +227,7 @@ agent-smith/
 ### Hook Registration
 
 - Claude Code: [`hooks/hooks.json`](hooks/hooks.json)
-- Codex: root-level [`hooks.json`](hooks.json)
+- Codex: repo-local [`.codex/hooks.json`](.codex/hooks.json)
 - OpenCode: [`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json)
 
 ### Running Tests
