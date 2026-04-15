@@ -11,6 +11,9 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
+
+restore_metrics_session_id "$session_id" || true
 
 metrics_on_permission_denied "$tool_name"
 

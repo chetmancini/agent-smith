@@ -22,6 +22,17 @@ expected_session_id() {
     printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -c1-12
 }
 
+create_fake_pytest() {
+    local fakebin="$1"
+    local exit_code="${2:-1}"
+    mkdir -p "$fakebin"
+    cat > "${fakebin}/pytest" <<EOF
+#!/bin/bash
+exit ${exit_code}
+EOF
+    chmod 700 "${fakebin}/pytest"
+}
+
 # ============================================================================
 # Session-ID continuity across hooks
 # ============================================================================
@@ -277,6 +288,26 @@ expected_session_id() {
     assert_output "opencode"
 }
 
+@test "tool-failure reuses the active session id from session-start" {
+    local session_hint="tool-failure-session"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Bash","error":"exit 1","tool_input":{"command":"false"}}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    local session_ids
+    session_ids=$(jq -r '.session_id' "$METRICS_FILE" | sort -u)
+    [ "$session_ids" = "$expected_sid" ]
+}
+
 @test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {
     run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
     assert_success
@@ -290,6 +321,24 @@ expected_session_id() {
 
     run jq -r '.tool' "$METRICS_FILE"
     assert_output "codex"
+}
+
+@test "vague-prompt reuses the active session id from session-start" {
+    local session_hint="vague-session"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
+    assert_success
+
+    run jq -r '.session_id' "$METRICS_FILE"
+    assert_output "$expected_sid"
 }
 
 @test "vague-prompt keeps Codex JSON parseable when metrics persistence fails" {
@@ -316,6 +365,56 @@ expected_session_id() {
 
     run jq -r 'select(.event_type == "tool_failure") | .tool' "$METRICS_FILE"
     assert_output "codex"
+}
+
+@test "permission-denied reuses the active session id from session-start" {
+    local session_hint="permission-session"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Write"}' | env METRICS_DIR="$METRICS_DIR" bash "$HOOKS_DIR/permission-denied.sh"
+
+    run jq -r '.session_id' "$METRICS_FILE"
+    assert_output "$expected_sid"
+}
+
+@test "test-result reuses the active session id from session-start" {
+    local session_hint="test-result-session"
+    local expected_sid fakebin
+    expected_sid=$(expected_session_id "$session_hint")
+    fakebin="$TEST_TMPDIR/fakebin"
+
+    mkdir -p "$TEST_TMPDIR/app" "$TEST_TMPDIR/tests"
+    printf 'def value():\n    return 1\n' > "$TEST_TMPDIR/app/foo.py"
+    printf 'def test_value():\n    assert False\n' > "$TEST_TMPDIR/tests/test_foo.py"
+    create_fake_pytest "$fakebin" 1
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="$TEST_TMPDIR" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    for _ in 1 2 3; do
+        (
+            cd "$TEST_TMPDIR" || exit 1
+            printf '{"tool_input":{"file_path":"%s"}}' "$TEST_TMPDIR/app/foo.py" | \
+                env PATH="$fakebin:$PATH" METRICS_DIR="$METRICS_DIR" \
+                bash "$HOOKS_DIR/test-result.sh"
+        )
+    done
+
+    run jq -r '.session_id' "$METRICS_FILE"
+    assert_output "$expected_sid"
+
+    run jq -r '.event_type' "$METRICS_FILE"
+    assert_output "test_failure_loop"
 }
 
 @test "compact hook reads COMPACT_TRIGGER env for trigger type" {

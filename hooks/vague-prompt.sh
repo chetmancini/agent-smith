@@ -11,6 +11,9 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
 prompt=$(echo "$input" | jq -r '.prompt // empty')
+session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
+
+restore_metrics_session_id "$session_id" || true
 
 if [ -z "$prompt" ]; then
 	exit 0

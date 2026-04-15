@@ -12,6 +12,9 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
+session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
+
+restore_metrics_session_id "$session_id" || true
 
 if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ]; then
 	exit_code=$(echo "$input" | jq -r '

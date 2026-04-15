@@ -12,6 +12,9 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
+session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
+
+restore_metrics_session_id "$session_id" || true
 
 if [ -z "$file_path" ] || [ ! -f "$file_path" ]; then
 	exit 0

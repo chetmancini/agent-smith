@@ -45,6 +45,58 @@ metrics_tool_name() {
 	printf '%s' "${AGENT_SMITH_TOOL:-claude}"
 }
 
+metrics_session_state_file() {
+	printf '%s' "${METRICS_DIR}/.current_session_$(metrics_tool_name)"
+}
+
+persist_active_session_id() {
+	[ -n "${METRICS_SESSION_ID:-}" ] || return 0
+
+	local state_file
+	state_file=$(metrics_session_state_file)
+	_ensure_metrics_dir
+	printf '%s' "$METRICS_SESSION_ID" >"$state_file" 2>/dev/null || true
+	_harden_path "$state_file" 600
+}
+
+load_active_session_id() {
+	local state_file saved_session_id
+	state_file=$(metrics_session_state_file)
+	[ -f "$state_file" ] || return 1
+
+	saved_session_id=$(cat "$state_file" 2>/dev/null || true)
+	[ -n "$saved_session_id" ] || return 1
+
+	METRICS_SESSION_ID="$saved_session_id"
+	export METRICS_SESSION_ID
+	return 0
+}
+
+restore_metrics_session_id() {
+	local session_hint="${1:-}"
+	local env_session_id=""
+
+	if [ -n "$session_hint" ]; then
+		METRICS_SESSION_ID=$(derive_session_id "$session_hint")
+		export METRICS_SESSION_ID
+		return 0
+	fi
+
+	for env_session_id in \
+		"${AGENT_SMITH_SESSION_ID:-}" \
+		"${CLAUDE_SESSION_ID:-}" \
+		"${CODEX_SESSION_ID:-}" \
+		"${OPENCODE_SESSION_ID:-}"; do
+		if [ -n "$env_session_id" ]; then
+			METRICS_SESSION_ID=$(derive_session_id "$env_session_id")
+			export METRICS_SESSION_ID
+			return 0
+		fi
+	done
+
+	load_active_session_id
+}
+
 # Escape a string for safe JSON embedding.
 # Handles all characters that RFC 8259 requires to be escaped: backslash,
 # double-quote, and every ASCII control character (U+0000–U+001F, U+007F).
@@ -178,6 +230,7 @@ metrics_on_session_start() {
 
 	METRICS_SESSION_ID=$(derive_session_id "$session_hint")
 	export METRICS_SESSION_ID
+	persist_active_session_id
 
 	# Persist start timestamp for duration calculation in session_stop.
 	# Scoped by session_id so overlapping sessions don't corrupt each other.
