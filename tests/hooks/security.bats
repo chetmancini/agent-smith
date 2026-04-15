@@ -546,13 +546,13 @@ EOF
     [ ! -f "$marker" ]
 }
 
-@test "analyze-trigger llm mode uses the initiating tool cli, not Claude" {
+@test "analyze-trigger llm mode dispatches through run-agent-skill with the initiating tool" {
     local metrics_dir db_file fakebin marker prompt_capture
     metrics_dir="$TEST_TMPDIR/metrics"
     db_file="$metrics_dir/rollup.db"
     fakebin="$TEST_TMPDIR/fakebin"
-    marker="$TEST_TMPDIR/analyze_config_called"
-    prompt_capture="$TEST_TMPDIR/analyze_config_argv.txt"
+    marker="$TEST_TMPDIR/run_agent_skill_called"
+    prompt_capture="$TEST_TMPDIR/run_agent_skill_argv.txt"
 
     create_metrics_db "$db_file"
     sqlite3 "$db_file" "
@@ -561,10 +561,10 @@ EOF
     "
     create_fake_llm_cli "$fakebin" codex "$TEST_TMPDIR/codex_binary_checked" "$TEST_TMPDIR/codex_unused.txt"
     create_fake_nohup "$fakebin"
-    create_fake_background_bash "$fakebin" "$PROJECT_ROOT/scripts/analyze-config.sh" "$marker" "$prompt_capture"
+    create_fake_background_bash "$fakebin" "$PROJECT_ROOT/scripts/run-agent-skill.sh" "$marker" "$prompt_capture"
 
     run env PATH="$fakebin:/usr/bin:/bin" METRICS_DIR="$metrics_dir" \
-        AGENT_SMITH_TOOL=codex AUTO_ANALYZE_ENABLED=1 AUTO_ANALYZE_MODE=llm ANALYZE_THRESHOLD=1 \
+        AGENT_SMITH_TOOL=codex AUTO_ANALYZE_ENABLED=1 AUTO_ANALYZE_MODE=llm AUTO_ANALYZE_INCLUDE_SETTINGS=1 ANALYZE_THRESHOLD=1 \
         /bin/bash "$HOOKS_DIR/analyze-trigger.sh"
 
     [ "$status" -eq 0 ]
@@ -573,6 +573,9 @@ EOF
         sleep 0.1
     done
     [ -f "$marker" ]
+    grep -q -- 'analyze-config' "$prompt_capture"
     grep -q -- '--tool codex' "$prompt_capture"
-    grep -q -- '--llm' "$prompt_capture"
+    grep -q -- '--sessions 1' "$prompt_capture"
+    grep -q -- '--auto' "$prompt_capture"
+    grep -q -- '--include-settings' "$prompt_capture"
 }

@@ -60,16 +60,18 @@ if [ "$session_count" -ge "$ANALYZE_THRESHOLD" ]; then
 	emit_metric "$agent_tool" "analysis_run" "{\"trigger\":\"auto\",\"mode\":\"${AUTO_ANALYZE_MODE}\",\"sessions\":${session_count}}"
 
 	# Spawn analyzer in background — don't block
-	if [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
-		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto --tool "$agent_tool")
-		if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
+	if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
+		if [ -f "${PLUGIN_ROOT}/scripts/run-agent-skill.sh" ]; then
 			agent_cli_bin="$(agent_smith_cli_bin "$agent_tool")"
 			command -v "$agent_cli_bin" >/dev/null 2>&1 || exit 0
-			analyze_args+=(--llm)
+			analyze_args=(bash "${PLUGIN_ROOT}/scripts/run-agent-skill.sh" analyze-config --tool "$agent_tool" --sessions "$session_count" --auto)
 			if [ "$AUTO_ANALYZE_INCLUDE_SETTINGS" = "1" ]; then
 				analyze_args+=(--include-settings)
 			fi
+			nohup "${analyze_args[@]}" >/dev/null 2>&1 &
 		fi
+	elif [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
+		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto --tool "$agent_tool")
 		nohup "${analyze_args[@]}" >/dev/null 2>&1 &
 	fi
 fi

@@ -11,10 +11,12 @@ MODE="${1:-}"
 TOOL=""
 AGENT_CLI_BIN="${AGENT_CLI:-}"
 SESSIONS="${SESSIONS:-50}"
+INCLUDE_SETTINGS=0
+AUTO_MODE=0
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|codex|opencode]
+Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|codex|opencode] [--sessions N] [--include-settings] [--auto]
 EOF
 }
 
@@ -26,6 +28,18 @@ shift
 
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--auto)
+		AUTO_MODE=1
+		shift
+		;;
+	--include-settings)
+		INCLUDE_SETTINGS=1
+		shift
+		;;
+	--sessions)
+		SESSIONS="${2:-}"
+		shift 2
+		;;
 	--tool)
 		TOOL="${2:-}"
 		shift 2
@@ -49,6 +63,16 @@ analyze-config)
 	COMMON_PROMPT="Use the analyze-config skill from the loaded plugin to review the latest Agent Smith metrics for ${TOOL}.
 
 Run the full skill workflow. Use ${SESSIONS} sessions for the analysis unless the local data set is smaller. When the skill invokes local scripts, treat --tool ${TOOL} as the active tool."
+	if [ "${INCLUDE_SETTINGS}" = "1" ]; then
+		COMMON_PROMPT="${COMMON_PROMPT}
+
+Include the current redacted settings snapshot in the analysis because the caller explicitly enabled settings inclusion."
+	fi
+	if [ "${AUTO_MODE}" = "1" ]; then
+		COMMON_PROMPT="${COMMON_PROMPT}
+
+This invocation came from background automatic analysis, so keep the workflow non-interactive and return the normal report output without asking follow-up questions."
+	fi
 	;;
 validate-schemas)
 	COMMON_PROMPT="Use the validate-schemas skill from the loaded plugin to validate the current ${TOOL} configuration files only and report new, deprecated, or invalid settings."

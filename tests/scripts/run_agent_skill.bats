@@ -37,6 +37,21 @@ EOF
     [[ "$output" == *"--tool claude"* ]]
 }
 
+@test "run-agent-skill analyze-config accepts auto and include-settings options" {
+    local fakebin
+    fakebin="$TEST_TMPDIR/fakebin"
+    create_fake_agent "$fakebin" fake-codex
+
+    run env PATH="$fakebin:$PATH" AGENT_CLI=fake-codex \
+        bash "$PROJECT_ROOT/scripts/run-agent-skill.sh" analyze-config --tool codex --sessions 12 --include-settings --auto
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == exec\ -C\ "$PROJECT_ROOT"* ]]
+    [[ "$output" == *"Use 12 sessions"* ]]
+    [[ "$output" == *"Include the current redacted settings snapshot"* ]]
+    [[ "$output" == *"background automatic analysis"* ]]
+}
+
 @test "run-agent-skill dispatches Codex via codex exec in repo context" {
     local fakebin
     fakebin="$TEST_TMPDIR/fakebin"
