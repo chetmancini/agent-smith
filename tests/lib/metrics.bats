@@ -754,3 +754,75 @@ JSONL
     AGENT_METRICS_ENABLED=0 metrics_on_tool_attempt "Bash" "" "" "ls" ""
     [ ! -s "$METRICS_FILE" ]
 }
+
+# ============================================================================
+# metrics_on_subagent_start
+# ============================================================================
+
+@test "metrics_on_subagent_start emits subagent_start event" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-abc" "Explore" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_start" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "agent-abc" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+}
+
+@test "metrics_on_subagent_start persists timestamp file" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-xyz" "Plan" "" ""
+    [ -f "${METRICS_DIR}/.subagent_start_ts_agent-xyz" ]
+    local ts
+    ts=$(cat "${METRICS_DIR}/.subagent_start_ts_agent-xyz")
+    # Should be a valid unix timestamp (numeric, reasonable range)
+    [[ "$ts" =~ ^[0-9]+$ ]]
+}
+
+@test "metrics_on_subagent_start includes turn_id and tool_use_id" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-123" "general-purpose" "turn-5" "tooluse-9"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-5" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-9" ]
+}
+
+@test "metrics_on_subagent_start respects kill switch" {
+    export METRICS_SESSION_ID="sa-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_subagent_start "agent-off" "Explore" "" ""
+    [ ! -s "$METRICS_FILE" ]
+    [ ! -f "${METRICS_DIR}/.subagent_start_ts_agent-off" ]
+}
+
+# ============================================================================
+# metrics_on_subagent_stop
+# ============================================================================
+
+@test "metrics_on_subagent_stop emits subagent_stop event" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_stop "agent-abc" "Explore" "42" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_stop" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "agent-abc" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+    [ "$(echo "$line" | jq -r '.metadata.duration_seconds')" = "42" ]
+}
+
+@test "metrics_on_subagent_stop includes turn_id and tool_use_id" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_stop "agent-abc" "Plan" "10" "turn-7" "tooluse-11"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-7" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-11" ]
+}
+
+@test "metrics_on_subagent_stop respects kill switch" {
+    export METRICS_SESSION_ID="sa-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_subagent_stop "agent-off" "Explore" "10" "" ""
+    [ ! -s "$METRICS_FILE" ]
+}
