@@ -57,6 +57,63 @@ function getNestedValue(obj: unknown, ...keys: string[]): unknown {
   return current
 }
 
+function extractPatchedFilePaths(patchText: string): string[] {
+  const filePaths = new Set<string>()
+
+  for (const line of patchText.split("\n")) {
+    const customPatchMatch = line.match(/^\*\*\* (?:Add|Update) File: (.+)$/)
+    if (customPatchMatch) {
+      filePaths.add(customPatchMatch[1])
+      continue
+    }
+
+    const moveMatch = line.match(/^\*\*\* Move to: (.+)$/)
+    if (moveMatch) {
+      filePaths.add(moveMatch[1])
+      continue
+    }
+
+    const unifiedDiffMatch = line.match(/^\+\+\+ b\/(.+)$/)
+    if (unifiedDiffMatch) {
+      filePaths.add(unifiedDiffMatch[1])
+    }
+  }
+
+  return [...filePaths]
+}
+
+function extractEditedFilePaths(args: Record<string, unknown> | undefined): string[] {
+  const filePaths = new Set<string>()
+  const directPathCandidates = [args?.filePath, args?.file_path, args?.path, args?.file]
+
+  for (const candidate of directPathCandidates) {
+    if (typeof candidate === "string" && candidate.length > 0) {
+      filePaths.add(candidate)
+    }
+  }
+
+  const patchText = args?.patchText ?? args?.patch_text
+  if (typeof patchText === "string" && patchText.length > 0) {
+    for (const filePath of extractPatchedFilePaths(patchText)) {
+      filePaths.add(filePath)
+    }
+  }
+
+  return [...filePaths]
+}
+
+function isPermissionGrantedResponse(response: unknown): boolean | undefined {
+  if (response === "once" || response === "always") {
+    return true
+  }
+
+  if (response === "reject") {
+    return false
+  }
+
+  return undefined
+}
+
 /**
  * Agent Smith OpenCode Plugin
  */
@@ -150,9 +207,12 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         // permission.ask hook below instead
 
         case "permission.replied": {
-          const id = props?.id as string | undefined
-          const granted = props?.granted as boolean | undefined
-          if (id !== undefined) {
+          const id = (props?.permissionID ?? props?.id) as string | undefined
+          const granted =
+            (props?.granted as boolean | undefined) ??
+            isPermissionGrantedResponse(props?.response)
+
+          if (id !== undefined && granted !== undefined) {
             const pending = pendingPermissions.get(id)
             if (pending) {
               if (granted) {
@@ -167,7 +227,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         }
 
         case "file.edited": {
-          const path = props?.path as string | undefined
+          const path = (props?.file ?? props?.path) as string | undefined
           const linesChanged = props?.linesChanged as number | undefined
           if (path) {
             metricsOnFileEdited(path, linesChanged)
@@ -204,6 +264,8 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
      */
     "tool.execute.after": async (input, output) => {
       const toolName = input.tool ?? "unknown"
+      const args = input.args as Record<string, unknown> | undefined
+      const editedFilePaths = extractEditedFilePaths(args)
 
       // Parse exit code from output.output or metadata
       // The output format is { title, output, metadata }
@@ -229,7 +291,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
 
       // Track failures
       if (exitCode !== 0) {
-        const filePath = (input.args?.filePath ?? input.args?.file_path ?? input.args?.path) as string | undefined
+        const filePath = editedFilePaths[0]
         const turnId =
           (getNestedValue(input, "turnId") as string | undefined) ??
           (getNestedValue(input, "turn_id") as string | undefined) ??
@@ -262,35 +324,47 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         })
       }
 
-      // Run tests after file edits (Edit, Write, Patch, MultiEdit)
-      const fileEditTools = ["edit", "write", "patch", "multiedit"]
-      if (fileEditTools.includes(toolName.toLowerCase())) {
-        const filePath = (input.args?.filePath ?? input.args?.file_path ?? input.args?.path) as string | undefined
-        if (filePath) {
+      // Run tests after file edits (Edit, Write, Patch, MultiEdit, apply_patch)
+      const fileEditTools = new Set(["edit", "write", "patch", "multiedit", "apply_patch"])
+      if (fileEditTools.has(toolName.toLowerCase())) {
+        for (const filePath of editedFilePaths) {
           const testInfo = findTestForFile(filePath)
-          if (testInfo) {
-            const cmdString = testInfo.testCommand.join(" ")
-            try {
-              const result = await $`${cmdString}`.quiet()
-              const passed = result.exitCode === 0
-              metricsOnTestResult(passed, cmdString, filePath)
+          if (!testInfo) {
+            continue
+          }
 
-              if (!passed) {
-                await client.app.log({
-                  body: {
-                    service: "agent-smith",
-                    level: "warn",
-                    message: `Tests failed for ${filePath}`,
-                    extra: {
-                      testFile: testInfo.testFile,
-                      testCommand: cmdString,
-                    },
+          const cmdString = testInfo.testCommand.join(" ")
+          try {
+            const result = await $.nothrow()`${{ raw: cmdString }}`.quiet()
+            const passed = result.exitCode === 0
+            metricsOnTestResult(passed, cmdString, filePath)
+
+            if (!passed) {
+              await client.app.log({
+                body: {
+                  service: "agent-smith",
+                  level: "warn",
+                  message: `Tests failed for ${filePath}`,
+                  extra: {
+                    testFile: testInfo.testFile,
+                    testCommand: cmdString,
                   },
-                })
-              }
-            } catch {
-              // Silently ignore test runner errors — don't block the agent
+                },
+              })
             }
+          } catch (error) {
+            await client.app.log({
+              body: {
+                service: "agent-smith",
+                level: "warn",
+                message: `Failed to run post-edit tests for ${filePath}`,
+                extra: {
+                  testFile: testInfo.testFile,
+                  testCommand: cmdString,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              },
+            })
           }
         }
       }
