@@ -23,6 +23,29 @@
             "timeout": 3
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=opencode bash ./hooks/test-result.sh",
+            "timeout": 60,
+            "statusMessage": "Running tests..."
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=opencode bash ./hooks/permission-denied.sh",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -33,6 +56,28 @@
             "type": "command",
             "command": "AGENT_SMITH_TOOL=opencode bash ./hooks/vague-prompt.sh",
             "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=opencode COMPACT_TRIGGER=auto bash ./hooks/compact.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=opencode COMPACT_TRIGGER=manual bash ./hooks/compact.sh",
+            "timeout": 5
           }
         ]
       }

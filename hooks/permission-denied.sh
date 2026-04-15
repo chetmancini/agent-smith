@@ -10,7 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+# Claude Code sends tool_name; OpenCode sends tool (permission.asked event shape)
+tool_name=$(echo "$input" | jq -r '.tool_name // .tool // "unknown"')
 session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
 
 restore_metrics_session_id "$session_id" || true
