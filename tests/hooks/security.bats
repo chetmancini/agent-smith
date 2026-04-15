@@ -501,7 +501,7 @@ EOF
     ! grep -q "claude-session" "$report_file"
 }
 
-@test "analyze-config marks unsupported OpenCode report sections as not collected" {
+@test "analyze-config reports OpenCode-native signals and still marks unsupported sections as not collected" {
     local metrics_dir db_file report_file
     metrics_dir="$TEST_TMPDIR/metrics"
     db_file="$metrics_dir/rollup.db"
@@ -534,9 +534,11 @@ EOF
         );
         INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES
             ('2026-03-27T00:00:00Z', 'opencode', 'op-session', 'session_start', '{\"cwd\":\"/home/user/app\"}'),
-            ('2026-03-27T00:02:00Z', 'opencode', 'op-session', 'file_edited', '{\"file_path\":\"/home/user/app/src/index.ts\",\"lines_changed\":5}');
+            ('2026-03-27T00:01:00Z', 'opencode', 'op-session', 'permission_granted', '{\"tool_name\":\"edit\"}'),
+            ('2026-03-27T00:02:00Z', 'opencode', 'op-session', 'file_edited', '{\"file_path\":\"/home/user/app/src/index.ts\",\"lines_changed\":5}'),
+            ('2026-03-27T00:03:00Z', 'opencode', 'op-session', 'session_error', '{\"error\":\"provider timeout\"}');
         INSERT INTO sessions (session_id, tool, started_at, event_count, cwd) VALUES
-            ('op-session', 'opencode', '2026-03-27T00:00:00Z', 2, '/home/user/app');
+            ('op-session', 'opencode', '2026-03-27T00:00:00Z', 4, '/home/user/app');
     "
 
     run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10 --tool opencode
@@ -544,8 +546,13 @@ EOF
     [ "$status" -eq 0 ]
     report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
     grep -q "Capability Notes" "$report_file"
+    grep -q "Permission Grants" "$report_file"
+    grep -q "edit" "$report_file"
+    grep -q "Session Errors" "$report_file"
+    grep -q "provider timeout" "$report_file"
+    grep -q "File Edit Activity" "$report_file"
+    grep -q "/home/user/app/src/index.ts" "$report_file"
     grep -q "not collected for OpenCode" "$report_file"
-    grep -q "OpenCode-specific signals are not yet summarized" "$report_file"
 }
 
 @test "analyze-trigger counts only sessions from the initiating agent" {

@@ -245,7 +245,7 @@ EOF
 	opencode)
 		cat <<'EOF'
 - `API Errors`, `Tool Success Rates`, and `Subagent*` sections are not collected for OpenCode with the current Agent Smith integration.
-- The native OpenCode plugin also emits `session_error`, `permission_granted`, and `file_edited`, but those OpenCode-specific signals are not yet summarized in this report.
+- OpenCode-specific `session_error`, `permission_granted`, and `file_edited` signals are summarized below when present.
 EOF
 		;;
 	*)
@@ -362,6 +362,23 @@ query_permission_denials() {
     " 2>/dev/null || echo "(no data)"
 }
 
+query_permission_grants() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            tool_name,
+            COUNT(*) as grant_count,
+            COUNT(DISTINCT session_id) as sessions_affected
+        FROM reporting_events
+        WHERE event_type = 'permission_granted'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY tool_name
+        ORDER BY grant_count DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
 query_test_loops() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
@@ -410,6 +427,23 @@ query_session_outcomes() {
         AND stop_reason IS NOT NULL
         GROUP BY stop_reason
         ORDER BY count DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_session_errors() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            error,
+            COUNT(*) as total_errors,
+            COUNT(DISTINCT session_id) as sessions_affected
+        FROM reporting_events
+        WHERE event_type = 'session_error'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY error
+        ORDER BY total_errors DESC;
     " 2>/dev/null || echo "(no data)"
 }
 
@@ -484,6 +518,25 @@ query_compressions() {
           AND session_id IN (
               $(session_filter_subquery)
           );
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_file_edits() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            file_path,
+            COUNT(*) as edit_events,
+            COUNT(DISTINCT session_id) as sessions_affected,
+            SUM(COALESCE(CAST(json_extract(metadata, '$.lines_changed') AS INTEGER), 0)) as total_lines_changed
+        FROM reporting_events
+        WHERE event_type = 'file_edited'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY file_path
+        ORDER BY edit_events DESC, total_lines_changed DESC
+        LIMIT 15;
     " 2>/dev/null || echo "(no data)"
 }
 
@@ -585,18 +638,24 @@ echo "  -> Querying recent failure examples..."
 FAILURE_EXAMPLES=$(query_recent_failure_examples)
 echo "  -> Querying permission denials..."
 PERMISSION_DENIALS=$(query_permission_denials)
+echo "  -> Querying permission grants..."
+PERMISSION_GRANTS=$(query_permission_grants)
 echo "  -> Querying test failure loops..."
 TEST_LOOPS=$(query_test_loops)
 echo "  -> Querying clarifying question patterns..."
 CLARIFYING_QUESTIONS=$(query_clarifying_questions)
 echo "  -> Querying session outcomes..."
 SESSION_OUTCOMES=$(query_session_outcomes)
+echo "  -> Querying session errors..."
+SESSION_ERRORS=$(query_session_errors)
 echo "  -> Querying project breakdown..."
 PROJECT_BREAKDOWN=$(query_project_breakdown)
 echo "  -> Querying session costs..."
 SESSION_COSTS=$(query_session_costs)
 echo "  -> Querying context compressions..."
 COMPRESSIONS=$(query_compressions)
+echo "  -> Querying file edits..."
+FILE_EDITS=$(query_file_edits)
 echo "  -> Querying API errors..."
 STOP_FAILURES=$(query_stop_failures)
 echo "  -> Querying tool success rates..."
@@ -670,6 +729,9 @@ $FAILURE_EXAMPLES
 ## Permission Denials
 $PERMISSION_DENIALS
 
+## Permission Grants
+$PERMISSION_GRANTS
+
 ## Test Failure Loops
 $TEST_LOOPS
 
@@ -679,11 +741,17 @@ $CLARIFYING_QUESTIONS
 ## Session Outcomes
 $SESSION_OUTCOMES
 
+## Session Errors
+$SESSION_ERRORS
+
 ## Session Costs
 $SESSION_COSTS
 
 ## Context Compressions
 $COMPRESSIONS
+
+## File Edit Activity
+$FILE_EDITS
 
 ## API Errors
 $STOP_FAILURES_REPORT
@@ -838,6 +906,9 @@ $FAILURE_EXAMPLES
 ### Permission Denials
 $PERMISSION_DENIALS
 
+### Permission Grants
+$PERMISSION_GRANTS
+
 ### Test Failure Loops
 $TEST_LOOPS
 
@@ -847,11 +918,17 @@ $CLARIFYING_QUESTIONS
 ### Session Outcomes
 $SESSION_OUTCOMES
 
+### Session Errors
+$SESSION_ERRORS
+
 ### Session Costs
 $SESSION_COSTS
 
 ### Context Compressions
 $COMPRESSIONS
+
+### File Edit Activity
+$FILE_EDITS
 
 ### API Errors
 $STOP_FAILURES_REPORT
