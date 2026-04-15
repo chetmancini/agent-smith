@@ -84,12 +84,7 @@ harden_private_file() {
 }
 
 llm_cli_bin() {
-	case "$1" in
-	claude) printf '%s\n' "${AGENT_CLI:-claude}" ;;
-	codex) printf '%s\n' "${AGENT_CLI:-codex}" ;;
-	opencode) printf '%s\n' "${AGENT_CLI:-opencode}" ;;
-	*) return 1 ;;
-	esac
+	agent_smith_cli_bin "$1"
 }
 
 llm_cli_label() {

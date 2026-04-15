@@ -57,9 +57,9 @@ create_metrics_db() {
 }
 
 create_fake_llm_cli() {
-    local fakebin="$1"
-    local name="$2"
-    local marker_file="$3"
+	local fakebin="$1"
+	local name="$2"
+	local marker_file="$3"
     local prompt_capture="$4"
     mkdir -p "$fakebin"
     cat > "${fakebin}/${name}" <<EOF
@@ -69,6 +69,34 @@ printf '%s\n' "\$*" > "$prompt_capture"
 touch "$marker_file"
 EOF
     chmod 700 "${fakebin}/${name}"
+}
+
+create_fake_nohup() {
+    local fakebin="$1"
+    mkdir -p "$fakebin"
+    cat > "${fakebin}/nohup" <<'EOF'
+#!/bin/bash
+"$@"
+EOF
+    chmod 700 "${fakebin}/nohup"
+}
+
+create_fake_background_bash() {
+    local fakebin="$1"
+    local analyze_script="$2"
+    local marker_file="$3"
+    local argv_capture="$4"
+    mkdir -p "$fakebin"
+    cat > "${fakebin}/bash" <<EOF
+#!/bin/bash
+if [ "\$1" = "$analyze_script" ]; then
+    printf '%s\n' "\$*" > "$argv_capture"
+    touch "$marker_file"
+    exit 0
+fi
+exec /bin/bash "\$@"
+EOF
+    chmod 700 "${fakebin}/bash"
 }
 
 @test "test-result hook does not execute injected commands from filenames" {
@@ -443,4 +471,35 @@ EOF
 
     [ "$status" -eq 0 ]
     [ ! -f "$marker" ]
+}
+
+@test "analyze-trigger llm mode uses the initiating tool cli, not Claude" {
+    local metrics_dir db_file fakebin marker prompt_capture
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/analyze_config_called"
+    prompt_capture="$TEST_TMPDIR/analyze_config_argv.txt"
+
+    create_metrics_db "$db_file"
+    sqlite3 "$db_file" "
+        UPDATE events SET tool = 'codex', session_id = 'codex-session';
+        UPDATE sessions SET tool = 'codex', session_id = 'codex-session';
+    "
+    create_fake_llm_cli "$fakebin" codex "$TEST_TMPDIR/codex_binary_checked" "$TEST_TMPDIR/codex_unused.txt"
+    create_fake_nohup "$fakebin"
+    create_fake_background_bash "$fakebin" "$PROJECT_ROOT/scripts/analyze-config.sh" "$marker" "$prompt_capture"
+
+    run env PATH="$fakebin:/usr/bin:/bin" METRICS_DIR="$metrics_dir" \
+        AGENT_SMITH_TOOL=codex AUTO_ANALYZE_ENABLED=1 AUTO_ANALYZE_MODE=llm ANALYZE_THRESHOLD=1 \
+        /bin/bash "$HOOKS_DIR/analyze-trigger.sh"
+
+    [ "$status" -eq 0 ]
+    for _ in $(seq 1 20); do
+        [ -f "$marker" ] && break
+        sleep 0.1
+    done
+    [ -f "$marker" ]
+    grep -q -- '--tool codex' "$prompt_capture"
+    grep -q -- '--llm' "$prompt_capture"
 }

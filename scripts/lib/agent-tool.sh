@@ -179,3 +179,15 @@ agent_smith_tool_label() {
 		;;
 	esac
 }
+
+agent_smith_cli_bin() {
+	case "$1" in
+	claude) printf '%s\n' "${AGENT_CLI:-claude}" ;;
+	codex) printf '%s\n' "${AGENT_CLI:-codex}" ;;
+	opencode) printf '%s\n' "${AGENT_CLI:-opencode}" ;;
+	*)
+		echo "Error: unsupported tool '$1'" >&2
+		return 1
+		;;
+	esac
+}

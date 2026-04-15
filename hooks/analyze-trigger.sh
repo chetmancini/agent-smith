@@ -18,6 +18,8 @@ METRICS_DB="${METRICS_DIR}/rollup.db"
 
 # Plugin root is one level up from hooks/
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=scripts/lib/agent-tool.sh
+source "${PLUGIN_ROOT}/scripts/lib/agent-tool.sh"
 
 # Need sqlite3 and the rollup DB to check session count
 if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -61,7 +63,8 @@ if [ "$session_count" -ge "$ANALYZE_THRESHOLD" ]; then
 	if [ -f "${PLUGIN_ROOT}/scripts/analyze-config.sh" ]; then
 		analyze_args=(bash "${PLUGIN_ROOT}/scripts/analyze-config.sh" --sessions "$session_count" --auto --tool "$agent_tool")
 		if [ "$AUTO_ANALYZE_MODE" = "llm" ]; then
-			command -v claude >/dev/null 2>&1 || exit 0
+			agent_cli_bin="$(agent_smith_cli_bin "$agent_tool")"
+			command -v "$agent_cli_bin" >/dev/null 2>&1 || exit 0
 			analyze_args+=(--llm)
 			if [ "$AUTO_ANALYZE_INCLUDE_SETTINGS" = "1" ]; then
 				analyze_args+=(--include-settings)
