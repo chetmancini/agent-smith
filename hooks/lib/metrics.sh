@@ -462,6 +462,45 @@ metrics_on_stop_failure() {
 	emit_metric "$(metrics_tool_name)" "stop_failure" "${metadata_json}"
 }
 
+# Call from: hooks/tool-attempt.sh
+# Args: <tool_name> [tool_use_id] [turn_id] [command] [file_path]
+metrics_on_tool_attempt() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local tool_name="${1:-unknown}"
+	local tool_use_id="${2:-}"
+	local turn_id="${3:-}"
+	local command="${4:-}"
+	local file_path="${5:-}"
+
+	local escaped_tool metadata_json
+	escaped_tool=$(json_escape "$tool_name")
+	metadata_json="{\"tool_name\":\"${escaped_tool}\""
+
+	if [ -n "$command" ]; then
+		local escaped_cmd
+		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
+		metadata_json="${metadata_json},\"command\":\"${escaped_cmd}\""
+	fi
+	if [ -n "$file_path" ]; then
+		local escaped_file
+		escaped_file=$(truncate_str "$(json_escape "$file_path")" 300)
+		metadata_json="${metadata_json},\"file_path\":\"${escaped_file}\""
+	fi
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "tool_attempt" "${metadata_json}"
+}
+
 # Call from: hooks/session-stop.sh (per-turn, writes a durable cost snapshot)
 # Args: <transcript_path>
 # Writes a session-scoped snapshot file so rollup has cost data even if

@@ -705,3 +705,52 @@ JSONL
     AGENT_METRICS_ENABLED=0 metrics_on_stop_failure "rate_limit" "" ""
     [ ! -s "$METRICS_FILE" ]
 }
+
+# ============================================================================
+# metrics_on_tool_attempt
+# ============================================================================
+
+@test "metrics_on_tool_attempt emits tool_attempt event with tool_name" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Bash" "" "" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "tool_attempt" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+}
+
+@test "metrics_on_tool_attempt includes command for Bash" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Bash" "tooluse-1" "turn-1" "git status" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.command')" = "git status" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-1" ]
+}
+
+@test "metrics_on_tool_attempt includes file_path for Edit" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Edit" "tooluse-2" "turn-2" "" "src/main.ts"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/main.ts" ]
+    [ "$(echo "$line" | jq -r '.metadata.command // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_tool_attempt omits optional fields when empty" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Agent" "" "" "" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Agent" ]
+    [ "$(echo "$line" | jq -r '.metadata.command // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.file_path // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_tool_attempt respects kill switch" {
+    export METRICS_SESSION_ID="ta-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_tool_attempt "Bash" "" "" "ls" ""
+    [ ! -s "$METRICS_FILE" ]
+}
