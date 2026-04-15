@@ -31,6 +31,15 @@ let metricsSessionId: string | null = null
 let sessionStartTs: number | null = null
 const testFailCounts = new Map<string, number>()
 
+export interface ToolFailureDetails {
+  exitCode?: number | string
+  stderrText?: string
+  stdoutText?: string
+  filePath?: string
+  turnId?: string
+  toolUseId?: string
+}
+
 /**
  * Reset all module state (for testing only)
  */
@@ -78,6 +87,40 @@ export function jsonEscape(str: string): string {
     .replace(/[\x00-\x1f\x7f]/g, "") // Strip remaining control chars
 }
 
+function sanitizeMetricString(str: string): string {
+  return str.replace(/[\x00-\x07\x0b\x0e-\x1f\x7f]/g, "")
+}
+
+function sanitizeMetricValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return sanitizeMetricString(value)
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeMetricValue(entry))
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, sanitizeMetricValue(entry)])
+    )
+  }
+
+  return value
+}
+
+function normalizeExitCode(exitCode?: number | string): number | undefined {
+  if (typeof exitCode === "number" && Number.isInteger(exitCode)) {
+    return exitCode
+  }
+
+  if (typeof exitCode === "string" && /^\d+$/.test(exitCode)) {
+    return Number.parseInt(exitCode, 10)
+  }
+
+  return undefined
+}
+
 /**
  * Truncate a string to N characters, handling split escape sequences
  */
@@ -112,7 +155,7 @@ export function emitMetric(eventType: string, metadata: Record<string, unknown>)
       tool: TOOL_NAME,
       session_id: sessionId,
       event_type: eventType,
-      metadata,
+      metadata: sanitizeMetricValue(metadata),
     })
 
     appendFileSync(getMetricsFile(), line + "\n", { mode: 0o600 })
@@ -190,8 +233,8 @@ export function metricsOnSessionStart(
   const transcriptHash = transcriptPath ? deriveSessionId(transcriptPath) : ""
 
   emitMetric("session_start", {
-    cwd: jsonEscape(cwd),
-    project_type: jsonEscape(projectType),
+    cwd,
+    project_type: projectType,
     transcript_hash: transcriptHash,
   })
 }
@@ -220,7 +263,7 @@ export function metricsOnSessionStop(stopReason = "unknown"): void {
   }
 
   emitMetric("session_stop", {
-    stop_reason: jsonEscape(stopReason),
+    stop_reason: stopReason,
     duration_seconds: durationSeconds,
   })
 }
@@ -232,7 +275,7 @@ export function metricsOnSessionError(error: string, context?: Record<string, un
   if (!isMetricsEnabled()) return
 
   emitMetric("session_error", {
-    error: truncateStr(jsonEscape(error), 500),
+    error: truncateStr(sanitizeMetricString(error), 500),
     ...context,
   })
 }
@@ -240,20 +283,79 @@ export function metricsOnSessionError(error: string, context?: Record<string, un
 /**
  * Emit tool_failure metric
  */
-export function metricsOnToolFailure(toolName: string, error: string, command?: string): void {
+export function metricsOnToolFailure(
+  toolName: string,
+  error: string,
+  command?: string,
+  details: ToolFailureDetails = {}
+): void {
   if (!isMetricsEnabled()) return
 
-  emitMetric("tool_failure", {
-    tool_name: jsonEscape(toolName),
-    error: truncateStr(jsonEscape(error), 500),
-  })
+  const escapedError = truncateStr(sanitizeMetricString(error), 500)
+  const toolFailureMetadata: Record<string, unknown> = {
+    tool_name: toolName,
+    error: escapedError,
+  }
+
+  if (command) {
+    toolFailureMetadata.command = truncateStr(sanitizeMetricString(command), 300)
+  }
+
+  const exitCode = normalizeExitCode(details.exitCode)
+  if (exitCode !== undefined) {
+    toolFailureMetadata.exit_code = exitCode
+  }
+
+  if (details.stderrText) {
+    toolFailureMetadata.stderr_snippet = truncateStr(sanitizeMetricString(details.stderrText), 500)
+  }
+
+  if (details.stdoutText) {
+    toolFailureMetadata.stdout_snippet = truncateStr(sanitizeMetricString(details.stdoutText), 500)
+  }
+
+  if (details.filePath) {
+    toolFailureMetadata.file_path = truncateStr(sanitizeMetricString(details.filePath), 300)
+  }
+
+  if (details.turnId) {
+    toolFailureMetadata.turn_id = sanitizeMetricString(details.turnId)
+  }
+
+  if (details.toolUseId) {
+    toolFailureMetadata.tool_use_id = sanitizeMetricString(details.toolUseId)
+  }
+
+  emitMetric("tool_failure", toolFailureMetadata)
 
   // For Bash tool failures, also emit command_failure
   if (toolName.toLowerCase() === "bash" && command) {
-    emitMetric("command_failure", {
-      command: truncateStr(jsonEscape(command), 300),
-      error: truncateStr(jsonEscape(error), 500),
-    })
+    const commandFailureMetadata: Record<string, unknown> = {
+      command: truncateStr(sanitizeMetricString(command), 300),
+      error: escapedError,
+    }
+
+    if (exitCode !== undefined) {
+      commandFailureMetadata.exit_code = exitCode
+    }
+
+    if (details.stderrText) {
+      commandFailureMetadata.stderr_snippet = truncateStr(sanitizeMetricString(details.stderrText), 500)
+    }
+
+    if (details.stdoutText) {
+      commandFailureMetadata.stdout_snippet = truncateStr(sanitizeMetricString(details.stdoutText), 500)
+    }
+
+    if (details.turnId) {
+      commandFailureMetadata.turn_id = sanitizeMetricString(details.turnId)
+    }
+
+    if (details.toolUseId) {
+      commandFailureMetadata.tool_use_id = sanitizeMetricString(details.toolUseId)
+    }
+
+    emitMetric("command_failure", commandFailureMetadata)
   }
 }
 
@@ -264,7 +366,7 @@ export function metricsOnPermissionDenied(toolName: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("permission_denied", {
-    tool_name: jsonEscape(toolName),
+    tool_name: toolName,
   })
 }
 
@@ -275,7 +377,7 @@ export function metricsOnPermissionGranted(toolName: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("permission_granted", {
-    tool_name: jsonEscape(toolName),
+    tool_name: toolName,
   })
 }
 
@@ -286,7 +388,7 @@ export function metricsOnClarifyingQuestion(promptText: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("clarifying_question", {
-    prompt_snippet: truncateStr(jsonEscape(promptText), 100),
+    prompt_snippet: truncateStr(sanitizeMetricString(promptText), 100),
     is_vague: true,
   })
 }
@@ -298,7 +400,7 @@ export function metricsOnContextCompression(trigger: string, transcriptLines?: n
   if (!isMetricsEnabled()) return
 
   emitMetric("context_compression", {
-    trigger: jsonEscape(trigger),
+    trigger,
     transcript_lines: transcriptLines ?? 0,
   })
 
@@ -334,9 +436,9 @@ export function metricsOnTestResult(passed: boolean, testCommand: string, filePa
 
   if (failCount >= 3) {
     emitMetric("test_failure_loop", {
-      test_command: truncateStr(jsonEscape(testCommand), 300),
+      test_command: truncateStr(sanitizeMetricString(testCommand), 300),
       failure_count: failCount,
-      file_path: jsonEscape(filePath),
+      file_path: filePath,
     })
   }
 }
@@ -348,7 +450,7 @@ export function metricsOnFileEdited(filePath: string, linesChanged?: number): vo
   if (!isMetricsEnabled()) return
 
   emitMetric("file_edited", {
-    file_path: jsonEscape(filePath),
+    file_path: filePath,
     lines_changed: linesChanged ?? 0,
   })
 }

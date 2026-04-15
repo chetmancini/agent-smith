@@ -229,6 +229,19 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
 
       // Track failures
       if (exitCode !== 0) {
+        const filePath = (input.args?.filePath ?? input.args?.file_path ?? input.args?.path) as string | undefined
+        const turnId =
+          (getNestedValue(input, "turnId") as string | undefined) ??
+          (getNestedValue(input, "turn_id") as string | undefined) ??
+          (getNestedValue(metadata, "turnId") as string | undefined) ??
+          (getNestedValue(metadata, "turn_id") as string | undefined)
+        const toolUseId =
+          (getNestedValue(input, "toolUseId") as string | undefined) ??
+          (getNestedValue(input, "tool_use_id") as string | undefined) ??
+          (getNestedValue(input, "id") as string | undefined) ??
+          (getNestedValue(metadata, "toolUseId") as string | undefined) ??
+          (getNestedValue(metadata, "tool_use_id") as string | undefined)
+
         // Skip expected failures for bash commands
         if (toolName.toLowerCase() === "bash") {
           if (isExpectedFailure(command)) {
@@ -239,7 +252,14 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         if (!errorMessage) {
           errorMessage = `exit ${exitCode}`
         }
-        metricsOnToolFailure(toolName, errorMessage, command)
+        metricsOnToolFailure(toolName, errorMessage, command, {
+          exitCode,
+          stderrText: errorMessage,
+          stdoutText: output.output,
+          filePath,
+          turnId,
+          toolUseId,
+        })
       }
 
       // Run tests after file edits (Edit, Write, Patch, MultiEdit)

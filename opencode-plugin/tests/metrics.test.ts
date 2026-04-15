@@ -7,6 +7,8 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { spawnSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
 
 // Import the functions to test
 import {
@@ -33,6 +35,23 @@ import {
 let metricsDir: string
 let metricsFile: string
 let originalEnv: NodeJS.ProcessEnv
+const shellMetricsLib = fileURLToPath(new URL("../../hooks/lib/metrics.sh", import.meta.url))
+
+function readEvents(file: string): Array<Record<string, unknown>> {
+  if (!existsSync(file)) {
+    return []
+  }
+
+  return readFileSync(file, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
+function withoutTimestamps(events: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return events.map(({ ts: _ts, ...event }) => event)
+}
 
 describe("metrics", () => {
   beforeEach(() => {
@@ -390,6 +409,56 @@ describe("metrics", () => {
       
       const commandFailure = JSON.parse(lines[1])
       expect(commandFailure.event_type).toBe("command_failure")
+    })
+
+    test("preserves the shared rich Bash failure contract", () => {
+      const sessionHint = "shared-contract-session"
+      const errorText = 'permission "denied"\nline 2\x07'
+      const stdoutText = 'stdout "preview"\nsecond line'
+      const shellRun = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "${shellMetricsLib}"; METRICS_SESSION_ID=$(derive_session_id "$SESSION_HINT"); export METRICS_SESSION_ID; metrics_on_tool_failure "$TOOL_NAME" "$ERROR_MESSAGE" "$COMMAND" "$EXIT_CODE" "$STDERR_TEXT" "$STDOUT_TEXT" "$FILE_PATH" "$TURN_ID" "$TOOL_USE_ID"`,
+        ],
+        {
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            METRICS_DIR: metricsDir,
+            AGENT_METRICS_ENABLED: "1",
+            AGENT_SMITH_TOOL: "opencode",
+            SESSION_HINT: sessionHint,
+            TOOL_NAME: "Bash",
+            ERROR_MESSAGE: errorText,
+            COMMAND: 'npm test --grep "unit"',
+            EXIT_CODE: "23",
+            STDERR_TEXT: errorText,
+            STDOUT_TEXT: stdoutText,
+            FILE_PATH: "src/index.ts",
+            TURN_ID: "turn-123",
+            TOOL_USE_ID: "tool-456",
+          },
+        }
+      )
+
+      expect(shellRun.status).toBe(0)
+      const shellEvents = withoutTimestamps(readEvents(metricsFile))
+
+      rmSync(metricsFile, { force: true })
+      resetMetricsState()
+      setSessionId(sessionHint)
+      metricsOnToolFailure("Bash", errorText, 'npm test --grep "unit"', {
+        exitCode: 23,
+        stderrText: errorText,
+        stdoutText,
+        filePath: "src/index.ts",
+        turnId: "turn-123",
+        toolUseId: "tool-456",
+      })
+
+      const nativeEvents = withoutTimestamps(readEvents(metricsFile))
+      expect(nativeEvents).toEqual(shellEvents)
     })
   })
 
