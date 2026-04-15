@@ -12,14 +12,25 @@ source "${SCRIPT_DIR}/lib/metrics.sh"
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
+file_path=$(echo "$input" | jq -r '.tool_input.file_path // .filePath // ""')
 session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
+turn_id=$(echo "$input" | jq -r '.turn_id // .turnId // empty')
+tool_use_id=$(echo "$input" | jq -r '.tool_use_id // .toolUseId // empty')
 
 restore_metrics_session_id "$session_id" || true
 
 if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ]; then
 	exit_code=$(echo "$input" | jq -r '
-		if (.tool_response | type) == "object" then
-			(.tool_response.exit_code // .tool_response.exitCode // .tool_response.status // 0)
+		def parsed_tool_response:
+			(.tool_response // null) as $response
+			| if ($response | type) == "string" then
+				($response | fromjson? // $response)
+			else
+				$response
+			end;
+		parsed_tool_response as $response
+		| if ($response | type) == "object" then
+			($response.exit_code // $response.exitCode // $response.status // 0)
 		else
 			0
 		end
@@ -29,14 +40,55 @@ if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}
 		exit 0
 		;;
 	esac
+	stderr_text=$(echo "$input" | jq -r '
+		def parsed_tool_response:
+			(.tool_response // null) as $response
+			| if ($response | type) == "string" then
+				($response | fromjson? // $response)
+			else
+				$response
+			end;
+		parsed_tool_response as $response
+		| if ($response | type) == "object" then
+			($response.stderr // $response.error // $response.message // "")
+		else
+			""
+		end
+	')
+	stdout_text=$(echo "$input" | jq -r '
+		def parsed_tool_response:
+			(.tool_response // null) as $response
+			| if ($response | type) == "string" then
+				($response | fromjson? // $response)
+			else
+				$response
+			end;
+		parsed_tool_response as $response
+		| if ($response | type) == "object" then
+			($response.stdout // "")
+		else
+			""
+		end
+	')
 	error=$(echo "$input" | jq -r '
-		if (.tool_response | type) == "object" then
-			(.tool_response.stderr // .tool_response.error // .tool_response.message // ("exit " + ((.tool_response.exit_code // .tool_response.exitCode // .tool_response.status // 1) | tostring)))
+		def parsed_tool_response:
+			(.tool_response // null) as $response
+			| if ($response | type) == "string" then
+				($response | fromjson? // $response)
+			else
+				$response
+			end;
+		parsed_tool_response as $response
+		| if ($response | type) == "object" then
+			($response.stderr // $response.error // $response.message // ("exit " + (($response.exit_code // $response.exitCode // $response.status // 1) | tostring)))
 		else
 			"exit 1"
 		end
 	')
 else
+	exit_code=""
+	stderr_text=""
+	stdout_text=""
 	error=$(echo "$input" | jq -r '.error // ""')
 fi
 
@@ -47,6 +99,6 @@ if [ "$tool_name" = "Bash" ]; then
 	esac
 fi
 
-metrics_on_tool_failure "$tool_name" "$error" "$command"
+metrics_on_tool_failure "$tool_name" "$error" "$command" "$exit_code" "$stderr_text" "$stdout_text" "$file_path" "$turn_id" "$tool_use_id"
 
 exit 0

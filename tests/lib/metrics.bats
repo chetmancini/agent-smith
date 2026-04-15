@@ -415,6 +415,28 @@ teardown() {
     assert_output '"command_failure"'
 }
 
+@test "metrics_on_tool_failure preserves rich Bash failure metadata" {
+    metrics_on_tool_failure "Bash" "permission denied" "npm test" "23" "permission denied" "partial output" "" "turn-123" "tool-456"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.command' "$METRICS_FILE"
+    assert_output "npm test"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.exit_code' "$METRICS_FILE"
+    assert_output "23"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stderr_snippet' "$METRICS_FILE"
+    assert_output "permission denied"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stdout_snippet' "$METRICS_FILE"
+    assert_output "partial output"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.turn_id' "$METRICS_FILE"
+    assert_output "turn-123"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.tool_use_id' "$METRICS_FILE"
+    assert_output "tool-456"
+}
+
 @test "metrics_on_permission_denied emits permission_denied" {
     metrics_on_permission_denied "Write"
 

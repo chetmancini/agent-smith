@@ -162,6 +162,8 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 
 Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation; Claude Code also exposes tool failures, permission denials, edit-triggered test loops, and compact events.
 
+When the host includes structured Bash failure payloads, Agent Smith records the command, exit code, stderr/stdout snippets, and turn or tool-use ids alongside the failure event to keep `events.jsonl` actionable.
+
 All events are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL with user-only file permissions.
 
 ### Session Cost

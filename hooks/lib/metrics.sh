@@ -328,23 +328,99 @@ metrics_on_test_result() {
 }
 
 # Call from: hooks/tool-failure.sh
-# Args: <tool_name> <error> [command]
+# Args: <tool_name> <error> [command] [exit_code] [stderr_text] [stdout_text] [file_path] [turn_id] [tool_use_id]
 metrics_on_tool_failure() {
 	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
 	local tool_name="${1:-unknown}"
 	local error="${2:-}"
 	local command="${3:-}"
+	local exit_code="${4:-}"
+	local stderr_text="${5:-}"
+	local stdout_text="${6:-}"
+	local file_path="${7:-}"
+	local turn_id="${8:-}"
+	local tool_use_id="${9:-}"
 
-	local escaped_tool escaped_error
+	local escaped_tool escaped_error metadata_json
 	escaped_tool=$(json_escape "$tool_name")
 	escaped_error=$(truncate_str "$(json_escape "$error")" 500)
-	emit_metric "$(metrics_tool_name)" "tool_failure" "{\"tool_name\":\"${escaped_tool}\",\"error\":\"${escaped_error}\"}"
+	metadata_json="{\"tool_name\":\"${escaped_tool}\",\"error\":\"${escaped_error}\""
+
+	if [ -n "$command" ]; then
+		local escaped_cmd
+		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
+		metadata_json="${metadata_json},\"command\":\"${escaped_cmd}\""
+	fi
+	case "$exit_code" in
+	'' | *[!0-9]*)
+		;;
+	*)
+		metadata_json="${metadata_json},\"exit_code\":${exit_code}"
+		;;
+	esac
+	if [ -n "$stderr_text" ]; then
+		local escaped_stderr
+		escaped_stderr=$(truncate_str "$(json_escape "$stderr_text")" 500)
+		metadata_json="${metadata_json},\"stderr_snippet\":\"${escaped_stderr}\""
+	fi
+	if [ -n "$stdout_text" ]; then
+		local escaped_stdout
+		escaped_stdout=$(truncate_str "$(json_escape "$stdout_text")" 500)
+		metadata_json="${metadata_json},\"stdout_snippet\":\"${escaped_stdout}\""
+	fi
+	if [ -n "$file_path" ]; then
+		local escaped_file
+		escaped_file=$(truncate_str "$(json_escape "$file_path")" 300)
+		metadata_json="${metadata_json},\"file_path\":\"${escaped_file}\""
+	fi
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "tool_failure" "${metadata_json}"
 
 	# For Bash tool failures, also emit a command_failure event
 	if [ "$tool_name" = "Bash" ] && [ -n "$command" ]; then
-		local escaped_cmd
+		local escaped_cmd command_failure_json
 		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
-		emit_metric "$(metrics_tool_name)" "command_failure" "{\"command\":\"${escaped_cmd}\",\"error\":\"${escaped_error}\"}"
+		command_failure_json="{\"command\":\"${escaped_cmd}\",\"error\":\"${escaped_error}\""
+		case "$exit_code" in
+		'' | *[!0-9]*)
+			;;
+		*)
+			command_failure_json="${command_failure_json},\"exit_code\":${exit_code}"
+			;;
+		esac
+		if [ -n "$stderr_text" ]; then
+			local escaped_stderr
+			escaped_stderr=$(truncate_str "$(json_escape "$stderr_text")" 500)
+			command_failure_json="${command_failure_json},\"stderr_snippet\":\"${escaped_stderr}\""
+		fi
+		if [ -n "$stdout_text" ]; then
+			local escaped_stdout
+			escaped_stdout=$(truncate_str "$(json_escape "$stdout_text")" 500)
+			command_failure_json="${command_failure_json},\"stdout_snippet\":\"${escaped_stdout}\""
+		fi
+		if [ -n "$turn_id" ]; then
+			local escaped_turn_id
+			escaped_turn_id=$(json_escape "$turn_id")
+			command_failure_json="${command_failure_json},\"turn_id\":\"${escaped_turn_id}\""
+		fi
+		if [ -n "$tool_use_id" ]; then
+			local escaped_tool_use_id
+			escaped_tool_use_id=$(json_escape "$tool_use_id")
+			command_failure_json="${command_failure_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+		fi
+		command_failure_json="${command_failure_json}}"
+		emit_metric "$(metrics_tool_name)" "command_failure" "${command_failure_json}"
 	fi
 }
 

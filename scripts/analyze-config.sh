@@ -258,7 +258,7 @@ query_tool_failures() {
             COUNT(*) as total_failures,
             COUNT(DISTINCT session_id) as sessions_affected
         FROM events
-        WHERE event_type IN ('tool_failure', 'command_failure')
+        WHERE event_type = 'tool_failure'
           $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
           AND session_id IN (
               $(session_filter_subquery)
@@ -266,6 +266,28 @@ query_tool_failures() {
         GROUP BY tool_name
         ORDER BY total_failures DESC
         LIMIT 15;
+    " 2>/dev/null || echo "(no data)"
+}
+
+query_recent_failure_examples() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            ts,
+            session_id,
+            json_extract(metadata, '$.tool_name') as tool_name,
+            COALESCE(json_extract(metadata, '$.command'), '') as command,
+            COALESCE(json_extract(metadata, '$.exit_code'), '') as exit_code,
+            COALESCE(json_extract(metadata, '$.file_path'), '') as file_path,
+            COALESCE(json_extract(metadata, '$.stderr_snippet'), json_extract(metadata, '$.error'), '') as stderr_or_error,
+            COALESCE(json_extract(metadata, '$.stdout_snippet'), '') as stdout_snippet
+        FROM events
+        WHERE event_type = 'tool_failure'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        ORDER BY ts DESC
+        LIMIT 12;
     " 2>/dev/null || echo "(no data)"
 }
 
@@ -422,6 +444,8 @@ echo "  -> Querying overview by tool..."
 OVERVIEW=$(query_overview)
 echo "  -> Querying tool failure rates..."
 TOOL_FAILURES=$(query_tool_failures)
+echo "  -> Querying recent failure examples..."
+FAILURE_EXAMPLES=$(query_recent_failure_examples)
 echo "  -> Querying permission denials..."
 PERMISSION_DENIALS=$(query_permission_denials)
 echo "  -> Querying test failure loops..."
@@ -474,6 +498,9 @@ $PROJECT_BREAKDOWN
 
 ## Tool Failure Rates
 $TOOL_FAILURES
+
+## Recent Failure Examples
+$FAILURE_EXAMPLES
 
 ## Permission Denials
 $PERMISSION_DENIALS
@@ -625,6 +652,9 @@ $PROJECT_BREAKDOWN
 ### Tool Failure Rates
 $TOOL_FAILURES
 
+### Recent Failure Examples
+$FAILURE_EXAMPLES
+
 ### Permission Denials
 $PERMISSION_DENIALS
 
@@ -684,7 +714,7 @@ Key numbers table for historical tracking.
 ## Next Steps
 What to monitor going forward.
 
-Be specific — reference file paths, metric values, and tool names. Only suggest changes supported by the data. If metrics show no significant issues, say so."
+Be specific — reference file paths, commands, exit codes, stderr snippets, metric values, and tool names when available. Only suggest changes supported by the data. If metrics show no significant issues, say so."
 
 if [ "$AUTO_MODE" -eq 1 ]; then
 	prompt="$prompt

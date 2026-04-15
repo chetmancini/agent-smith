@@ -336,6 +336,55 @@ EOF
     grep -q "Breakdown by Project" "$report_file"
 }
 
+@test "analyze-config report includes recent failure examples with rich metadata" {
+    local metrics_dir db_file report_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    mkdir -p "$(dirname "$db_file")"
+    sqlite3 "$db_file" "
+        CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL UNIQUE,
+            tool TEXT NOT NULL,
+            started_at TEXT,
+            stopped_at TEXT,
+            duration_seconds INTEGER,
+            stop_reason TEXT,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            test_loop_count INTEGER NOT NULL DEFAULT 0,
+            clarification_count INTEGER NOT NULL DEFAULT 0,
+            denial_count INTEGER NOT NULL DEFAULT 0,
+            cwd TEXT
+        );
+        INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES
+            ('2026-03-27T01:00:00Z', 'codex', 'codex-session', 'tool_failure', '{\"tool_name\":\"Bash\",\"command\":\"pnpm test\",\"exit_code\":2,\"stderr_snippet\":\"test suite failed\",\"stdout_snippet\":\"failing output\"}'),
+            ('2026-03-27T01:00:01Z', 'codex', 'codex-session', 'command_failure', '{\"command\":\"pnpm test\",\"exit_code\":2,\"stderr_snippet\":\"test suite failed\"}');
+        INSERT INTO sessions (session_id, tool, started_at, stopped_at, duration_seconds, stop_reason, event_count, failure_count, cwd) VALUES
+            ('codex-session', 'codex', '2026-03-27T01:00:00Z', '2026-03-27T01:10:00Z', 600, 'completed', 2, 1, '/home/user/app');
+    "
+
+    run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10 --tool codex
+
+    [ "$status" -eq 0 ]
+    report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
+    grep -q "Recent Failure Examples" "$report_file"
+    grep -q "pnpm test" "$report_file"
+    grep -q "test suite failed" "$report_file"
+    grep -q "failing output" "$report_file"
+    grep -q "Bash" "$report_file"
+}
+
 @test "analyze-config --project filters by project basename" {
     local metrics_dir db_file
     metrics_dir="$TEST_TMPDIR/metrics"

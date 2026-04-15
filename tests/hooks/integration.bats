@@ -354,7 +354,7 @@ EOF
 }
 
 @test "tool-failure detects Codex Bash failures from post-tool-use payloads" {
-    printf '{"tool_name":"Bash","tool_input":{"command":"npm test"},"tool_response":{"exit_code":1,"stderr":"boom"}}' | \
+    printf '{"tool_name":"Bash","turn_id":"turn-codex-1","tool_use_id":"tool-use-1","tool_input":{"command":"npm test"},"tool_response":{"exit_code":1,"stderr":"boom","stdout":"failing test output"}}' | \
         env AGENT_SMITH_TOOL=codex \
         METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/tool-failure.sh"
@@ -365,6 +365,44 @@ EOF
 
     run jq -r 'select(.event_type == "tool_failure") | .tool' "$METRICS_FILE"
     assert_output "codex"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.command' "$METRICS_FILE"
+    assert_output "npm test"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.exit_code' "$METRICS_FILE"
+    assert_output "1"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stderr_snippet' "$METRICS_FILE"
+    assert_output "boom"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stdout_snippet' "$METRICS_FILE"
+    assert_output "failing test output"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.turn_id' "$METRICS_FILE"
+    assert_output "turn-codex-1"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.tool_use_id' "$METRICS_FILE"
+    assert_output "tool-use-1"
+}
+
+@test "tool-failure parses stringified Codex Bash responses for richer metadata" {
+    printf '%s' '{"tool_name":"Bash","turn_id":"turn-codex-2","tool_use_id":"tool-use-2","tool_input":{"command":"pnpm test"},"tool_response":"{\"exit_code\":2,\"stderr\":\"string boom\",\"stdout\":\"string output\"}"}' | \
+        env AGENT_SMITH_TOOL=codex \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+    [ "$event_types" = $'tool_failure\ncommand_failure' ]
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.exit_code' "$METRICS_FILE"
+    assert_output "2"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stderr_snippet' "$METRICS_FILE"
+    assert_output "string boom"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stdout_snippet' "$METRICS_FILE"
+    assert_output "string output"
 }
 
 @test "permission-denied reuses the active session id from session-start" {
