@@ -352,8 +352,7 @@ metrics_on_tool_failure() {
 		metadata_json="${metadata_json},\"command\":\"${escaped_cmd}\""
 	fi
 	case "$exit_code" in
-	'' | *[!0-9]*)
-		;;
+	'' | *[!0-9]*) ;;
 	*)
 		metadata_json="${metadata_json},\"exit_code\":${exit_code}"
 		;;
@@ -393,8 +392,7 @@ metrics_on_tool_failure() {
 		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
 		command_failure_json="{\"command\":\"${escaped_cmd}\",\"error\":\"${escaped_error}\""
 		case "$exit_code" in
-		'' | *[!0-9]*)
-			;;
+		'' | *[!0-9]*) ;;
 		*)
 			command_failure_json="${command_failure_json},\"exit_code\":${exit_code}"
 			;;

@@ -22,11 +22,22 @@ jobs:
         with:
           node-version: 22
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
       - name: Install lint dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq shfmt
+          sudo apt-get install -y jq
           npm install --global markdownlint-cli
+
+      - name: Install shfmt 3.13.0
+        run: |
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.0
+          sudo cp "$(go env GOPATH)/bin/shfmt" /usr/local/bin/shfmt
+          shfmt --version
 
       - name: Install shellcheck 0.11.0
         run: |
