@@ -178,29 +178,26 @@ redact_settings_toml() {
 
 read_redacted_settings_snapshot() {
 	local tool="$1"
+	local settings_path
 
 	case "$tool" in
 	codex)
-		if [ -f "${HOME}/.codex/config.toml" ]; then
-			redact_settings_toml "${HOME}/.codex/config.toml"
+		if settings_path=$(agent_smith_first_existing_tool_config codex); then
+			redact_settings_toml "$settings_path"
 			return $?
 		fi
 		return 1
 		;;
 	opencode)
-		if [ -f "${HOME}/.config/opencode/opencode.json" ]; then
-			redact_settings_json "${HOME}/.config/opencode/opencode.json"
+		if settings_path=$(agent_smith_first_existing_tool_config opencode); then
+			redact_settings_json "$settings_path"
 			return $?
 		fi
 		return 1
 		;;
 	claude | "")
-		if [ -f "${HOME}/.claude/settings.json" ]; then
-			redact_settings_json "${HOME}/.claude/settings.json"
-			return $?
-		fi
-		if [ -f "${HOME}/.claude/settings.local.json" ]; then
-			redact_settings_json "${HOME}/.claude/settings.local.json"
+		if settings_path=$(agent_smith_first_existing_tool_config claude); then
+			redact_settings_json "$settings_path"
 			return $?
 		fi
 		return 1

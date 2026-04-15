@@ -15,31 +15,44 @@ $(pwd)/.claude/settings.json
 EOF
 }
 
-agent_smith_tool_has_config() {
-	local tool="$1"
-
-	case "$tool" in
+agent_smith_tool_config_candidates() {
+	case "$1" in
 	claude)
-		while IFS= read -r candidate; do
-			[ -n "$candidate" ] || continue
-			if [ -f "$candidate" ]; then
-				return 0
-			fi
-		done <<EOF
-$(agent_smith_claude_config_candidates)
-EOF
-		return 1
+		agent_smith_claude_config_candidates
 		;;
 	codex)
-		[ -f "${HOME}/.codex/config.toml" ]
+		printf '%s\n' "${HOME}/.codex/config.toml"
 		;;
 	opencode)
-		[ -f "${HOME}/.config/opencode/opencode.json" ]
+		printf '%s\n' "${HOME}/.config/opencode/opencode.json"
 		;;
 	*)
 		return 1
 		;;
 	esac
+}
+
+agent_smith_first_existing_tool_config() {
+	local tool="$1"
+	local candidate
+
+	while IFS= read -r candidate; do
+		[ -n "$candidate" ] || continue
+		if [ -f "$candidate" ]; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done <<EOF
+$(agent_smith_tool_config_candidates "$tool")
+EOF
+
+	return 1
+}
+
+agent_smith_tool_has_config() {
+	local tool="$1"
+
+	agent_smith_first_existing_tool_config "$tool" >/dev/null
 }
 
 agent_smith_detect_tool() {

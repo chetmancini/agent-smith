@@ -189,6 +189,30 @@ EOF
     grep -q '"model": "sonnet"' "$prompt_capture"
 }
 
+@test "llm analysis includes repo-local Claude settings when home config is missing" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir project_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+    project_dir="$TEST_TMPDIR/project"
+
+    create_metrics_db "$db_file"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
+    mkdir -p "$project_dir/.claude" "$home_dir"
+    printf '{"apiKey":"repo-secret","model":"repo-sonnet"}\n' > "$project_dir/.claude/settings.json"
+
+    run bash -c "cd \"$project_dir\" && env PATH=\"$fakebin:$PATH\" HOME=\"$home_dir\" METRICS_DIR=\"$metrics_dir\" bash \"$PROJECT_ROOT/scripts/analyze-config.sh\" --llm --include-settings --sessions 1 --tool claude"
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    ! grep -q "repo-secret" "$prompt_capture"
+    grep -q '"apiKey": "\[REDACTED\]"' "$prompt_capture"
+    grep -q '"model": "repo-sonnet"' "$prompt_capture"
+}
+
 @test "codex llm analysis uses the codex cli and redacts TOML secrets before sending settings" {
     local metrics_dir db_file fakebin marker prompt_capture home_dir
     metrics_dir="$TEST_TMPDIR/metrics"
