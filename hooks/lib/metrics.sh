@@ -435,6 +435,33 @@ metrics_on_permission_denied() {
 	emit_metric "$(metrics_tool_name)" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
 }
 
+# Call from: hooks/stop-failure.sh
+# Args: <error_type> [turn_id] [tool_use_id]
+metrics_on_stop_failure() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local error_type="${1:-unknown}"
+	local turn_id="${2:-}"
+	local tool_use_id="${3:-}"
+
+	local escaped_error_type metadata_json
+	escaped_error_type=$(json_escape "$error_type")
+	metadata_json="{\"error_type\":\"${escaped_error_type}\""
+
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "stop_failure" "${metadata_json}"
+}
+
 # Call from: hooks/session-stop.sh (per-turn, writes a durable cost snapshot)
 # Args: <transcript_path>
 # Writes a session-scoped snapshot file so rollup has cost data even if

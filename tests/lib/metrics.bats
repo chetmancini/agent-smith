@@ -667,3 +667,41 @@ JSONL
     [ "$start_sid" = "$comp_sid" ]
     [ "$start_sid" = "$expected_id" ]
 }
+
+# ============================================================================
+# metrics_on_stop_failure
+# ============================================================================
+
+@test "metrics_on_stop_failure emits stop_failure event with error_type" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "rate_limit" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "stop_failure" ]
+    [ "$(echo "$line" | jq -r '.metadata.error_type')" = "rate_limit" ]
+}
+
+@test "metrics_on_stop_failure includes turn_id and tool_use_id when present" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "server_error" "turn-123" "tooluse-456"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-123" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-456" ]
+}
+
+@test "metrics_on_stop_failure omits turn_id and tool_use_id when empty" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "billing_error" "" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_stop_failure respects kill switch" {
+    export METRICS_SESSION_ID="sf-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_stop_failure "rate_limit" "" ""
+    [ ! -s "$METRICS_FILE" ]
+}
