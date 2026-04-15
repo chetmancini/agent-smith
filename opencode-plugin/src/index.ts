@@ -114,6 +114,16 @@ function isPermissionGrantedResponse(response: unknown): boolean | undefined {
   return undefined
 }
 
+type PendingPermission = {
+  tool: string
+  timestamp: number
+}
+
+type SessionState = {
+  pendingPermissions: Map<string, PendingPermission>
+  editedFiles: Set<string>
+}
+
 /**
  * Agent Smith OpenCode Plugin
  */
@@ -128,14 +138,24 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
     },
   })
 
-  // Track pending permission requests to correlate asks with replies
-  const pendingPermissions = new Map<string, { tool: string; timestamp: number }>()
-
-  // Track files edited in this session for test running
-  const editedFiles = new Set<string>()
+  const sessionStates = new Map<string, SessionState>()
 
   // Get project identifier from project object or directory
   const projectId = project?.id ?? directory.split("/").pop() ?? "unknown"
+
+  function getSessionState(sessionId: string, create = true): SessionState | undefined {
+    const existing = sessionStates.get(sessionId)
+    if (existing || !create) {
+      return existing
+    }
+
+    const created: SessionState = {
+      pendingPermissions: new Map<string, PendingPermission>(),
+      editedFiles: new Set<string>(),
+    }
+    sessionStates.set(sessionId, created)
+    return created
+  }
 
   return {
     /**
@@ -144,11 +164,21 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
     event: async ({ event }) => {
       const eventType = event.type
       const props = event.properties as Record<string, unknown>
+      const eventSessionId =
+        (props?.sessionID as string | undefined) ??
+        (props?.sessionId as string | undefined) ??
+        ((props?.info as Record<string, unknown> | undefined)?.id as string | undefined)
 
       switch (eventType) {
         case "session.created": {
           const info = props?.info as Record<string, unknown> | undefined
-          const sessionId = (info?.id as string) ?? ""
+          const sessionId = (info?.id as string) ?? eventSessionId ?? ""
+          if (sessionId) {
+            sessionStates.set(sessionId, {
+              pendingPermissions: new Map<string, PendingPermission>(),
+              editedFiles: new Set<string>(),
+            })
+          }
           setSessionId(sessionId)
           metricsOnSessionStart(directory, projectId, sessionId)
 
@@ -164,20 +194,26 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         }
 
         case "session.idle": {
-          metricsOnSessionStop("idle")
+          metricsOnSessionStop("idle", eventSessionId)
           break
         }
 
         case "session.deleted": {
-          metricsOnSessionStop("deleted")
+          metricsOnSessionStop("deleted", eventSessionId)
+          if (eventSessionId) {
+            sessionStates.delete(eventSessionId)
+          }
           break
         }
 
         case "session.error": {
           const info = props?.info as Record<string, unknown> | undefined
           const error = (info?.error as string) ?? (props?.error as string) ?? "unknown"
-          metricsOnSessionError(error)
-          metricsOnSessionStop("error")
+          metricsOnSessionError(error, undefined, eventSessionId)
+          metricsOnSessionStop("error", eventSessionId)
+          if (eventSessionId) {
+            sessionStates.delete(eventSessionId)
+          }
 
           await client.app.log({
             body: {
@@ -191,7 +227,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         }
 
         case "session.compacted": {
-          metricsOnContextCompression("auto")
+          metricsOnContextCompression("auto", undefined, eventSessionId)
 
           await client.app.log({
             body: {
@@ -207,20 +243,21 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
         // permission.ask hook below instead
 
         case "permission.replied": {
-          const id = (props?.permissionID ?? props?.id) as string | undefined
+          const id = (props?.permissionID ?? props?.requestID ?? props?.id) as string | undefined
           const granted =
             (props?.granted as boolean | undefined) ??
-            isPermissionGrantedResponse(props?.response)
+            isPermissionGrantedResponse(props?.response ?? props?.reply)
+          const sessionState = eventSessionId ? getSessionState(eventSessionId, false) : undefined
 
-          if (id !== undefined && granted !== undefined) {
-            const pending = pendingPermissions.get(id)
+          if (id !== undefined && granted !== undefined && sessionState) {
+            const pending = sessionState.pendingPermissions.get(id)
             if (pending) {
               if (granted) {
-                metricsOnPermissionGranted(pending.tool)
+                metricsOnPermissionGranted(pending.tool, eventSessionId)
               } else {
-                metricsOnPermissionDenied(pending.tool)
+                metricsOnPermissionDenied(pending.tool, eventSessionId)
               }
-              pendingPermissions.delete(id)
+              sessionState.pendingPermissions.delete(id)
             }
           }
           break
@@ -230,8 +267,10 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
           const path = (props?.file ?? props?.path) as string | undefined
           const linesChanged = props?.linesChanged as number | undefined
           if (path) {
-            metricsOnFileEdited(path, linesChanged)
-            editedFiles.add(path)
+            metricsOnFileEdited(path, linesChanged, eventSessionId)
+            if (eventSessionId) {
+              getSessionState(eventSessionId)?.editedFiles.add(path)
+            }
           }
           break
         }
@@ -240,7 +279,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
           // Vague prompt detection via event system
           const text = props?.text as string | undefined
           if (text && isVaguePrompt(text)) {
-            metricsOnClarifyingQuestion(text)
+            metricsOnClarifyingQuestion(text, eventSessionId)
           }
           break
         }
@@ -254,7 +293,8 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
       // Permission.type contains the tool name (e.g., "bash", "edit", "read")
       const toolName = input.type ?? "unknown"
       const permissionId = input.id ?? `${Date.now()}-${toolName}`
-      pendingPermissions.set(permissionId, { tool: toolName, timestamp: Date.now() })
+      const sessionState = getSessionState(input.sessionID)
+      sessionState?.pendingPermissions.set(permissionId, { tool: toolName, timestamp: Date.now() })
 
       // Don't modify the output status — just observe
     },
@@ -266,6 +306,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
       const toolName = input.tool ?? "unknown"
       const args = input.args as Record<string, unknown> | undefined
       const editedFilePaths = extractEditedFilePaths(args)
+      const sessionId = input.sessionID
 
       // Parse exit code from output.output or metadata
       // The output format is { title, output, metadata }
@@ -321,7 +362,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
           filePath,
           turnId,
           toolUseId,
-        })
+        }, sessionId)
       }
 
       // Run tests after file edits (Edit, Write, Patch, MultiEdit, apply_patch)
@@ -337,7 +378,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
           try {
             const result = await $.nothrow()`${{ raw: cmdString }}`.quiet()
             const passed = result.exitCode === 0
-            metricsOnTestResult(passed, cmdString, filePath)
+            metricsOnTestResult(passed, cmdString, filePath, sessionId)
 
             if (!passed) {
               await client.app.log({
@@ -379,7 +420,7 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
       for (const part of parts) {
         if (part.type === "text" && typeof part.text === "string") {
           if (isVaguePrompt(part.text)) {
-            metricsOnClarifyingQuestion(part.text)
+            metricsOnClarifyingQuestion(part.text, input.sessionID)
 
             // Inject clarification note as an additional part
             output.parts.push({
@@ -405,16 +446,17 @@ export const AgentSmithPlugin: Plugin = async ({ project, client, $, directory, 
      * Compaction hook — inject custom context for session continuity
      */
     "experimental.session.compacting": async (_input, output) => {
+      const sessionState = getSessionState(_input.sessionID, false)
       // Track that compaction is happening
-      metricsOnContextCompression("compacting")
+      metricsOnContextCompression("compacting", undefined, _input.sessionID)
 
       // Inject agent-smith context into compaction prompt
       output.context.push(`## Agent Smith Session Context
 
 This session is instrumented by Agent Smith for metrics collection.
 Session metrics collected so far:
-- Files edited: ${editedFiles.size}
-- Permission requests tracked: ${pendingPermissions.size} pending
+- Files edited: ${sessionState?.editedFiles.size ?? 0}
+- Permission requests tracked: ${sessionState?.pendingPermissions.size ?? 0} pending
 
 Continue maintaining code quality and following project conventions.`)
     },

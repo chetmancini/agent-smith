@@ -28,7 +28,7 @@ const TOOL_NAME = "opencode"
 
 // State
 let metricsSessionId: string | null = null
-let sessionStartTs: number | null = null
+const sessionStartTsBySessionId = new Map<string, number>()
 const testFailCounts = new Map<string, number>()
 
 export interface ToolFailureDetails {
@@ -45,7 +45,7 @@ export interface ToolFailureDetails {
  */
 export function resetMetricsState(): void {
   metricsSessionId = null
-  sessionStartTs = null
+  sessionStartTsBySessionId.clear()
   testFailCounts.clear()
 }
 
@@ -121,6 +121,14 @@ function normalizeExitCode(exitCode?: number | string): number | undefined {
   return undefined
 }
 
+function resolveDerivedSessionId(sessionId?: string): string | null {
+  if (sessionId) {
+    return deriveSessionId(sessionId)
+  }
+
+  return metricsSessionId
+}
+
 /**
  * Truncate a string to N characters, handling split escape sequences
  */
@@ -141,19 +149,19 @@ export function truncateStr(str: string, max = 500): string {
 /**
  * Low-level emit — appends one JSONL line
  */
-export function emitMetric(eventType: string, metadata: Record<string, unknown>): void {
+export function emitMetric(eventType: string, metadata: Record<string, unknown>, sessionId?: string): void {
   if (!isMetricsEnabled()) return
 
   try {
     ensureMetricsDir()
 
-    const sessionId = metricsSessionId ?? deriveSessionId("")
+    const resolvedSessionId = resolveDerivedSessionId(sessionId) ?? deriveSessionId("")
     const ts = new Date().toISOString()
 
     const line = JSON.stringify({
       ts,
       tool: TOOL_NAME,
-      session_id: sessionId,
+      session_id: resolvedSessionId,
       event_type: eventType,
       metadata: sanitizeMetricValue(metadata),
     })
@@ -169,7 +177,8 @@ export function emitMetric(eventType: string, metadata: Record<string, unknown>)
  */
 export function setSessionId(sessionId: string): void {
   metricsSessionId = deriveSessionId(sessionId)
-  sessionStartTs = Date.now()
+  const sessionStartTs = Date.now()
+  sessionStartTsBySessionId.set(metricsSessionId, sessionStartTs)
 
   try {
     ensureMetricsDir()
@@ -236,48 +245,52 @@ export function metricsOnSessionStart(
     cwd,
     project_type: projectType,
     transcript_hash: transcriptHash,
-  })
+  }, sessionHint)
 }
 
 /**
  * Emit session_stop metric
  */
-export function metricsOnSessionStop(stopReason = "unknown"): void {
+export function metricsOnSessionStop(stopReason = "unknown", sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   let durationSeconds = 0
+  const resolvedSessionId = resolveDerivedSessionId(sessionHint)
 
-  if (sessionStartTs) {
-    durationSeconds = Math.floor((Date.now() - sessionStartTs) / 1000)
-  } else if (metricsSessionId) {
+  if (resolvedSessionId) {
+    const sessionStartTs = sessionStartTsBySessionId.get(resolvedSessionId)
+    if (sessionStartTs) {
+      durationSeconds = Math.floor((Date.now() - sessionStartTs) / 1000)
+    } else {
     // Try to read from persisted timestamp file
-    try {
-      const tsFile = join(getMetricsDir(), `.session_start_ts_${metricsSessionId}`)
-      if (existsSync(tsFile)) {
-        const startTs = parseInt(readFileSync(tsFile, "utf-8").trim(), 10)
-        durationSeconds = Math.floor(Date.now() / 1000) - startTs
+      try {
+        const tsFile = join(getMetricsDir(), `.session_start_ts_${resolvedSessionId}`)
+        if (existsSync(tsFile)) {
+          const startTs = parseInt(readFileSync(tsFile, "utf-8").trim(), 10)
+          durationSeconds = Math.floor(Date.now() / 1000) - startTs
+        }
+      } catch {
+        // Silently ignore
       }
-    } catch {
-      // Silently ignore
     }
   }
 
   emitMetric("session_stop", {
     stop_reason: stopReason,
     duration_seconds: durationSeconds,
-  })
+  }, sessionHint)
 }
 
 /**
  * Emit session_error metric (OpenCode-specific — no Claude Code equivalent)
  */
-export function metricsOnSessionError(error: string, context?: Record<string, unknown>): void {
+export function metricsOnSessionError(error: string, context?: Record<string, unknown>, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("session_error", {
     error: truncateStr(sanitizeMetricString(error), 500),
     ...context,
-  })
+  }, sessionHint)
 }
 
 /**
@@ -287,7 +300,8 @@ export function metricsOnToolFailure(
   toolName: string,
   error: string,
   command?: string,
-  details: ToolFailureDetails = {}
+  details: ToolFailureDetails = {},
+  sessionHint?: string
 ): void {
   if (!isMetricsEnabled()) return
 
@@ -326,7 +340,7 @@ export function metricsOnToolFailure(
     toolFailureMetadata.tool_use_id = sanitizeMetricString(details.toolUseId)
   }
 
-  emitMetric("tool_failure", toolFailureMetadata)
+  emitMetric("tool_failure", toolFailureMetadata, sessionHint)
 
   // For Bash tool failures, also emit command_failure
   if (toolName.toLowerCase() === "bash" && command) {
@@ -355,59 +369,60 @@ export function metricsOnToolFailure(
       commandFailureMetadata.tool_use_id = sanitizeMetricString(details.toolUseId)
     }
 
-    emitMetric("command_failure", commandFailureMetadata)
+    emitMetric("command_failure", commandFailureMetadata, sessionHint)
   }
 }
 
 /**
  * Emit permission_denied metric
  */
-export function metricsOnPermissionDenied(toolName: string): void {
+export function metricsOnPermissionDenied(toolName: string, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("permission_denied", {
     tool_name: toolName,
-  })
+  }, sessionHint)
 }
 
 /**
  * Emit permission_granted metric (OpenCode-specific — tracks grants, not just denials)
  */
-export function metricsOnPermissionGranted(toolName: string): void {
+export function metricsOnPermissionGranted(toolName: string, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("permission_granted", {
     tool_name: toolName,
-  })
+  }, sessionHint)
 }
 
 /**
  * Emit clarifying_question metric for vague prompts
  */
-export function metricsOnClarifyingQuestion(promptText: string): void {
+export function metricsOnClarifyingQuestion(promptText: string, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("clarifying_question", {
     prompt_snippet: truncateStr(sanitizeMetricString(promptText), 100),
     is_vague: true,
-  })
+  }, sessionHint)
 }
 
 /**
  * Emit context_compression metric
  */
-export function metricsOnContextCompression(trigger: string, transcriptLines?: number): void {
+export function metricsOnContextCompression(trigger: string, transcriptLines?: number, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("context_compression", {
     trigger,
     transcript_lines: transcriptLines ?? 0,
-  })
+  }, sessionHint)
 
   // Invalidate cost cursor so next stop does a full rescan
-  if (metricsSessionId) {
+  const resolvedSessionId = resolveDerivedSessionId(sessionHint)
+  if (resolvedSessionId) {
     try {
-      const cursorFile = join(getMetricsDir(), `.cost_cursor_${metricsSessionId}`)
+      const cursorFile = join(getMetricsDir(), `.cost_cursor_${resolvedSessionId}`)
       if (existsSync(cursorFile)) {
         unlinkSync(cursorFile)
       }
@@ -420,10 +435,15 @@ export function metricsOnContextCompression(trigger: string, transcriptLines?: n
 /**
  * Track test results and emit test_failure_loop when 3+ consecutive failures
  */
-export function metricsOnTestResult(passed: boolean, testCommand: string, filePath: string): void {
+export function metricsOnTestResult(
+  passed: boolean,
+  testCommand: string,
+  filePath: string,
+  sessionHint?: string
+): void {
   if (!isMetricsEnabled()) return
 
-  const counterKey = metricsSessionId ?? "global"
+  const counterKey = resolveDerivedSessionId(sessionHint) ?? "global"
 
   if (passed) {
     testFailCounts.delete(counterKey)
@@ -439,18 +459,18 @@ export function metricsOnTestResult(passed: boolean, testCommand: string, filePa
       test_command: truncateStr(sanitizeMetricString(testCommand), 300),
       failure_count: failCount,
       file_path: filePath,
-    })
+    }, sessionHint)
   }
 }
 
 /**
  * Emit file_edited metric (OpenCode-specific — tracks all file edits)
  */
-export function metricsOnFileEdited(filePath: string, linesChanged?: number): void {
+export function metricsOnFileEdited(filePath: string, linesChanged?: number, sessionHint?: string): void {
   if (!isMetricsEnabled()) return
 
   emitMetric("file_edited", {
     file_path: filePath,
     lines_changed: linesChanged ?? 0,
-  })
+  }, sessionHint)
 }

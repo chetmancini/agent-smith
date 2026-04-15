@@ -385,6 +385,22 @@ describe("metrics", () => {
       expect(event.event_type).toBe("test_failure_loop")
       expect(event.metadata.failure_count).toBe(3)
     })
+
+    test("tracks failure loops per explicit session", () => {
+      metricsOnTestResult(false, "npm test", "src/foo.ts", "session-a")
+      metricsOnTestResult(false, "npm test", "src/foo.ts", "session-a")
+      metricsOnTestResult(false, "npm test", "src/foo.ts", "session-b")
+      expect(existsSync(metricsFile)).toBe(false)
+
+      metricsOnTestResult(false, "npm test", "src/foo.ts", "session-a")
+
+      const content = readFileSync(metricsFile, "utf-8")
+      const event = JSON.parse(content.trim())
+
+      expect(event.event_type).toBe("test_failure_loop")
+      expect(event.session_id).toBe(deriveSessionId("session-a"))
+      expect(event.metadata.failure_count).toBe(3)
+    })
   })
 
   describe("metricsOnToolFailure", () => {
