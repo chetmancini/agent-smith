@@ -22,6 +22,24 @@ expected_session_id() {
     printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -c1-12
 }
 
+start_claude_session() {
+    local session_hint="$1"
+    local project_dir="${2:-/tmp/project}"
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="$project_dir" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+}
+
+assert_metrics_file_has_only_session_id() {
+    local expected_sid="$1"
+    local session_ids
+
+    session_ids=$(jq -r '.session_id' "$METRICS_FILE" | sort -u)
+    [ "$session_ids" = "$expected_sid" ]
+}
+
 create_fake_pytest() {
     local fakebin="$1"
     local exit_code="${2:-1}"
@@ -37,84 +55,96 @@ EOF
 # Session-ID continuity across hooks
 # ============================================================================
 
-@test "session-start and session-stop emit the same session_id" {
-    local session_hint="test-session-hint-abc"
+@test "lifecycle hooks reuse the same derived session_id" {
+    local session_hint="lifecycle-session"
     local expected_sid
     expected_sid=$(expected_session_id "$session_hint")
 
-    # session-start uses CLAUDE_SESSION_ID env var (does not read stdin for session id)
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp/project" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
+    start_claude_session "$session_hint" "/tmp"
 
-    local start_sid
-    start_sid=$(jq -r '.session_id' "$METRICS_FILE")
-    [ "$start_sid" = "$expected_sid" ]
-
-    # session-stop reads session_id from stdin JSON
-    : > "$METRICS_FILE"
-    printf '{"stop_reason":"end_turn","session_id":"%s","transcript_path":""}' "$session_hint" | \
-        env METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-stop.sh"
-
-    local stop_sid
-    stop_sid=$(jq -r '.session_id' "$METRICS_FILE")
-    [ "$stop_sid" = "$expected_sid" ]
-}
-
-@test "compact hook emits the same session_id as session-start" {
-    local session_hint="test-session-hint-xyz"
-    local expected_sid
-    expected_sid=$(expected_session_id "$session_hint")
-
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp/project" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    local start_sid
-    start_sid=$(jq -r '.session_id' "$METRICS_FILE")
-
-    : > "$METRICS_FILE"
     printf '{"session_id":"%s","transcript_path":""}' "$session_hint" | \
         env METRICS_DIR="$METRICS_DIR" \
         COMPACT_TRIGGER=auto \
         bash "$HOOKS_DIR/compact.sh"
 
-    local comp_sid
-    comp_sid=$(jq -r '.session_id' "$METRICS_FILE")
-    [ "$start_sid" = "$comp_sid" ]
-    [ "$comp_sid" = "$expected_sid" ]
-}
-
-@test "all hooks produce matching session_ids for a full session lifecycle" {
-    local session_hint="full-lifecycle-session"
-    local expected_sid
-    expected_sid=$(expected_session_id "$session_hint")
-
-    # 1. session-start
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    # 2. compact (auto)
-    printf '{"session_id":"%s","transcript_path":""}' "$session_hint" | \
-        env METRICS_DIR="$METRICS_DIR" \
-        COMPACT_TRIGGER=auto \
-        bash "$HOOKS_DIR/compact.sh"
-
-    # 3. session-stop
     printf '{"stop_reason":"end_turn","session_id":"%s","transcript_path":""}' "$session_hint" | \
         env METRICS_DIR="$METRICS_DIR" \
         bash "$HOOKS_DIR/session-stop.sh"
 
-    # All three events should have the same session_id
-    local sids
-    sids=$(jq -r '.session_id' "$METRICS_FILE" | sort -u)
-    [ "$(echo "$sids" | wc -l | tr -d ' ')" -eq 1 ]
-    [ "$sids" = "$expected_sid" ]
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+
+    [ "$(printf '%s\n' "$event_types" | wc -l | tr -d ' ')" -eq 3 ]
+    [ "$event_types" = $'session_start\ncontext_compression\nsession_stop' ]
+    assert_metrics_file_has_only_session_id "$expected_sid"
+}
+
+@test "non-lifecycle hook emitters reuse the active session_id" {
+    local session_hint="non-lifecycle-session"
+    local expected_sid fakebin
+    expected_sid=$(expected_session_id "$session_hint")
+    fakebin="$TEST_TMPDIR/fakebin"
+
+    : > "$METRICS_FILE"
+    mkdir -p "$TEST_TMPDIR/app" "$TEST_TMPDIR/tests"
+    printf 'def value():\n    return 1\n' > "$TEST_TMPDIR/app/foo.py"
+    printf 'def test_value():\n    assert False\n' > "$TEST_TMPDIR/tests/test_foo.py"
+    create_fake_pytest "$fakebin" 1
+
+    start_claude_session "$session_hint" "$TEST_TMPDIR"
+    : > "$METRICS_FILE"
+
+    printf '{"tool_name":"Bash","error":"exit 1","tool_input":{"command":"false"}}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    printf '{"prompt":"fix it"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/vague-prompt.sh" >/dev/null
+
+    printf '{"tool_name":"Write"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/permission-denied.sh"
+
+    for _ in 1 2 3; do
+        (
+            cd "$TEST_TMPDIR" || exit 1
+            printf '{"tool_input":{"file_path":"%s"}}' "$TEST_TMPDIR/app/foo.py" | \
+                env PATH="$fakebin:$PATH" METRICS_DIR="$METRICS_DIR" \
+                bash "$HOOKS_DIR/test-result.sh"
+        )
+    done
+
+    printf '{"tool_name":"Bash","tool_input":{"command":"git status"},"tool_use_id":"tu-remaining","turn_id":"turn-remaining"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    printf '{"error_type":"server_error","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh"
+
+    printf '{"agent_id":"ag-remaining","agent_type":"Explore","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-start.sh"
+
+    printf '{"agent_id":"ag-remaining","agent_type":"Explore","turn_id":"turn-remaining","tool_use_id":"tu-remaining"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+
+    [ "$(printf '%s\n' "$event_types" | wc -l | tr -d ' ')" -eq 9 ]
+    [[ "$event_types" == *"tool_failure"* ]]
+    [[ "$event_types" == *"command_failure"* ]]
+    [[ "$event_types" == *"clarifying_question"* ]]
+    [[ "$event_types" == *"permission_denied"* ]]
+    [[ "$event_types" == *"test_failure_loop"* ]]
+    [[ "$event_types" == *"tool_attempt"* ]]
+    [[ "$event_types" == *"stop_failure"* ]]
+    [[ "$event_types" == *"subagent_start"* ]]
+    [[ "$event_types" == *"subagent_stop"* ]]
+    assert_metrics_file_has_only_session_id "$expected_sid"
 }
 
 # ============================================================================
@@ -288,26 +318,6 @@ EOF
     assert_output "opencode"
 }
 
-@test "tool-failure reuses the active session id from session-start" {
-    local session_hint="tool-failure-session"
-    local expected_sid
-    expected_sid=$(expected_session_id "$session_hint")
-
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp/project" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    : > "$METRICS_FILE"
-    printf '{"tool_name":"Bash","error":"exit 1","tool_input":{"command":"false"}}' | \
-        env METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/tool-failure.sh"
-
-    local session_ids
-    session_ids=$(jq -r '.session_id' "$METRICS_FILE" | sort -u)
-    [ "$session_ids" = "$expected_sid" ]
-}
-
 @test "vague-prompt emits Codex additionalContext JSON and logs a codex event" {
     run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=codex METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
     assert_success
@@ -321,24 +331,6 @@ EOF
 
     run jq -r '.tool' "$METRICS_FILE"
     assert_output "codex"
-}
-
-@test "vague-prompt reuses the active session id from session-start" {
-    local session_hint="vague-session"
-    local expected_sid
-    expected_sid=$(expected_session_id "$session_hint")
-
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp/project" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    : > "$METRICS_FILE"
-    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
-    assert_success
-
-    run jq -r '.session_id' "$METRICS_FILE"
-    assert_output "$expected_sid"
 }
 
 @test "vague-prompt keeps Codex JSON parseable when metrics persistence fails" {
@@ -403,56 +395,6 @@ EOF
 
     run jq -r 'select(.event_type == "tool_failure") | .metadata.stdout_snippet' "$METRICS_FILE"
     assert_output "string output"
-}
-
-@test "permission-denied reuses the active session id from session-start" {
-    local session_hint="permission-session"
-    local expected_sid
-    expected_sid=$(expected_session_id "$session_hint")
-
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="/tmp/project" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    : > "$METRICS_FILE"
-    printf '{"tool_name":"Write"}' | env METRICS_DIR="$METRICS_DIR" bash "$HOOKS_DIR/permission-denied.sh"
-
-    run jq -r '.session_id' "$METRICS_FILE"
-    assert_output "$expected_sid"
-}
-
-@test "test-result reuses the active session id from session-start" {
-    local session_hint="test-result-session"
-    local expected_sid fakebin
-    expected_sid=$(expected_session_id "$session_hint")
-    fakebin="$TEST_TMPDIR/fakebin"
-
-    mkdir -p "$TEST_TMPDIR/app" "$TEST_TMPDIR/tests"
-    printf 'def value():\n    return 1\n' > "$TEST_TMPDIR/app/foo.py"
-    printf 'def test_value():\n    assert False\n' > "$TEST_TMPDIR/tests/test_foo.py"
-    create_fake_pytest "$fakebin" 1
-
-    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
-        CLAUDE_PROJECT_DIR="$TEST_TMPDIR" \
-        METRICS_DIR="$METRICS_DIR" \
-        bash "$HOOKS_DIR/session-start.sh"
-
-    : > "$METRICS_FILE"
-    for _ in 1 2 3; do
-        (
-            cd "$TEST_TMPDIR" || exit 1
-            printf '{"tool_input":{"file_path":"%s"}}' "$TEST_TMPDIR/app/foo.py" | \
-                env PATH="$fakebin:$PATH" METRICS_DIR="$METRICS_DIR" \
-                bash "$HOOKS_DIR/test-result.sh"
-        )
-    done
-
-    run jq -r '.session_id' "$METRICS_FILE"
-    assert_output "$expected_sid"
-
-    run jq -r '.event_type' "$METRICS_FILE"
-    assert_output "test_failure_loop"
 }
 
 @test "compact hook reads COMPACT_TRIGGER env for trigger type" {
