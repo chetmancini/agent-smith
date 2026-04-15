@@ -41,6 +41,7 @@ Metrics collection starts automatically when the plugin loads. No configuration 
 ```text
 /agent-smith:analyze
 /agent-smith:analyze-fast
+/agent-smith:upgrade-settings
 ```
 
 **Manual scripts:**
@@ -57,7 +58,12 @@ bash scripts/refresh-schemas.sh
 bash scripts/validate-agent-config.sh --refresh
 ```
 
-Or ask your agent to use the `validate-schemas` or `analyze-config` skills directly.
+**Schema upgrade planning** (scoped to the calling agent):
+```bash
+make agent-upgrade-settings TOOL=codex
+```
+
+Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze-config` skills directly.
 
 ### Configuration
 
@@ -188,9 +194,11 @@ agent-smith/
 │   └── lib/agent-tool.sh         # Current-agent detection helpers
 ├── skills/
 │   ├── analyze-config/SKILL.md   # Analysis skill
+│   ├── upgrade-settings/SKILL.md # Schema-driven settings upgrade skill
 │   └── validate-schemas/SKILL.md # Schema validation skill
 ├── commands/analyze.md           # /agent-smith:analyze
 ├── commands/analyze-fast.md      # /agent-smith:analyze-fast
+├── commands/upgrade-settings.md  # /agent-smith:upgrade-settings
 └── tests/lib/metrics.bats        # BATS test suite
 ```
 
@@ -240,11 +248,13 @@ If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that v
 # Run skills through any agent
 make agent-analyze TOOL=claude
 make agent-validate-schemas TOOL=codex
+make agent-upgrade-settings TOOL=codex
 make agent-loop TOOL=opencode        # validate-schemas then analyze-config
 
 # Ergonomic aliases
 make claude-analyze
 make codex-validate-schemas
+make codex-upgrade-settings
 make opencode-loop
 
 # Override session window

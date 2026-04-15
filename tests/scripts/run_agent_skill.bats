@@ -65,6 +65,21 @@ EOF
     [[ "$output" == *"validate the current opencode configuration files only"* ]]
 }
 
+@test "run-agent-skill dispatches upgrade-settings prompt" {
+    local fakebin
+    fakebin="$TEST_TMPDIR/fakebin"
+    create_fake_agent "$fakebin" fake-codex
+
+    run env PATH="$fakebin:$PATH" AGENT_CLI=fake-codex \
+        bash "$PROJECT_ROOT/scripts/run-agent-skill.sh" upgrade-settings --tool codex
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == exec\ -C\ "$PROJECT_ROOT"* ]]
+    [[ "$output" == *"Use the upgrade-settings skill from the loaded plugin"* ]]
+    [[ "$output" == *"--tool codex"* ]]
+    [[ "$output" == *"new schema-backed features worth adopting now"* ]]
+}
+
 @test "run-claude-skill wrapper forwards to the generic helper" {
     local fakebin
     fakebin="$TEST_TMPDIR/fakebin"

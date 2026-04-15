@@ -14,7 +14,7 @@ SESSIONS="${SESSIONS:-50}"
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|loop> [--tool claude|codex|opencode]
+Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|codex|opencode]
 EOF
 }
 
@@ -52,6 +52,15 @@ Run the full skill workflow. Use ${SESSIONS} sessions for the analysis unless th
 	;;
 validate-schemas)
 	COMMON_PROMPT="Use the validate-schemas skill from the loaded plugin to validate the current ${TOOL} configuration files only and report new, deprecated, or invalid settings."
+	;;
+upgrade-settings)
+	COMMON_PROMPT="Use the upgrade-settings skill from the loaded plugin to refresh the latest ${TOOL} schema, compare it against the current ${TOOL} configuration files, and produce an implementation plan.
+
+Run the full skill workflow. When the skill invokes local scripts, treat --tool ${TOOL} as the active tool. The final result should clearly cover:
+- new schema-backed features worth adopting now
+- deprecated or unknown config that should be removed or migrated
+- lower-priority schema capabilities worth investigating later
+- an ordered implementation plan with exact files and validation steps"
 	;;
 loop)
 	COMMON_PROMPT="Use the validate-schemas skill first, then the analyze-config skill from the loaded plugin.
