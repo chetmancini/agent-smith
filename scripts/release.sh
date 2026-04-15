@@ -55,7 +55,7 @@ git add \
 	.claude-plugin/plugin.json \
 	.claude-plugin/marketplace.json \
 	.codex-plugin/plugin.json \
-	.opencode-plugin/plugin.json
+	opencode-plugin/package.json
 
 git commit -m "Release ${tag}"
 git tag -a "$tag" -m "Release ${tag}"

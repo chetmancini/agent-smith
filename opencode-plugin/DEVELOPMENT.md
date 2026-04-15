@@ -30,6 +30,8 @@ bun run build
 
 This creates `dist/index.js` — the bundled plugin ready for distribution.
 
+This package is the only supported OpenCode integration path for Agent Smith.
+
 ### Test locally
 
 **Option 1: Point OpenCode at the local directory**
@@ -117,22 +119,3 @@ The `prepublishOnly` script runs the build automatically.
 ### Versioning
 
 Keep the version in sync with the main `agent-smith` version in the root `VERSION` file when possible.
-
-## Comparison with Shell Hooks
-
-The native plugin provides richer telemetry than the shell hooks in `.opencode-plugin/hooks.json`:
-
-| Metric | Native Plugin | Shell Hooks |
-|--------|:-------------:|:-----------:|
-| `session_start` | ✓ | ✓ |
-| `session_stop` | ✓ | ✓ |
-| `session_error` | ✓ | ✗ |
-| `tool_failure` | ✓ | Bash-only |
-| `permission_denied` | ✓ | ✓ |
-| `permission_granted` | ✓ | ✗ |
-| `file_edited` | ✓ | ✗ |
-| `clarifying_question` | ✓ | ✓ |
-| `test_failure_loop` | ✓ | ✓ |
-| `context_compression` | ✓ | ✓ |
-
-Choose one OpenCode integration path per setup. The native plugin and shell shim both write into the same `events.jsonl` stream, so enabling both for the same sessions will double-count overlapping metrics during rollup.

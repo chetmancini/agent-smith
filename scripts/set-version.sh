@@ -57,7 +57,7 @@ update_json "${REPO_ROOT}/.claude-plugin/plugin.json" '.version = $version'
 # shellcheck disable=SC2016
 update_json "${REPO_ROOT}/.codex-plugin/plugin.json" '.version = $version'
 # shellcheck disable=SC2016
-update_json "${REPO_ROOT}/.opencode-plugin/plugin.json" '.version = $version'
+update_json "${REPO_ROOT}/opencode-plugin/package.json" '.version = $version'
 # shellcheck disable=SC2016
 update_json "${REPO_ROOT}/.claude-plugin/marketplace.json" '
   .metadata.version = $version
@@ -70,4 +70,4 @@ echo "  VERSION"
 echo "  .claude-plugin/plugin.json"
 echo "  .claude-plugin/marketplace.json"
 echo "  .codex-plugin/plugin.json"
-echo "  .opencode-plugin/plugin.json"
+echo "  opencode-plugin/package.json"

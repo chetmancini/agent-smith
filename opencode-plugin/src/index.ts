@@ -5,7 +5,7 @@
  * analyzes patterns, and produces tuning recommendations.
  *
  * This is the native TypeScript implementation that uses OpenCode's
- * native event system, providing richer telemetry than the shell-hook shim.
+ * native event system for Agent Smith's OpenCode integration.
  */
 
 import type { Plugin } from "@opencode-ai/plugin"

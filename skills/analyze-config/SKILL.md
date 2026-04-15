@@ -11,7 +11,7 @@ Analyze session metrics and produce tuning recommendations for Claude Code, Code
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/analyze-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `.opencode-plugin/plugin.json`, use the current repo root.
+- If the current repo already contains `scripts/analyze-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `opencode-plugin/package.json`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 ## Process

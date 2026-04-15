@@ -44,9 +44,7 @@ If you publish Agent Smith through your own Codex plugin source, point that sour
 
 ### OpenCode
 
-There are two ways to use Agent Smith with OpenCode:
-
-#### Option 1: Native npm plugin (recommended)
+OpenCode uses the native TypeScript plugin:
 
 Add to your `opencode.json`:
 
@@ -65,17 +63,7 @@ Or from a local clone:
 }
 ```
 
-Use this path when you want the richer OpenCode-native telemetry surface.
-
-#### Option 2: Shell hooks (Claude Code compatibility mode)
-
-Symlink the plugin directory and OpenCode will auto-discover the hooks:
-
-```bash
-ln -s /path/to/agent-smith/.opencode-plugin ~/.config/opencode/plugins/agent-smith
-```
-
-Use this only as a fallback compatibility mode. Do not enable the native OpenCode plugin and the shell shim for the same sessions; both write into the same metrics stream and overlapping events will be double-counted during rollup.
+This is the supported OpenCode integration path and provides the full OpenCode-native telemetry surface.
 
 ### Prerequisites
 
@@ -85,7 +73,7 @@ Use this only as a fallback compatibility mode. Do not enable the native OpenCod
 
 ### Usage
 
-Claude Code and OpenCode start collecting metrics as soon as their hook manifests load. In Codex, the skill and helper workflow works as soon as the plugin loads, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
+Claude Code starts collecting metrics as soon as its hook manifest loads. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, the skill and helper workflow works as soon as the plugin loads, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
 
 **Slash command** (inside any supported agent):
 ```text
@@ -143,7 +131,7 @@ Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze
 | Context compression                | ✓           |       | ✓        |
 | Edit-triggered test-loop detection | ✓           |       | ✓        |
 
-Schema validation and upgrade planning are available for all three agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. OpenCode reaches the richer cells above through the native npm plugin; the shell-hook fallback is intentionally narrower. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
+Schema validation and upgrade planning are available for all three agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. OpenCode reaches the richer cells above through the native npm plugin. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 
@@ -190,16 +178,16 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 | `session_start` | SessionStart | Every session start |
 | `session_stop` | Stop | Every session end (with duration) |
 | `session_error` | OpenCode native plugin: `session.error` | OpenCode session crashes |
-| `tool_failure` | Claude: PostToolUseFailure; OpenCode native plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
+| `tool_failure` | Claude: PostToolUseFailure; OpenCode plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
 | `command_failure` | Claude: PostToolUseFailure; Codex/OpenCode: PostToolUse | Bash command failures |
-| `permission_denied` | Claude: PermissionRequest; OpenCode native plugin: `permission.replied` | Permission denials |
-| `permission_granted` | OpenCode native plugin: `permission.replied` | Permission grants |
-| `file_edited` | OpenCode native plugin: `file.edited` | File edit telemetry for compaction/test context |
+| `permission_denied` | Claude: PermissionRequest; OpenCode plugin: `permission.replied` | Permission denials |
+| `permission_granted` | OpenCode plugin: `permission.replied` | Permission grants |
+| `file_edited` | OpenCode plugin: `file.edited` | File edit telemetry for compaction/test context |
 | `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
-| `test_failure_loop` | Claude: PostToolUse; OpenCode native plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
-| `context_compression` | Claude: PostCompact; OpenCode native plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
+| `test_failure_loop` | Claude: PostToolUse; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
+| `context_compression` | Claude: PostCompact; OpenCode plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
 
-Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin rather than the shell-hook fallback.
+Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin.
 
 When the host includes structured Bash failure payloads, Agent Smith records the command, exit code, stderr/stdout snippets, and turn or tool-use ids alongside the failure event to keep `events.jsonl` actionable.
 
@@ -233,7 +221,6 @@ agent-smith/
 ├── .codex-plugin/plugin.json     # Codex manifest
 ├── .codex/
 │   └── hooks.json                # Codex repo-local hook registration
-├── .opencode-plugin/plugin.json  # OpenCode manifest
 ├── hooks.json                    # Legacy Codex hook copy kept in sync with .codex/hooks.json
 ├── assets/
 │   └── agent-smith.svg           # Codex plugin icon
@@ -269,7 +256,7 @@ agent-smith/
 
 - Claude Code: [`hooks/hooks.json`](hooks/hooks.json)
 - Codex: repo-local [`.codex/hooks.json`](.codex/hooks.json)
-- OpenCode: [`.opencode-plugin/hooks.json`](.opencode-plugin/hooks.json)
+- OpenCode: native plugin entrypoint at [`opencode-plugin/src/index.ts`](opencode-plugin/src/index.ts)
 
 ### Running Tests
 

@@ -11,7 +11,7 @@ Refresh the active agent schema, inspect the installed config against that schem
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/refresh-schemas.sh`, `scripts/validate-agent-config.sh`, and one of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `.opencode-plugin/plugin.json`, use the current repo root.
+- If the current repo already contains `scripts/refresh-schemas.sh`, `scripts/validate-agent-config.sh`, and one of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `opencode-plugin/package.json`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 ## Process

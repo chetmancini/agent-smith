@@ -28,7 +28,7 @@ If you've cloned the agent-smith repo:
 
 ## Features
 
-This plugin provides native OpenCode integration with richer telemetry than the shell-hook shim:
+This plugin provides the supported OpenCode integration for Agent Smith:
 
 | Event | Metric | Description |
 |-------|--------|-------------|
@@ -53,8 +53,6 @@ The native plugin captures events that have no Claude Code equivalent:
 ## How It Works
 
 Metrics are written to `~/.config/agent-smith/events.jsonl`, the same location used by the shell hooks for Claude Code and Codex. This means all your metrics from all agents end up in one unified database.
-
-Use either the native plugin or the `.opencode-plugin` shell shim for a given OpenCode setup, not both. They share the same metrics sink, so enabling both for the same sessions will double-count overlapping events during rollup.
 
 Run analysis with:
 
