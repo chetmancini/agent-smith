@@ -667,3 +667,162 @@ JSONL
     [ "$start_sid" = "$comp_sid" ]
     [ "$start_sid" = "$expected_id" ]
 }
+
+# ============================================================================
+# metrics_on_stop_failure
+# ============================================================================
+
+@test "metrics_on_stop_failure emits stop_failure event with error_type" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "rate_limit" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "stop_failure" ]
+    [ "$(echo "$line" | jq -r '.metadata.error_type')" = "rate_limit" ]
+}
+
+@test "metrics_on_stop_failure includes turn_id and tool_use_id when present" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "server_error" "turn-123" "tooluse-456"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-123" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-456" ]
+}
+
+@test "metrics_on_stop_failure omits turn_id and tool_use_id when empty" {
+    export METRICS_SESSION_ID="sf-test-session"
+    metrics_on_stop_failure "billing_error" "" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_stop_failure respects kill switch" {
+    export METRICS_SESSION_ID="sf-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_stop_failure "rate_limit" "" ""
+    [ ! -s "$METRICS_FILE" ]
+}
+
+# ============================================================================
+# metrics_on_tool_attempt
+# ============================================================================
+
+@test "metrics_on_tool_attempt emits tool_attempt event with tool_name" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Bash" "" "" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "tool_attempt" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+}
+
+@test "metrics_on_tool_attempt includes command for Bash" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Bash" "tooluse-1" "turn-1" "git status" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.command')" = "git status" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-1" ]
+}
+
+@test "metrics_on_tool_attempt includes file_path for Edit" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Edit" "tooluse-2" "turn-2" "" "src/main.ts"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/main.ts" ]
+    [ "$(echo "$line" | jq -r '.metadata.command // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_tool_attempt omits optional fields when empty" {
+    export METRICS_SESSION_ID="ta-test-session"
+    metrics_on_tool_attempt "Agent" "" "" "" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Agent" ]
+    [ "$(echo "$line" | jq -r '.metadata.command // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.file_path // "absent"')" = "absent" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_tool_attempt respects kill switch" {
+    export METRICS_SESSION_ID="ta-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_tool_attempt "Bash" "" "" "ls" ""
+    [ ! -s "$METRICS_FILE" ]
+}
+
+# ============================================================================
+# metrics_on_subagent_start
+# ============================================================================
+
+@test "metrics_on_subagent_start emits subagent_start event" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-abc" "Explore" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_start" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "agent-abc" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+}
+
+@test "metrics_on_subagent_start persists timestamp file" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-xyz" "Plan" "" ""
+    [ -f "${METRICS_DIR}/.subagent_start_ts_agent-xyz" ]
+    local ts
+    ts=$(cat "${METRICS_DIR}/.subagent_start_ts_agent-xyz")
+    # Should be a valid unix timestamp (numeric, reasonable range)
+    [[ "$ts" =~ ^[0-9]+$ ]]
+}
+
+@test "metrics_on_subagent_start includes turn_id and tool_use_id" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_start "agent-123" "general-purpose" "turn-5" "tooluse-9"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-5" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-9" ]
+}
+
+@test "metrics_on_subagent_start respects kill switch" {
+    export METRICS_SESSION_ID="sa-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_subagent_start "agent-off" "Explore" "" ""
+    [ ! -s "$METRICS_FILE" ]
+    [ ! -f "${METRICS_DIR}/.subagent_start_ts_agent-off" ]
+}
+
+# ============================================================================
+# metrics_on_subagent_stop
+# ============================================================================
+
+@test "metrics_on_subagent_stop emits subagent_stop event" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_stop "agent-abc" "Explore" "42" "" ""
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_stop" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "agent-abc" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+    [ "$(echo "$line" | jq -r '.metadata.duration_seconds')" = "42" ]
+}
+
+@test "metrics_on_subagent_stop includes turn_id and tool_use_id" {
+    export METRICS_SESSION_ID="sa-test-session"
+    metrics_on_subagent_stop "agent-abc" "Plan" "10" "turn-7" "tooluse-11"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.turn_id')" = "turn-7" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_use_id')" = "tooluse-11" ]
+}
+
+@test "metrics_on_subagent_stop respects kill switch" {
+    export METRICS_SESSION_ID="sa-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_subagent_stop "agent-off" "Explore" "10" "" ""
+    [ ! -s "$METRICS_FILE" ]
+}

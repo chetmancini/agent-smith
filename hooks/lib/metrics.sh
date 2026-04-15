@@ -435,6 +435,136 @@ metrics_on_permission_denied() {
 	emit_metric "$(metrics_tool_name)" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
 }
 
+# Call from: hooks/stop-failure.sh
+# Args: <error_type> [turn_id] [tool_use_id]
+metrics_on_stop_failure() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local error_type="${1:-unknown}"
+	local turn_id="${2:-}"
+	local tool_use_id="${3:-}"
+
+	local escaped_error_type metadata_json
+	escaped_error_type=$(json_escape "$error_type")
+	metadata_json="{\"error_type\":\"${escaped_error_type}\""
+
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "stop_failure" "${metadata_json}"
+}
+
+# Call from: hooks/tool-attempt.sh
+# Args: <tool_name> [tool_use_id] [turn_id] [command] [file_path]
+metrics_on_tool_attempt() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local tool_name="${1:-unknown}"
+	local tool_use_id="${2:-}"
+	local turn_id="${3:-}"
+	local command="${4:-}"
+	local file_path="${5:-}"
+
+	local escaped_tool metadata_json
+	escaped_tool=$(json_escape "$tool_name")
+	metadata_json="{\"tool_name\":\"${escaped_tool}\""
+
+	if [ -n "$command" ]; then
+		local escaped_cmd
+		escaped_cmd=$(truncate_str "$(json_escape "$command")" 300)
+		metadata_json="${metadata_json},\"command\":\"${escaped_cmd}\""
+	fi
+	if [ -n "$file_path" ]; then
+		local escaped_file
+		escaped_file=$(truncate_str "$(json_escape "$file_path")" 300)
+		metadata_json="${metadata_json},\"file_path\":\"${escaped_file}\""
+	fi
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "tool_attempt" "${metadata_json}"
+}
+
+# Call from: hooks/subagent-start.sh
+# Args: <agent_id> <agent_type> [turn_id] [tool_use_id]
+metrics_on_subagent_start() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local agent_id="${1:-unknown}"
+	local agent_type="${2:-unknown}"
+	local turn_id="${3:-}"
+	local tool_use_id="${4:-}"
+
+	# Persist start timestamp for duration calculation in subagent_stop
+	_ensure_metrics_dir
+	printf '%s' "$(date +%s)" >"${METRICS_DIR}/.subagent_start_ts_${agent_id}" 2>/dev/null || true
+	_harden_path "${METRICS_DIR}/.subagent_start_ts_${agent_id}" 600
+
+	local escaped_id escaped_type metadata_json
+	escaped_id=$(json_escape "$agent_id")
+	escaped_type=$(json_escape "$agent_type")
+	metadata_json="{\"agent_id\":\"${escaped_id}\",\"agent_type\":\"${escaped_type}\""
+
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "subagent_start" "${metadata_json}"
+}
+
+# Call from: hooks/subagent-stop.sh
+# Args: <agent_id> <agent_type> <duration_seconds> [turn_id] [tool_use_id]
+metrics_on_subagent_stop() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local agent_id="${1:-unknown}"
+	local agent_type="${2:-unknown}"
+	local duration_seconds="${3:-0}"
+	local turn_id="${4:-}"
+	local tool_use_id="${5:-}"
+
+	local escaped_id escaped_type metadata_json
+	escaped_id=$(json_escape "$agent_id")
+	escaped_type=$(json_escape "$agent_type")
+	metadata_json="{\"agent_id\":\"${escaped_id}\",\"agent_type\":\"${escaped_type}\",\"duration_seconds\":${duration_seconds}"
+
+	if [ -n "$turn_id" ]; then
+		local escaped_turn_id
+		escaped_turn_id=$(json_escape "$turn_id")
+		metadata_json="${metadata_json},\"turn_id\":\"${escaped_turn_id}\""
+	fi
+	if [ -n "$tool_use_id" ]; then
+		local escaped_tool_use_id
+		escaped_tool_use_id=$(json_escape "$tool_use_id")
+		metadata_json="${metadata_json},\"tool_use_id\":\"${escaped_tool_use_id}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "subagent_stop" "${metadata_json}"
+}
+
 # Call from: hooks/session-stop.sh (per-turn, writes a durable cost snapshot)
 # Args: <transcript_path>
 # Writes a session-scoped snapshot file so rollup has cost data even if

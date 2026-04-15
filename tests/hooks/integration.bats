@@ -809,3 +809,227 @@ JSONL
     bad_lines=$(jq -e . "$METRICS_FILE" 2>&1 >/dev/null | wc -l | tr -d ' ')
     [ "$bad_lines" = "0" ]
 }
+
+# ============================================================================
+# StopFailure hook
+# ============================================================================
+
+@test "stop-failure emits stop_failure event with error_type" {
+    local session_hint="test-stop-failure-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    # Prime session state so restore_metrics_session_id can find it
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"error_type":"rate_limit","session_id":"%s"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "stop_failure" ]
+    [ "$(echo "$line" | jq -r '.metadata.error_type')" = "rate_limit" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "stop-failure injects context for rate_limit" {
+    local output
+    output=$(printf '{"error_type":"rate_limit","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [[ "$output" == *"Rate limited"* ]]
+}
+
+@test "stop-failure injects context for max_output_tokens" {
+    local output
+    output=$(printf '{"error_type":"max_output_tokens","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [[ "$output" == *"Output truncated"* ]]
+}
+
+@test "stop-failure does not inject context for server_error" {
+    local output
+    output=$(printf '{"error_type":"server_error","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh")
+    [ -z "$output" ]
+}
+
+@test "stop-failure exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/stop-failure.sh"
+    [ $? -eq 0 ]
+}
+
+# ============================================================================
+# PreToolUse (tool-attempt) hook
+# ============================================================================
+
+@test "tool-attempt emits tool_attempt for Bash tool" {
+    local session_hint="test-tool-attempt-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Bash","tool_input":{"command":"git status"},"session_id":"%s","tool_use_id":"tu-1","turn_id":"t-1"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "tool_attempt" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+    [ "$(echo "$line" | jq -r '.metadata.command')" = "git status" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "tool-attempt emits tool_attempt for Edit tool with file_path" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Edit","tool_input":{"file_path":"src/main.ts"},"session_id":"hint","tool_use_id":"tu-2"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Edit" ]
+    [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/main.ts" ]
+}
+
+@test "tool-attempt silently exits for Read tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Read","tool_input":{},"session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    # Should not emit any event
+    [ ! -s "$METRICS_FILE" ]
+}
+
+@test "tool-attempt silently exits for Grep tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Grep","tool_input":{},"session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    [ ! -s "$METRICS_FILE" ]
+}
+
+@test "tool-attempt emits for Agent tool" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Agent","tool_input":{},"session_id":"hint","tool_use_id":"tu-3"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Agent" ]
+}
+
+@test "tool-attempt exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+    [ $? -eq 0 ]
+}
+
+# ============================================================================
+# SubagentStart / SubagentStop hooks
+# ============================================================================
+
+@test "subagent-start emits subagent_start event" {
+    local session_hint="test-subagent-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-1","agent_type":"Explore","session_id":"%s","turn_id":"t-1","tool_use_id":"tu-1"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-start.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_start" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "ag-1" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "subagent-stop emits subagent_stop event with duration" {
+    local session_hint="test-subagent-stop-abc"
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    # Simulate subagent start (write a timestamp 5 seconds ago)
+    local fake_ts
+    fake_ts=$(($(date +%s) - 5))
+    printf '%s' "$fake_ts" > "${METRICS_DIR}/.subagent_start_ts_ag-2"
+
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-2","agent_type":"Plan","session_id":"%s"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line duration
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_stop" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "ag-2" ]
+    duration=$(echo "$line" | jq -r '.metadata.duration_seconds')
+    # Duration should be >= 4 (we wrote timestamp 5 seconds ago, allowing 1s jitter)
+    [ "$duration" -ge 4 ]
+}
+
+@test "subagent-stop cleans up timestamp file" {
+    printf '%s' "$(date +%s)" > "${METRICS_DIR}/.subagent_start_ts_ag-cleanup"
+
+    printf '{"agent_id":"ag-cleanup","agent_type":"Explore","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    [ ! -f "${METRICS_DIR}/.subagent_start_ts_ag-cleanup" ]
+}
+
+@test "subagent-stop handles missing timestamp file gracefully" {
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-nostart","agent_type":"Explore","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    # Should still emit with duration 0
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.duration_seconds')" = "0" ]
+}
+
+@test "subagent-start exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-start.sh"
+    [ $? -eq 0 ]
+}
+
+@test "subagent-stop exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+    [ $? -eq 0 ]
+}
