@@ -29,7 +29,7 @@ help:
 		fi; \
 		printf '\033[1mAgent Smith Make Targets\033[0m\n\n'; \
 		printf '\033[36mCore\033[0m\n'; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run the Bats test suite"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
@@ -67,7 +67,7 @@ help:
 		fi; \
 		printf 'Agent Smith Make Targets\n\n'; \
 		printf 'Core\n'; \
-		printf '  %-30s %s\n' "make test" "Run the Bats test suite"; \
+		printf '  %-30s %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
 		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync plugin manifests"; \
@@ -102,6 +102,7 @@ help:
 
 test:
 	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/codex_hook_layout.bats
+	cd opencode-plugin && bun test
 
 lint:
 	find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
