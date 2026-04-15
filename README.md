@@ -65,6 +65,8 @@ Or from a local clone:
 }
 ```
 
+Use this path when you want the richer OpenCode-native telemetry surface.
+
 #### Option 2: Shell hooks (Claude Code compatibility mode)
 
 Symlink the plugin directory and OpenCode will auto-discover the hooks:
@@ -72,6 +74,8 @@ Symlink the plugin directory and OpenCode will auto-discover the hooks:
 ```bash
 ln -s /path/to/agent-smith/.opencode-plugin ~/.config/opencode/plugins/agent-smith
 ```
+
+Use this only as a fallback compatibility mode. Do not enable the native OpenCode plugin and the shell shim for the same sessions; both write into the same metrics stream and overlapping events will be double-counted during rollup.
 
 ### Prerequisites
 
@@ -131,12 +135,15 @@ Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze
 | Vague prompt guidance              | ✓           | ✓     | ✓        |
 | Rollup & analysis                  | ✓           | ✓     | ✓        |
 | Schema validation                  | ✓           | ✓     | ✓        |
-| Tool failures                      | ✓           |       |          |
-| Permission denials                 | ✓           |       |          |
-| Context compression                | ✓           |       |          |
-| Edit-triggered test-loop detection | ✓           |       |          |
+| Tool failures                      | ✓           |       | ✓        |
+| Permission denials                 | ✓           |       | ✓        |
+| Permission grants                  |             |       | ✓        |
+| Session errors                     |             |       | ✓        |
+| File-edited telemetry              |             |       | ✓        |
+| Context compression                | ✓           |       | ✓        |
+| Edit-triggered test-loop detection | ✓           |       | ✓        |
 
-Schema validation and upgrade planning are available for all three agents. As of April 14, 2026, the official Codex hooks docs expose `SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, and `Stop`, but current Codex tool-scoped hooks still only emit `Bash`. The remaining Codex and OpenCode gaps therefore reflect current hook surfaces rather than missing Agent Smith handlers. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
+Schema validation and upgrade planning are available for all three agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. OpenCode reaches the richer cells above through the native npm plugin; the shell-hook fallback is intentionally narrower. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 
@@ -182,14 +189,17 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 |-------|------|---------|
 | `session_start` | SessionStart | Every session start |
 | `session_stop` | Stop | Every session end (with duration) |
-| `tool_failure` | Claude: PostToolUseFailure | Tool errors (filters expected non-zero exits) |
+| `session_error` | OpenCode native plugin: `session.error` | OpenCode session crashes |
+| `tool_failure` | Claude: PostToolUseFailure; OpenCode native plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
 | `command_failure` | Claude: PostToolUseFailure; Codex/OpenCode: PostToolUse | Bash command failures |
-| `permission_denied` | PermissionRequest | Permission denials (Claude-only today) |
+| `permission_denied` | Claude: PermissionRequest; OpenCode native plugin: `permission.replied` | Permission denials |
+| `permission_granted` | OpenCode native plugin: `permission.replied` | Permission grants |
+| `file_edited` | OpenCode native plugin: `file.edited` | File edit telemetry for compaction/test context |
 | `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
-| `test_failure_loop` | PostToolUse | 3+ consecutive test failures (Claude uses Edit-or-Write matches; Codex currently only emits `Bash`) |
-| `context_compression` | PostCompact | Context compression (auto or manual, Claude-only today) |
+| `test_failure_loop` | Claude: PostToolUse; OpenCode native plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
+| `context_compression` | Claude: PostCompact; OpenCode native plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
 
-Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation; Claude Code also exposes tool failures, permission denials, edit-triggered test loops, and compact events.
+Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin rather than the shell-hook fallback.
 
 When the host includes structured Bash failure payloads, Agent Smith records the command, exit code, stderr/stdout snippets, and turn or tool-use ids alongside the failure event to keep `events.jsonl` actionable.
 

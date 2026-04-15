@@ -231,6 +231,60 @@ tool_filter_label() {
 	fi
 }
 
+tool_capability_notes() {
+	case "$1" in
+	claude)
+		printf '%s\n' "Claude currently emits all report sections below."
+		;;
+	codex)
+		cat <<'EOF'
+- `API Errors`, `Tool Success Rates`, and `Subagent*` sections are not collected for Codex with the current hook surface.
+- Codex metrics currently emphasize session lifecycle, vague prompts, and Bash failure tracking.
+EOF
+		;;
+	opencode)
+		cat <<'EOF'
+- `API Errors`, `Tool Success Rates`, and `Subagent*` sections are not collected for OpenCode with the current Agent Smith integration.
+- The native OpenCode plugin also emits `session_error`, `permission_granted`, and `file_edited`, but those OpenCode-specific signals are not yet summarized in this report.
+EOF
+		;;
+	*)
+		printf '%s\n' "This report may mix agents with different telemetry surfaces. Compare sections with that capability drift in mind."
+		;;
+	esac
+}
+
+section_not_collected_note() {
+	local tool="$1"
+	local section_label="$2"
+	local tool_label
+	tool_label=$(agent_smith_tool_label "$tool" 2>/dev/null || printf '%s' "$tool")
+	printf 'Not collected for %s with the current Agent Smith integration.\n' "$tool_label"
+	printf '%s\n' "This section is left in place so cross-agent reports keep a stable shape."
+	printf '%s\n' "Affected area: ${section_label}."
+}
+
+tool_supports_stop_failures() {
+	case "$1" in
+	"" | claude) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+tool_supports_tool_success_rates() {
+	case "$1" in
+	"" | claude) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+tool_supports_subagent_metrics() {
+	case "$1" in
+	"" | claude) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
 # Build the session-filter subquery used by all metric queries.
 # When --project is set, restrict to sessions whose cwd basename matches.
 session_filter_subquery() {
@@ -553,6 +607,23 @@ echo "  -> Querying subagent durations..."
 SUBAGENT_DURATIONS=$(query_subagent_durations)
 echo "  All metrics gathered."
 
+CAPABILITY_NOTES=$(tool_capability_notes "$TOOL_FILTER")
+STOP_FAILURES_REPORT="$STOP_FAILURES"
+TOOL_SUCCESS_RATES_REPORT="$TOOL_SUCCESS_RATES"
+SUBAGENT_USAGE_REPORT="$SUBAGENT_USAGE"
+SUBAGENT_DURATIONS_REPORT="$SUBAGENT_DURATIONS"
+
+if ! tool_supports_stop_failures "$TOOL_FILTER"; then
+	STOP_FAILURES_REPORT=$(section_not_collected_note "$TOOL_FILTER" "API Errors")
+fi
+if ! tool_supports_tool_success_rates "$TOOL_FILTER"; then
+	TOOL_SUCCESS_RATES_REPORT=$(section_not_collected_note "$TOOL_FILTER" "Tool Success Rates")
+fi
+if ! tool_supports_subagent_metrics "$TOOL_FILTER"; then
+	SUBAGENT_USAGE_REPORT=$(section_not_collected_note "$TOOL_FILTER" "Subagent Usage")
+	SUBAGENT_DURATIONS_REPORT=$(section_not_collected_note "$TOOL_FILTER" "Subagent Durations")
+fi
+
 # Generate output filename with collision handling
 date_str=$(date +%Y-%m-%d)
 output_dir="${METRICS_DIR}/reports"
@@ -584,6 +655,9 @@ Last $SESSIONS sessions analyzed$([ -n "$TOOL_FILTER" ] && printf ' for %s' "$TO
 ## Overview by Tool
 $OVERVIEW
 
+## Capability Notes
+$CAPABILITY_NOTES
+
 ## Breakdown by Project
 $PROJECT_BREAKDOWN
 
@@ -612,16 +686,16 @@ $SESSION_COSTS
 $COMPRESSIONS
 
 ## API Errors
-$STOP_FAILURES
+$STOP_FAILURES_REPORT
 
 ## Tool Success Rates
-$TOOL_SUCCESS_RATES
+$TOOL_SUCCESS_RATES_REPORT
 
 ## Subagent Usage
-$SUBAGENT_USAGE
+$SUBAGENT_USAGE_REPORT
 
 ## Subagent Durations
-$SUBAGENT_DURATIONS
+$SUBAGENT_DURATIONS_REPORT
 EOF
 	harden_private_file "$output_file"
 }
@@ -749,6 +823,9 @@ $CONFIG_LOCATIONS
 ### Overview by Tool
 $OVERVIEW
 
+### Capability Notes
+$CAPABILITY_NOTES
+
 ### Breakdown by Project
 $PROJECT_BREAKDOWN
 
@@ -775,6 +852,18 @@ $SESSION_COSTS
 
 ### Context Compressions
 $COMPRESSIONS
+
+### API Errors
+$STOP_FAILURES_REPORT
+
+### Tool Success Rates
+$TOOL_SUCCESS_RATES_REPORT
+
+### Subagent Usage
+$SUBAGENT_USAGE_REPORT
+
+### Subagent Durations
+$SUBAGENT_DURATIONS_REPORT
 
 ## Settings Context
 $SETTINGS_CONTEXT

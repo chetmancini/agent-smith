@@ -127,7 +127,7 @@ The native plugin provides richer telemetry than the shell hooks in `.opencode-p
 | `session_start` | ✓ | ✓ |
 | `session_stop` | ✓ | ✓ |
 | `session_error` | ✓ | ✗ |
-| `tool_failure` | ✓ | ✓ |
+| `tool_failure` | ✓ | Bash-only |
 | `permission_denied` | ✓ | ✓ |
 | `permission_granted` | ✓ | ✗ |
 | `file_edited` | ✓ | ✗ |
@@ -135,4 +135,4 @@ The native plugin provides richer telemetry than the shell hooks in `.opencode-p
 | `test_failure_loop` | ✓ | ✓ |
 | `context_compression` | ✓ | ✓ |
 
-Both write to the same `events.jsonl` file, so you can use either approach (or both) and metrics will be unified.
+Choose one OpenCode integration path per setup. The native plugin and shell shim both write into the same `events.jsonl` stream, so enabling both for the same sessions will double-count overlapping metrics during rollup.

@@ -501,6 +501,53 @@ EOF
     ! grep -q "claude-session" "$report_file"
 }
 
+@test "analyze-config marks unsupported OpenCode report sections as not collected" {
+    local metrics_dir db_file report_file
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+
+    mkdir -p "$(dirname "$db_file")"
+    sqlite3 "$db_file" "
+        CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL UNIQUE,
+            tool TEXT NOT NULL,
+            started_at TEXT,
+            stopped_at TEXT,
+            duration_seconds INTEGER,
+            stop_reason TEXT,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            test_loop_count INTEGER NOT NULL DEFAULT 0,
+            clarification_count INTEGER NOT NULL DEFAULT 0,
+            denial_count INTEGER NOT NULL DEFAULT 0,
+            cwd TEXT
+        );
+        INSERT INTO events (ts, tool, session_id, event_type, metadata) VALUES
+            ('2026-03-27T00:00:00Z', 'opencode', 'op-session', 'session_start', '{\"cwd\":\"/home/user/app\"}'),
+            ('2026-03-27T00:02:00Z', 'opencode', 'op-session', 'file_edited', '{\"file_path\":\"/home/user/app/src/index.ts\",\"lines_changed\":5}');
+        INSERT INTO sessions (session_id, tool, started_at, event_count, cwd) VALUES
+            ('op-session', 'opencode', '2026-03-27T00:00:00Z', 2, '/home/user/app');
+    "
+
+    run env METRICS_DIR="$metrics_dir" bash "$PROJECT_ROOT/scripts/analyze-config.sh" --sessions 10 --tool opencode
+
+    [ "$status" -eq 0 ]
+    report_file=$(ls "$metrics_dir/reports/"*.md | head -1)
+    grep -q "Capability Notes" "$report_file"
+    grep -q "not collected for OpenCode" "$report_file"
+    grep -q "OpenCode-specific signals are not yet summarized" "$report_file"
+}
+
 @test "analyze-trigger counts only sessions from the initiating agent" {
     local metrics_dir db_file
     metrics_dir="$TEST_TMPDIR/metrics"

@@ -488,6 +488,39 @@ describe("metrics", () => {
       expect(event.event_type).toBe("permission_denied")
       expect(event.metadata.tool_name).toBe("Write")
     })
+
+    test("preserves the shared permission_denied contract", () => {
+      const sessionHint = "permission-shared-session"
+      const shellRun = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "${shellMetricsLib}"; METRICS_SESSION_ID=$(derive_session_id "$SESSION_HINT"); export METRICS_SESSION_ID; metrics_on_permission_denied "$TOOL_NAME"`,
+        ],
+        {
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            METRICS_DIR: metricsDir,
+            AGENT_METRICS_ENABLED: "1",
+            AGENT_SMITH_TOOL: "opencode",
+            SESSION_HINT: sessionHint,
+            TOOL_NAME: "Write",
+          },
+        }
+      )
+
+      expect(shellRun.status).toBe(0)
+      const shellEvents = withoutTimestamps(readEvents(metricsFile))
+
+      rmSync(metricsFile, { force: true })
+      resetMetricsState()
+      setSessionId(sessionHint)
+      metricsOnPermissionDenied("Write")
+
+      const nativeEvents = withoutTimestamps(readEvents(metricsFile))
+      expect(nativeEvents).toEqual(shellEvents)
+    })
   })
 
   describe("metricsOnPermissionGranted", () => {
@@ -525,6 +558,77 @@ describe("metrics", () => {
       expect(event.event_type).toBe("file_edited")
       expect(event.metadata.file_path).toBe("/src/index.ts")
       expect(event.metadata.lines_changed).toBe(42)
+    })
+  })
+
+  describe("shared contract parity", () => {
+    test("preserves the shared clarifying_question contract", () => {
+      const sessionHint = "clarifying-shared-session"
+      const shellRun = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "${shellMetricsLib}"; METRICS_SESSION_ID=$(derive_session_id "$SESSION_HINT"); export METRICS_SESSION_ID; metrics_on_clarifying_question "$PROMPT_TEXT"`,
+        ],
+        {
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            METRICS_DIR: metricsDir,
+            AGENT_METRICS_ENABLED: "1",
+            AGENT_SMITH_TOOL: "opencode",
+            SESSION_HINT: sessionHint,
+            PROMPT_TEXT: "fix it",
+          },
+        }
+      )
+
+      expect(shellRun.status).toBe(0)
+      const shellEvents = withoutTimestamps(readEvents(metricsFile))
+
+      rmSync(metricsFile, { force: true })
+      resetMetricsState()
+      setSessionId(sessionHint)
+      metricsOnClarifyingQuestion("fix it")
+
+      const nativeEvents = withoutTimestamps(readEvents(metricsFile))
+      expect(nativeEvents).toEqual(shellEvents)
+    })
+
+    test("preserves the shared test_failure_loop contract", () => {
+      const sessionHint = "test-loop-shared-session"
+      const shellRun = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "${shellMetricsLib}"; METRICS_SESSION_ID=$(derive_session_id "$SESSION_HINT"); export METRICS_SESSION_ID; metrics_on_test_result 0 "$TEST_COMMAND" "$FILE_PATH"; metrics_on_test_result 0 "$TEST_COMMAND" "$FILE_PATH"; metrics_on_test_result 0 "$TEST_COMMAND" "$FILE_PATH"`,
+        ],
+        {
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            METRICS_DIR: metricsDir,
+            AGENT_METRICS_ENABLED: "1",
+            AGENT_SMITH_TOOL: "opencode",
+            SESSION_HINT: sessionHint,
+            TEST_COMMAND: "npm test -- foo",
+            FILE_PATH: "src/foo.ts",
+          },
+        }
+      )
+
+      expect(shellRun.status).toBe(0)
+      const shellEvents = withoutTimestamps(readEvents(metricsFile))
+
+      rmSync(metricsFile, { force: true })
+      resetMetricsState()
+      setSessionId(sessionHint)
+      metricsOnTestResult(false, "npm test -- foo", "src/foo.ts")
+      metricsOnTestResult(false, "npm test -- foo", "src/foo.ts")
+      metricsOnTestResult(false, "npm test -- foo", "src/foo.ts")
+
+      const nativeEvents = withoutTimestamps(readEvents(metricsFile))
+      expect(nativeEvents).toEqual(shellEvents)
     })
   })
 })
