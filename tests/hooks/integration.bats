@@ -797,6 +797,53 @@ JSONL
     [ "$count_good" = "2" ]
 }
 
+@test "rollup preserves events appended after claim for the next run" {
+    cat > "$METRICS_FILE" <<'JSONL'
+{"ts":"2026-04-10T12:00:00Z","tool":"claude","session_id":"s-first","event_type":"session_start","metadata":{"cwd":"/tmp"}}
+JSONL
+
+    env METRICS_DIR="$METRICS_DIR" \
+        AGENT_SMITH_ROLLUP_AFTER_CLAIM_DELAY=0.2 \
+        bash "$PROJECT_ROOT/scripts/metrics-rollup.sh" >/dev/null 2>&1 &
+    local rollup_pid=$!
+
+    local claimed_batch=""
+    for _ in $(seq 1 50); do
+        claimed_batch=$(find "$METRICS_DIR" -maxdepth 1 -type f -name 'events.jsonl.processing.*' -print -quit)
+        if [ -n "$claimed_batch" ]; then
+            break
+        fi
+        sleep 0.01
+    done
+    [ -n "$claimed_batch" ]
+
+    printf '%s\n' '{"ts":"2026-04-10T12:00:01Z","tool":"claude","session_id":"s-second","event_type":"session_stop","metadata":{"stop_reason":"end_turn","duration_seconds":3}}' >> "$METRICS_FILE"
+
+    wait "$rollup_pid"
+
+    local first_pass_count
+    first_pass_count=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT COUNT(*) FROM events;" 2>/dev/null)
+    [ "$first_pass_count" = "1" ]
+
+    local queued_session
+    queued_session=$(jq -r '.session_id' "$METRICS_FILE")
+    [ "$queued_session" = "s-second" ]
+
+    run env METRICS_DIR="$METRICS_DIR" bash "$PROJECT_ROOT/scripts/metrics-rollup.sh"
+    assert_success
+
+    local second_pass_count
+    second_pass_count=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT COUNT(*) FROM events;" 2>/dev/null)
+    [ "$second_pass_count" = "2" ]
+
+    local distinct_sessions
+    distinct_sessions=$(sqlite3 "$METRICS_DIR/rollup.db" \
+        "SELECT COUNT(DISTINCT session_id) FROM events WHERE session_id IN ('s-first', 's-second');" 2>/dev/null)
+    [ "$distinct_sessions" = "2" ]
+}
+
 @test "tool_failure with control chars in error produces valid JSONL after fix" {
     source "${HOOKS_DIR}/lib/metrics.sh"
 

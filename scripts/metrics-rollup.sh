@@ -1,14 +1,14 @@
 #!/bin/bash
 # Metrics rollup: process JSONL events into SQLite for querying
 # Usage: metrics-rollup.sh [--rotate-at-mb N]
-# Supports incremental ingestion — only processes new lines since last run
+# Supports incremental ingestion by atomically claiming the live events file
+# into per-run processing batches before ingest.
 
 set -euo pipefail
 
 METRICS_DIR="${METRICS_DIR:-${HOME}/.config/agent-smith}"
 EVENTS_FILE="${METRICS_DIR}/events.jsonl"
 DB_FILE="${METRICS_DIR}/rollup.db"
-ROTATE_AT_BYTES=$((10 * 1024 * 1024)) # 10MB default
 
 ensure_private_dir() {
 	local path="$1"
@@ -26,11 +26,46 @@ harden_private_file() {
 	chmod 600 "$path" 2>/dev/null || true
 }
 
+create_private_file() {
+	local path="$1"
+	local old_umask
+	old_umask=$(umask)
+	umask 077
+	: >"$path"
+	umask "$old_umask"
+	harden_private_file "$path"
+}
+
+file_size_bytes() {
+	local path="$1"
+	stat -f%z "$path" 2>/dev/null || stat -c%s "$path" 2>/dev/null || echo "0"
+}
+
+claim_events_batch() {
+	if [ ! -f "$EVENTS_FILE" ]; then
+		return 1
+	fi
+
+	local current_size
+	current_size=$(file_size_bytes "$EVENTS_FILE")
+	current_size="${current_size:-0}"
+	if [ "$current_size" -le 0 ]; then
+		return 1
+	fi
+
+	local claimed_file
+	claimed_file="${EVENTS_FILE}.processing.$(date +%Y%m%d%H%M%S).$$"
+	mv "$EVENTS_FILE" "$claimed_file"
+	create_private_file "$EVENTS_FILE"
+	printf '%s\n' "$claimed_file"
+}
+
 # Parse args
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--rotate-at-mb)
-		ROTATE_AT_BYTES=$(($2 * 1024 * 1024))
+		# Legacy compatibility flag. Claim-based ingestion no longer rotates
+		# the live events file in place, so this is intentionally a no-op.
 		shift 2
 		;;
 	*)
@@ -49,11 +84,10 @@ if ! command -v jq >/dev/null 2>&1; then
 	exit 1
 fi
 
-if [ ! -f "$EVENTS_FILE" ]; then
-	exit 0
-fi
-
 ensure_private_dir "$METRICS_DIR"
+if [ ! -f "$EVENTS_FILE" ]; then
+	create_private_file "$EVENTS_FILE"
+fi
 
 # Initialize DB schema
 sqlite3 "$DB_FILE" <<'SCHEMA'
@@ -126,28 +160,33 @@ for col_def in \
 	"compression_count INTEGER DEFAULT 0"; do
 	sqlite3 "$DB_FILE" "ALTER TABLE sessions ADD COLUMN $col_def;" 2>/dev/null || true
 done
-# Get last ingested byte offset
-OFFSET=$(sqlite3 "$DB_FILE" "SELECT COALESCE(byte_offset, 0) FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || echo "0")
-OFFSET="${OFFSET:-0}"
 
-# Get current file size (macOS stat syntax)
-FILE_SIZE=$(stat -f%z "$EVENTS_FILE" 2>/dev/null || stat -c%s "$EVENTS_FILE" 2>/dev/null || echo "0")
-FILE_SIZE="${FILE_SIZE:-0}"
-
-HAVE_NEW_EVENTS=1
-if [ "$OFFSET" -ge "$FILE_SIZE" ]; then
-	HAVE_NEW_EVENTS=0
+# Atomically move the current live file out of the way so concurrent hook
+# writes land in a fresh events.jsonl instead of racing with this ingest pass.
+claim_events_batch >/dev/null 2>&1 || true
+if [ "${AGENT_SMITH_ROLLUP_AFTER_CLAIM_DELAY:-0}" != "0" ]; then
+	sleep "${AGENT_SMITH_ROLLUP_AFTER_CLAIM_DELAY}"
 fi
 
-# Extract new lines and transform to SQL in a single jq pass, wrapped in a transaction
-if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
+processed_bytes=0
+while IFS= read -r batch_file; do
+	[ -n "$batch_file" ] || continue
+	[ -f "$batch_file" ] || continue
+
+	batch_size=$(file_size_bytes "$batch_file")
+	batch_size="${batch_size:-0}"
+	if [ "$batch_size" -le 0 ]; then
+		rm -f "$batch_file" 2>/dev/null || true
+		continue
+	fi
+
 	{
 		echo "BEGIN TRANSACTION;"
 
-		tail -c +"$((OFFSET + 1))" "$EVENTS_FILE" | jq -R -r '
+		jq -R -r '
         # -R reads each line as a raw string; fromjson? parses it as JSON
         # and silently skips lines that are malformed (truncated writes,
-        # control-char corruption, partial lines from mid-byte offsets).
+        # control-char corruption, or partial lines from interrupted writes.
         # Without this, a single bad line aborts the jq stream and all
         # subsequent valid events in the batch are silently lost.
         fromjson? // empty |
@@ -188,16 +227,17 @@ if [ "$HAVE_NEW_EVENTS" -eq 1 ]; then
             (if .event_type == "permission_denied" then ", denial_count = denial_count + 1" else "" end) +
             (if .event_type == "context_compression" then ", compression_count = compression_count + 1" else "" end) +
         ";"
-    ' 2>/dev/null || true
-
-		# Update ingestion state
-		echo "INSERT INTO ingestion_state (file_path, byte_offset) VALUES ('${EVENTS_FILE}', ${FILE_SIZE}) ON CONFLICT(file_path) DO UPDATE SET byte_offset = ${FILE_SIZE}, last_ingested_at = datetime('now');"
+    ' "$batch_file" 2>/dev/null || true
 
 		echo "COMMIT;"
 	} | sqlite3 "$DB_FILE" 2>/dev/null
 
 	harden_private_file "$DB_FILE"
-fi # HAVE_NEW_EVENTS
+	rm -f "$batch_file" 2>/dev/null || true
+	processed_bytes=$((processed_bytes + batch_size))
+done <<EOF
+$(find "$METRICS_DIR" -maxdepth 1 -type f -name "$(basename "$EVENTS_FILE").processing.*" -print | LC_ALL=C sort)
+EOF
 
 # Keep daily_rollup.session_count accurate even when multiple events for the
 # same bucket come from the same session. Distinct-session counts are easier to
@@ -227,6 +267,7 @@ TRANSCRIPT_PATHS_FILE="${METRICS_DIR}/.transcript_paths"
 if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	# Source metrics.sh for _estimate_cost
 	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	# shellcheck source=hooks/lib/metrics.sh
 	source "${SCRIPT_DIR}/../hooks/lib/metrics.sh"
 
 	# Atomically claim the file so concurrent session-start.sh appends go to
@@ -353,13 +394,4 @@ if [ -f "$TRANSCRIPT_PATHS_FILE" ] && command -v jq >/dev/null 2>&1; then
 	fi # WORK_FILE claimed successfully
 fi
 
-# Rotate if file exceeds size limit
-if [ "$FILE_SIZE" -gt "$ROTATE_AT_BYTES" ]; then
-	rotated_file="${EVENTS_FILE}.$(date +%Y%m%d%H%M%S)"
-	mv "$EVENTS_FILE" "$rotated_file"
-	harden_private_file "$rotated_file"
-	# Reset offset for new file
-	sqlite3 "$DB_FILE" "DELETE FROM ingestion_state WHERE file_path = '${EVENTS_FILE}';" 2>/dev/null || true
-fi
-
-echo "Rollup complete: processed $((FILE_SIZE - OFFSET)) bytes"
+echo "Rollup complete: processed ${processed_bytes} bytes"
