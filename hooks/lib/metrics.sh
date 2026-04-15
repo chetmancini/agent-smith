@@ -97,6 +97,15 @@ restore_metrics_session_id() {
 	load_active_session_id
 }
 
+metrics_test_fail_counter_file() {
+	local session_suffix="${METRICS_SESSION_ID:-}"
+	if [ -n "$session_suffix" ]; then
+		printf '%s' "${METRICS_DIR}/.test_fail_count_${session_suffix}"
+	else
+		printf '%s' "${METRICS_DIR}/.test_fail_count"
+	fi
+}
+
 # Escape a string for safe JSON embedding.
 # Handles all characters that RFC 8259 requires to be escaped: backslash,
 # double-quote, and every ASCII control character (U+0000–U+001F, U+007F).
@@ -294,7 +303,8 @@ metrics_on_test_result() {
 	local test_command="${2:-}"
 	local file_path="${3:-}"
 
-	local counter="${METRICS_DIR}/.test_fail_count"
+	local counter
+	counter=$(metrics_test_fail_counter_file)
 
 	if [ "$passed" = "1" ]; then
 		rm -f "$counter" 2>/dev/null || true

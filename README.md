@@ -153,7 +153,7 @@ Token usage and estimated USD cost are calculated during `metrics-rollup.sh`, no
 ├── .session_start_ts_*   # Temporary: per-session timing
 ├── .cost_snapshot_*      # Temporary: per-session cost snapshots
 ├── .transcript_paths     # Temporary: session→transcript mapping
-└── .test_fail_count      # Temporary: consecutive test failures
+└── .test_fail_count_*    # Temporary: per-session consecutive test failures
 ```
 
 ## Development

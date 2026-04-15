@@ -352,9 +352,9 @@ teardown() {
 }
 
 @test "metrics_on_test_result resets counter on pass" {
-    printf '2' > "${METRICS_DIR}/.test_fail_count"
+    printf '2' > "$(metrics_test_fail_counter_file)"
     metrics_on_test_result 1 "npm test" "src/foo.ts"
-    [ ! -f "${METRICS_DIR}/.test_fail_count" ]
+    [ ! -f "$(metrics_test_fail_counter_file)" ]
     # No event emitted for a pass
     [ ! -f "$METRICS_FILE" ]
 }
@@ -362,14 +362,14 @@ teardown() {
 @test "metrics_on_test_result increments counter on failure" {
     metrics_on_test_result 0 "npm test" "src/foo.ts"
     local count
-    count=$(cat "${METRICS_DIR}/.test_fail_count")
+    count=$(cat "$(metrics_test_fail_counter_file)")
     [ "$count" = "1" ]
     # No event at count < 3
     [ ! -f "$METRICS_FILE" ]
 }
 
 @test "metrics_on_test_result emits test_failure_loop at 3 failures" {
-    printf '2' > "${METRICS_DIR}/.test_fail_count"
+    printf '2' > "$(metrics_test_fail_counter_file)"
     metrics_on_test_result 0 "npm test" "src/foo.ts"
 
     run jq -r '.event_type' "$METRICS_FILE"
@@ -377,6 +377,21 @@ teardown() {
 
     run jq -r '.metadata.failure_count' "$METRICS_FILE"
     assert_output "3"
+}
+
+@test "metrics_on_test_result keeps failure counters isolated by session" {
+    export METRICS_SESSION_ID="session-a"
+    metrics_on_test_result 0 "npm test" "src/a.ts"
+    metrics_on_test_result 0 "npm test" "src/a.ts"
+
+    export METRICS_SESSION_ID="session-b"
+    metrics_on_test_result 0 "npm test" "src/b.ts"
+
+    [ -f "${METRICS_DIR}/.test_fail_count_session-a" ]
+    [ -f "${METRICS_DIR}/.test_fail_count_session-b" ]
+    [ "$(cat "${METRICS_DIR}/.test_fail_count_session-a")" = "2" ]
+    [ "$(cat "${METRICS_DIR}/.test_fail_count_session-b")" = "1" ]
+    [ ! -f "$METRICS_FILE" ]
 }
 
 @test "metrics_on_tool_failure emits tool_failure" {
