@@ -943,3 +943,93 @@ JSONL
         bash "$HOOKS_DIR/tool-attempt.sh"
     [ $? -eq 0 ]
 }
+
+# ============================================================================
+# SubagentStart / SubagentStop hooks
+# ============================================================================
+
+@test "subagent-start emits subagent_start event" {
+    local session_hint="test-subagent-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-1","agent_type":"Explore","session_id":"%s","turn_id":"t-1","tool_use_id":"tu-1"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-start.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_start" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "ag-1" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_type')" = "Explore" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "subagent-stop emits subagent_stop event with duration" {
+    local session_hint="test-subagent-stop-abc"
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    # Simulate subagent start (write a timestamp 5 seconds ago)
+    local fake_ts
+    fake_ts=$(($(date +%s) - 5))
+    printf '%s' "$fake_ts" > "${METRICS_DIR}/.subagent_start_ts_ag-2"
+
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-2","agent_type":"Plan","session_id":"%s"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line duration
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "subagent_stop" ]
+    [ "$(echo "$line" | jq -r '.metadata.agent_id')" = "ag-2" ]
+    duration=$(echo "$line" | jq -r '.metadata.duration_seconds')
+    # Duration should be >= 4 (we wrote timestamp 5 seconds ago, allowing 1s jitter)
+    [ "$duration" -ge 4 ]
+}
+
+@test "subagent-stop cleans up timestamp file" {
+    printf '%s' "$(date +%s)" > "${METRICS_DIR}/.subagent_start_ts_ag-cleanup"
+
+    printf '{"agent_id":"ag-cleanup","agent_type":"Explore","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    [ ! -f "${METRICS_DIR}/.subagent_start_ts_ag-cleanup" ]
+}
+
+@test "subagent-stop handles missing timestamp file gracefully" {
+    : > "$METRICS_FILE"
+    printf '{"agent_id":"ag-nostart","agent_type":"Explore","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+
+    # Should still emit with duration 0
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.duration_seconds')" = "0" ]
+}
+
+@test "subagent-start exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-start.sh"
+    [ $? -eq 0 ]
+}
+
+@test "subagent-stop exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/subagent-stop.sh"
+    [ $? -eq 0 ]
+}
