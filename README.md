@@ -23,7 +23,15 @@ claude plugins install agent-smith@agent-smith
 claude --plugin-dir path/to/agent-smith
 ```
 
-**Codex:** Add `chetmancini/agent-smith` as a plugin marketplace source, then install Agent Smith from that marketplace. For local development, install or symlink the repo so Codex can see [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+**Codex:** For local development, keep this repo checked out locally and run Agent Smith through the Codex helpers in this checkout. Those helpers invoke `codex exec -C` so Codex loads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) directly from the repo.
+
+```bash
+make codex-analyze
+make codex-validate-schemas
+make codex-upgrade-settings
+```
+
+If you publish Agent Smith through your own Codex plugin source, point that source at this repo root so Codex can read [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) and [`hooks.json`](hooks.json).
 
 **OpenCode:** Point your `opencode.json` plugin array at this repo, or symlink [`.opencode-plugin/`](.opencode-plugin/).
 
@@ -84,22 +92,23 @@ Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze
 | Bash failure tracking              | ✓           | ✓     | ✓        |
 | Vague prompt guidance              | ✓           | ✓     | ✓        |
 | Rollup & analysis                  | ✓           | ✓     | ✓        |
-| Schema validation                  | ✓           |       | ✓        |
+| Schema validation                  | ✓           | ✓     | ✓        |
 | Tool failures                      | ✓           |       |          |
 | Permission denials                 | ✓           |       |          |
 | Context compression                | ✓           |       |          |
 | Edit-triggered test-loop detection | ✓           |       |          |
 
-Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith limitations. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
+Schema validation and upgrade planning are available for all three agents. The remaining Codex and OpenCode gaps reflect their current hook surfaces, not Agent Smith limitations. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │  1. COLLECT                                             │
-│  Hooks emit metrics on every session:                   │
-│  tool failures, permission denials, test loops,         │
-│  vague prompts, session lifecycle                       │
+│  Hooks emit metrics supported by the host agent:        │
+│  session lifecycle, vague prompts, bash failures,       │
+│  and, where available, tool failures,                   │
+│  permission denials, test loops, compact events         │
 │  → ~/.config/agent-smith/events.jsonl                   │
 └────────────────────────┬────────────────────────────────┘
                          ↓
@@ -141,6 +150,8 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 | `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
 | `test_failure_loop` | PostToolUse | 3+ consecutive test failures |
 | `context_compression` | PostCompact | Context compression (auto or manual) |
+
+Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation; Claude Code also exposes tool failures, permission denials, edit-triggered test loops, and compact events.
 
 All events are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL with user-only file permissions.
 
