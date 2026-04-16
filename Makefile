@@ -11,13 +11,14 @@ SESSIONS ?= 50
 TOOL ?=
 HELP_ASCII ?= 1
 HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
+APP_BUN ?= bun
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),claude)
 CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help test lint version sync-version set-version release refresh-schemas validate-agent-config agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help test app-test app-build lint version sync-version set-version release refresh-schemas validate-agent-config agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
@@ -29,7 +30,9 @@ help:
 		fi; \
 		printf '\033[1mAgent Smith Make Targets\033[0m\n\n'; \
 		printf '\033[36mCore\033[0m\n'; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
@@ -67,7 +70,9 @@ help:
 		fi; \
 		printf 'Agent Smith Make Targets\n\n'; \
 		printf 'Core\n'; \
-		printf '  %-30s %s\n' "make test" "Run all tests (Bats + OpenCode plugin)"; \
+		printf '  %-30s %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
+		printf '  %-30s %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
+		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
 		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
@@ -102,7 +107,14 @@ help:
 
 test:
 	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/codex_hook_layout.bats
+	cd agent-smith-app && $(APP_BUN) test
 	cd opencode-plugin && bun test
+
+app-test:
+	cd agent-smith-app && $(APP_BUN) test
+
+app-build:
+	cd agent-smith-app && $(APP_BUN) run build
 
 lint:
 	find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty

@@ -90,6 +90,14 @@ bash scripts/analyze-config.sh --llm --sessions 50       # Agent-backed report f
 bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
 ```
 
+**Standalone TypeScript app** (new migration path):
+```bash
+bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-id demo --metadata '{"cwd":"/tmp/project"}'
+bun run ./agent-smith-app/src/cli.ts rollup
+bun run ./agent-smith-app/src/cli.ts report
+bun run ./agent-smith-app/src/cli.ts watch --tail 10
+```
+
 **Schema validation** (scoped to the calling agent):
 ```bash
 bash scripts/refresh-schemas.sh
@@ -217,6 +225,12 @@ Token usage and estimated USD cost are calculated during `metrics-rollup.sh`, no
 
 ```text
 agent-smith/
+├── agent-smith-app/
+│   ├── src/cli.ts                # Standalone TS CLI entrypoint
+│   ├── src/lib/rollup.ts         # JSONL -> SQLite ingestion
+│   ├── src/lib/report.ts         # Query/report helpers
+│   ├── src/lib/watch.ts          # Live watch foundation for future TUI
+│   └── tests/*.test.ts           # Bun test coverage for the new app
 ├── .claude-plugin/plugin.json    # Claude Code manifest
 ├── .codex-plugin/plugin.json     # Codex manifest
 ├── .codex/
@@ -251,6 +265,8 @@ agent-smith/
 ├── commands/upgrade-settings.md  # /agent-smith:upgrade-settings
 └── tests/lib/metrics.bats        # BATS test suite
 ```
+
+The new `agent-smith-app/` package is where the unified TypeScript runtime can grow. For now it coexists with the shell scripts and OpenCode plugin rather than replacing them.
 
 ### Hook Registration
 
