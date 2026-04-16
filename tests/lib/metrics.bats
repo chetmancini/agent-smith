@@ -855,3 +855,33 @@ JSONL
     AGENT_METRICS_ENABLED=0 metrics_on_session_end "clear" "60"
     [ ! -s "$METRICS_FILE" ]
 }
+
+# ============================================================================
+# metrics_on_permission_auto_denied
+# ============================================================================
+
+@test "metrics_on_permission_auto_denied emits permission_auto_denied event" {
+    export METRICS_SESSION_ID="pad-test-session"
+    metrics_on_permission_auto_denied "Bash" "not in allowlist"
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "permission_auto_denied" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "not in allowlist" ]
+}
+
+@test "metrics_on_permission_auto_denied omits reason when empty" {
+    export METRICS_SESSION_ID="pad-test-session"
+    metrics_on_permission_auto_denied "Edit" ""
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Edit" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason // "absent"')" = "absent" ]
+}
+
+@test "metrics_on_permission_auto_denied respects kill switch" {
+    export METRICS_SESSION_ID="pad-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_permission_auto_denied "Bash" "blocked"
+    [ ! -s "$METRICS_FILE" ]
+}
