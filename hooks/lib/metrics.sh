@@ -445,6 +445,27 @@ metrics_on_permission_denied() {
 	emit_metric "$(metrics_tool_name)" "permission_denied" "{\"tool_name\":\"${escaped_tool}\"}"
 }
 
+# Call from: hooks/permission-auto-denied.sh
+# Args: <tool_name> [reason]
+metrics_on_permission_auto_denied() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local tool_name="${1:-unknown}"
+	local reason="${2:-}"
+
+	local escaped_tool metadata_json
+	escaped_tool=$(json_escape "$tool_name")
+	metadata_json="{\"tool_name\":\"${escaped_tool}\""
+
+	if [ -n "$reason" ]; then
+		local escaped_reason
+		escaped_reason=$(truncate_str "$(json_escape "$reason")" 500)
+		metadata_json="${metadata_json},\"reason\":\"${escaped_reason}\""
+	fi
+	metadata_json="${metadata_json}}"
+
+	emit_metric "$(metrics_tool_name)" "permission_auto_denied" "${metadata_json}"
+}
+
 # Call from: hooks/stop-failure.sh
 # Args: <error_type> [turn_id] [tool_use_id]
 metrics_on_stop_failure() {
