@@ -1116,3 +1116,49 @@ JSONL
         bash "$HOOKS_DIR/session-end.sh"
     [ $? -eq 0 ]
 }
+
+# ============================================================================
+# PermissionDenied (auto-mode classifier) hook
+# ============================================================================
+
+@test "permission-auto-denied emits permission_auto_denied event" {
+    local session_hint="test-auto-denied-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Bash","reason":"not in allowlist","session_id":"%s"}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/permission-auto-denied.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "permission_auto_denied" ]
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Bash" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "not in allowlist" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+}
+
+@test "permission-auto-denied handles missing reason" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"Edit","session_id":"hint"}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/permission-auto-denied.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Edit" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason // "absent"')" = "absent" ]
+}
+
+@test "permission-auto-denied exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/permission-auto-denied.sh"
+    [ $? -eq 0 ]
+}
