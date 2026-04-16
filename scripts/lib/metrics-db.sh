@@ -12,7 +12,9 @@ agent_smith_metrics_migrate_sessions_schema() {
 		"estimated_cost_usd REAL DEFAULT 0.0" \
 		"model TEXT" \
 		"assistant_turns INTEGER DEFAULT 0" \
-		"compression_count INTEGER DEFAULT 0"; do
+		"compression_count INTEGER DEFAULT 0" \
+		"ended_at TEXT" \
+		"end_reason TEXT"; do
 		sqlite3 "$db_file" "ALTER TABLE sessions ADD COLUMN $col_def;" 2>/dev/null || true
 	done
 
@@ -90,6 +92,8 @@ SELECT
     model,
     assistant_turns,
     compression_count,
+    ended_at,
+    end_reason,
     CASE
         WHEN cwd IS NULL OR RTRIM(cwd, '/') = '' THEN NULL
         ELSE REPLACE(

@@ -416,7 +416,7 @@ query_clarifying_questions() {
 query_session_outcomes() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
-            stop_reason,
+            COALESCE(end_reason, stop_reason) as reason,
             COUNT(*) as count,
             ROUND(AVG(duration_seconds), 0) as avg_duration_s,
             ROUND(MAX(duration_seconds), 0) as max_duration_s
@@ -424,8 +424,8 @@ query_session_outcomes() {
         WHERE session_id IN (
             $(session_filter_subquery)
         )
-        AND stop_reason IS NOT NULL
-        GROUP BY stop_reason
+        AND reason IS NOT NULL
+        GROUP BY reason
         ORDER BY count DESC;
     " 2>/dev/null || echo "(no data)"
 }
