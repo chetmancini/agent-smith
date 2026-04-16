@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     test_loop_count INTEGER NOT NULL DEFAULT 0,
     clarification_count INTEGER NOT NULL DEFAULT 0,
     denial_count INTEGER NOT NULL DEFAULT 0,
+    auto_denial_count INTEGER NOT NULL DEFAULT 0,
     ended_at TEXT,
     end_reason TEXT
 );
@@ -200,6 +201,7 @@ while IFS= read -r batch_file; do
             (if .event_type == "test_failure_loop" then ", test_loop_count" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count" else "" end) +
             (if .event_type == "permission_denied" then ", denial_count" else "" end) +
+            (if .event_type == "permission_auto_denied" then ", auto_denial_count" else "" end) +
             (if .event_type == "context_compression" then ", compression_count" else "" end) +
         ") VALUES ('\''" + (.session_id | sq) + "'\'', '\''" + (.tool | sq) + "'\'', 1" +
             (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.cwd // "") | sq) + "'\''" else "" end) +
@@ -209,6 +211,7 @@ while IFS= read -r batch_file; do
             (if .event_type == "test_failure_loop" then ", 1" else "" end) +
             (if .event_type == "clarifying_question" then ", 1" else "" end) +
             (if .event_type == "permission_denied" then ", 1" else "" end) +
+            (if .event_type == "permission_auto_denied" then ", 1" else "" end) +
             (if .event_type == "context_compression" then ", 1" else "" end) +
         ") ON CONFLICT(session_id) DO UPDATE SET event_count = event_count + 1" +
             (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at), cwd = COALESCE(sessions.cwd, excluded.cwd)" else "" end) +
@@ -218,6 +221,7 @@ while IFS= read -r batch_file; do
             (if .event_type == "test_failure_loop" then ", test_loop_count = test_loop_count + 1" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count = clarification_count + 1" else "" end) +
             (if .event_type == "permission_denied" then ", denial_count = denial_count + 1" else "" end) +
+            (if .event_type == "permission_auto_denied" then ", auto_denial_count = auto_denial_count + 1" else "" end) +
             (if .event_type == "context_compression" then ", compression_count = compression_count + 1" else "" end) +
         ";"
     ' "$batch_file" 2>/dev/null || true

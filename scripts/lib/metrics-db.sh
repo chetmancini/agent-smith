@@ -13,6 +13,7 @@ agent_smith_metrics_migrate_sessions_schema() {
 		"model TEXT" \
 		"assistant_turns INTEGER DEFAULT 0" \
 		"compression_count INTEGER DEFAULT 0" \
+		"auto_denial_count INTEGER DEFAULT 0" \
 		"ended_at TEXT" \
 		"end_reason TEXT"; do
 		sqlite3 "$db_file" "ALTER TABLE sessions ADD COLUMN $col_def;" 2>/dev/null || true
@@ -83,6 +84,7 @@ SELECT
     test_loop_count,
     clarification_count,
     denial_count,
+    auto_denial_count,
     cwd,
     input_tokens,
     output_tokens,

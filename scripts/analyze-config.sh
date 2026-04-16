@@ -362,6 +362,24 @@ query_permission_denials() {
     " 2>/dev/null || echo "(no data)"
 }
 
+query_auto_permission_denials() {
+	sqlite3 -header -column "$DB_FILE" "
+        SELECT
+            json_extract(metadata, '$.tool_name') as tool_name,
+            json_extract(metadata, '$.reason') as reason,
+            COUNT(*) as denial_count,
+            COUNT(DISTINCT session_id) as sessions_affected
+        FROM events
+        WHERE event_type = 'permission_auto_denied'
+          $(if [ -n "$TOOL_FILTER" ]; then printf "AND tool = '%s'" "$(escaped_tool_filter "$TOOL_FILTER")"; fi)
+          AND session_id IN (
+              $(session_filter_subquery)
+          )
+        GROUP BY tool_name, reason
+        ORDER BY denial_count DESC;
+    " 2>/dev/null || echo "(no data)"
+}
+
 query_permission_grants() {
 	sqlite3 -header -column "$DB_FILE" "
         SELECT
@@ -456,7 +474,8 @@ query_overview() {
             SUM(failure_count) as failures,
             SUM(test_loop_count) as test_loops,
             SUM(clarification_count) as clarifications,
-            SUM(denial_count) as denials
+            SUM(denial_count) as denials,
+            SUM(auto_denial_count) as auto_denials
         FROM reporting_sessions
         WHERE session_id IN (
             $(session_filter_subquery)
@@ -638,6 +657,8 @@ echo "  -> Querying recent failure examples..."
 FAILURE_EXAMPLES=$(query_recent_failure_examples)
 echo "  -> Querying permission denials..."
 PERMISSION_DENIALS=$(query_permission_denials)
+echo "  -> Querying auto-mode permission denials..."
+AUTO_PERMISSION_DENIALS=$(query_auto_permission_denials)
 echo "  -> Querying permission grants..."
 PERMISSION_GRANTS=$(query_permission_grants)
 echo "  -> Querying test failure loops..."
@@ -728,6 +749,9 @@ $FAILURE_EXAMPLES
 
 ## Permission Denials
 $PERMISSION_DENIALS
+
+## Auto-Mode Permission Denials
+$AUTO_PERMISSION_DENIALS
 
 ## Permission Grants
 $PERMISSION_GRANTS
