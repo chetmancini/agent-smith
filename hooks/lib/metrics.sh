@@ -284,6 +284,18 @@ metrics_on_session_stop() {
 	emit_metric "$(metrics_tool_name)" "session_stop" "{\"stop_reason\":\"${escaped_reason}\",\"duration_seconds\":${duration_seconds}}"
 }
 
+# Call from: hooks/session-end.sh
+# Args: <reason> <duration_seconds>
+metrics_on_session_end() {
+	[ "$AGENT_METRICS_ENABLED" = "1" ] || return 0
+	local reason="${1:-unknown}"
+	local duration_seconds="${2:-0}"
+
+	local escaped_reason
+	escaped_reason=$(json_escape "$reason")
+	emit_metric "$(metrics_tool_name)" "session_end" "{\"reason\":\"${escaped_reason}\",\"duration_seconds\":${duration_seconds}}"
+}
+
 # Call from: hooks/vague-prompt.sh (when is_vague=1)
 # Args: <prompt_text>
 metrics_on_clarifying_question() {
