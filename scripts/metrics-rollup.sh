@@ -134,7 +134,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     failure_count INTEGER NOT NULL DEFAULT 0,
     test_loop_count INTEGER NOT NULL DEFAULT 0,
     clarification_count INTEGER NOT NULL DEFAULT 0,
-    denial_count INTEGER NOT NULL DEFAULT 0
+    denial_count INTEGER NOT NULL DEFAULT 0,
+    ended_at TEXT,
+    end_reason TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_tool ON sessions(tool);
@@ -193,6 +195,7 @@ while IFS= read -r batch_file; do
         "INSERT INTO sessions (session_id, tool, event_count" +
             (if .event_type == "session_start" then ", started_at, cwd" else "" end) +
             (if .event_type == "session_stop" then ", stopped_at, stop_reason, duration_seconds" else "" end) +
+            (if .event_type == "session_end" then ", ended_at, end_reason, duration_seconds" else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count" else "" end) +
             (if .event_type == "test_failure_loop" then ", test_loop_count" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count" else "" end) +
@@ -201,6 +204,7 @@ while IFS= read -r batch_file; do
         ") VALUES ('\''" + (.session_id | sq) + "'\'', '\''" + (.tool | sq) + "'\'', 1" +
             (if .event_type == "session_start" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.cwd // "") | sq) + "'\''" else "" end) +
             (if .event_type == "session_stop" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.stop_reason // "unknown") | sq) + "'\'', " + ((.metadata.duration_seconds // 0) | tostring) else "" end) +
+            (if .event_type == "session_end" then ", '\''" + (.ts | sq) + "'\'', '\''" + ((.metadata.reason // "unknown") | sq) + "'\'', " + ((.metadata.duration_seconds // 0) | tostring) else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", 1" else "" end) +
             (if .event_type == "test_failure_loop" then ", 1" else "" end) +
             (if .event_type == "clarifying_question" then ", 1" else "" end) +
@@ -209,6 +213,7 @@ while IFS= read -r batch_file; do
         ") ON CONFLICT(session_id) DO UPDATE SET event_count = event_count + 1" +
             (if .event_type == "session_start" then ", started_at = COALESCE(sessions.started_at, excluded.started_at), cwd = COALESCE(sessions.cwd, excluded.cwd)" else "" end) +
             (if .event_type == "session_stop" then ", stopped_at = excluded.stopped_at, stop_reason = excluded.stop_reason, duration_seconds = excluded.duration_seconds" else "" end) +
+            (if .event_type == "session_end" then ", ended_at = excluded.ended_at, end_reason = excluded.end_reason, duration_seconds = excluded.duration_seconds" else "" end) +
             (if .event_type == "tool_failure" or .event_type == "command_failure" then ", failure_count = failure_count + 1" else "" end) +
             (if .event_type == "test_failure_loop" then ", test_loop_count = test_loop_count + 1" else "" end) +
             (if .event_type == "clarifying_question" then ", clarification_count = clarification_count + 1" else "" end) +

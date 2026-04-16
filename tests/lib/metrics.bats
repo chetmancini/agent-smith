@@ -826,3 +826,32 @@ JSONL
     AGENT_METRICS_ENABLED=0 metrics_on_subagent_stop "agent-off" "Explore" "10" "" ""
     [ ! -s "$METRICS_FILE" ]
 }
+
+# ============================================================================
+# metrics_on_session_end
+# ============================================================================
+
+@test "metrics_on_session_end emits session_end event with reason" {
+    export METRICS_SESSION_ID="se-test-session"
+    metrics_on_session_end "prompt_input_exit" "120"
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "session_end" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "prompt_input_exit" ]
+    [ "$(echo "$line" | jq -r '.metadata.duration_seconds')" = "120" ]
+}
+
+@test "metrics_on_session_end defaults reason to unknown" {
+    export METRICS_SESSION_ID="se-test-session"
+    metrics_on_session_end "" "0"
+    local line
+    line=$(tail -1 "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "unknown" ]
+}
+
+@test "metrics_on_session_end respects kill switch" {
+    export METRICS_SESSION_ID="se-test-session"
+    AGENT_METRICS_ENABLED=0 metrics_on_session_end "clear" "60"
+    [ ! -s "$METRICS_FILE" ]
+}

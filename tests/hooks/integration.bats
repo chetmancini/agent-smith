@@ -1022,3 +1022,97 @@ JSONL
         bash "$HOOKS_DIR/subagent-stop.sh"
     [ $? -eq 0 ]
 }
+
+# ============================================================================
+# SessionEnd hook
+# ============================================================================
+
+@test "session-end emits session_end event with reason and duration" {
+    local session_hint="test-session-end-abc"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    # Prime session state (session-start persists start timestamp)
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    # Fake the start timestamp to 10 seconds ago for predictable duration
+    printf '%s' "$(($(date +%s) - 10))" > "${METRICS_DIR}/.session_start_ts_${expected_sid}"
+
+    : > "$METRICS_FILE"
+    printf '{"reason":"prompt_input_exit","session_id":"%s","transcript_path":""}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-end.sh"
+
+    [ -f "$METRICS_FILE" ]
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.event_type')" = "session_end" ]
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "prompt_input_exit" ]
+    [ "$(echo "$line" | jq -r '.session_id')" = "$expected_sid" ]
+    # Duration should be >= 9 (10 seconds ago, allowing 1s jitter)
+    local duration
+    duration=$(echo "$line" | jq -r '.metadata.duration_seconds')
+    [ "$duration" -ge 9 ]
+}
+
+@test "session-end and session-start emit the same session_id" {
+    local session_hint="test-session-end-id-match"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    local start_sid
+    start_sid=$(jq -r '.session_id' "$METRICS_FILE")
+    [ "$start_sid" = "$expected_sid" ]
+
+    : > "$METRICS_FILE"
+    printf '{"reason":"clear","session_id":"%s","transcript_path":""}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-end.sh"
+
+    local end_sid
+    end_sid=$(jq -r '.session_id' "$METRICS_FILE")
+    [ "$end_sid" = "$expected_sid" ]
+}
+
+@test "session-end does not delete start timestamp file" {
+    local session_hint="test-session-end-keep-ts"
+    local expected_sid
+    expected_sid=$(expected_session_id "$session_hint")
+
+    echo '{}' | env CLAUDE_SESSION_ID="$session_hint" \
+        CLAUDE_PROJECT_DIR="/tmp/project" \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-start.sh"
+
+    printf '{"reason":"logout","session_id":"%s","transcript_path":""}' "$session_hint" | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-end.sh"
+
+    # Timestamp file should still exist (Stop hook needs it)
+    [ -f "${METRICS_DIR}/.session_start_ts_${expected_sid}" ]
+}
+
+@test "session-end defaults reason to unknown" {
+    : > "$METRICS_FILE"
+    printf '{"session_id":"hint","transcript_path":""}' | \
+        env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-end.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.reason')" = "unknown" ]
+}
+
+@test "session-end exits 0 on empty input" {
+    echo '{}' | env METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/session-end.sh"
+    [ $? -eq 0 ]
+}
