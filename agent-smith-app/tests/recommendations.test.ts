@@ -208,4 +208,42 @@ describe("recommendations", () => {
       }),
     ).rejects.toThrow("JSON object");
   });
+
+  test("passes completed recommendation context back into the next analysis prompt", async () => {
+    seedSession("session-1", []);
+
+    let capturedPrompt = "";
+
+    await generateImprovementReport(
+      resolvePaths(process.env),
+      { tool: "codex" },
+      {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          capturedPrompt = prompt;
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "No further action required.",
+              recommendations: [],
+            }),
+            stderr: "",
+          };
+        },
+      },
+      {
+        promptContext: {
+          completedRecommendationIds: ["tighten-request-contract"],
+          blockedRecommendationIds: ["needs-human-approval"],
+          priorIterationSummaries: ["tighten-request-contract: updated operator guidance"],
+        },
+      },
+    );
+
+    expect(capturedPrompt).toContain('"tighten-request-contract"');
+    expect(capturedPrompt).toContain('"needs-human-approval"');
+    expect(capturedPrompt).toContain("updated operator guidance");
+    expect(capturedPrompt).toContain("do not repeat it");
+  });
 });

@@ -5,8 +5,10 @@ import process from "node:process";
 
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
+import { LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
 import { resolvePaths } from "./lib/paths";
 import { generateImprovementReport, renderImprovementReport } from "./lib/recommendations";
+import { ImproveRuntime } from "./lib/recommendations";
 import { generateReport, renderTextReport } from "./lib/report";
 import { rollupEvents } from "./lib/rollup";
 import { appendEvent } from "./lib/store";
@@ -16,6 +18,11 @@ export interface CliIO {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   readStdin: () => Promise<string>;
+}
+
+export interface CliRuntimeOverrides {
+  improve?: ImproveRuntime;
+  loop?: LoopRuntime;
 }
 
 class CliUsageError extends Error {}
@@ -34,6 +41,7 @@ function usage(): string {
   agent-smith rollup [--json]
   agent-smith report [--tool TOOL] [--project NAME] [--limit N] [--format text|json]
   agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
+  agent-smith loop [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--iterations N] [--include-unsafe] [--format text|json]
   agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
@@ -213,7 +221,11 @@ function handleReport(args: string[], io: CliIO): number {
   return 0;
 }
 
-async function handleImprove(args: string[], io: CliIO): Promise<number> {
+async function handleImprove(
+  args: string[],
+  io: CliIO,
+  runtime: ImproveRuntime = {},
+): Promise<number> {
   let tool: string | undefined;
   let project: string | undefined;
   let limit = 5;
@@ -253,12 +265,79 @@ async function handleImprove(args: string[], io: CliIO): Promise<number> {
     project,
     limit,
     refreshSchema,
-  });
+  }, runtime);
   if (format === "json") {
     writeJson(io, report);
   } else {
     io.stdout(renderImprovementReport(report));
   }
+  return 0;
+}
+
+async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}): Promise<number> {
+  let tool: string | undefined;
+  let project: string | undefined;
+  let limit = 5;
+  let iterations = 3;
+  let refreshSchema = false;
+  let includeUnsafe = false;
+  let format: "text" | "json" = "text";
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--tool":
+        tool = shiftValue(args, "--tool");
+        break;
+      case "--project":
+        project = shiftValue(args, "--project");
+        break;
+      case "--limit":
+        limit = parseInteger(shiftValue(args, "--limit"), "--limit");
+        break;
+      case "--iterations":
+        iterations = parseInteger(shiftValue(args, "--iterations"), "--iterations");
+        if (iterations < 1) {
+          throw new CliUsageError("--iterations must be >= 1");
+        }
+        break;
+      case "--refresh-schema":
+        refreshSchema = true;
+        break;
+      case "--include-unsafe":
+        includeUnsafe = true;
+        break;
+      case "--format": {
+        const value = shiftValue(args, "--format");
+        if (value !== "text" && value !== "json") {
+          throw new CliUsageError(`Unsupported loop format: ${value}`);
+        }
+        format = value;
+        break;
+      }
+      default:
+        throw new CliUsageError(`Unknown loop argument: ${flag}`);
+    }
+  }
+
+  const report = await runImprovementLoop(
+    {
+      tool,
+      project,
+      limit,
+      iterations,
+      refreshSchema,
+      includeUnsafe,
+    },
+    runtime,
+  );
+
+  if (format === "json") {
+    writeJson(io, report);
+  } else {
+    io.stdout(renderLoopReport(report));
+  }
+
   return 0;
 }
 
@@ -357,7 +436,11 @@ function handlePaths(args: string[], io: CliIO): number {
   return 0;
 }
 
-export async function runCli(argv: string[], io: CliIO = defaultIo()): Promise<number> {
+export async function runCli(
+  argv: string[],
+  io: CliIO = defaultIo(),
+  runtime: CliRuntimeOverrides = {},
+): Promise<number> {
   const args = [...argv];
   const command = args.shift();
 
@@ -374,7 +457,9 @@ export async function runCli(argv: string[], io: CliIO = defaultIo()): Promise<n
     case "report":
       return handleReport(args, io);
     case "improve":
-      return await handleImprove(args, io);
+      return await handleImprove(args, io, runtime.improve);
+    case "loop":
+      return await handleLoop(args, io, runtime.loop);
     case "watch":
       return await handleWatch(args, io);
     case "doctor":
