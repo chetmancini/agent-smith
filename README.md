@@ -95,6 +95,7 @@ bash scripts/analyze-config.sh --llm --include-settings   # Include redacted set
 bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-id demo --metadata '{"cwd":"/tmp/project"}'
 bun run ./agent-smith-app/src/cli.ts rollup
 bun run ./agent-smith-app/src/cli.ts report
+bun run ./agent-smith-app/src/cli.ts improve --tool codex
 bun run ./agent-smith-app/src/cli.ts watch --tail 10
 bun run ./agent-smith-app/src/cli.ts doctor
 ```
