@@ -12,6 +12,7 @@ plugin packaging model or shell hook contracts along with them.
 bun run src/cli.ts emit session_start --tool codex --session-id abc123 --metadata '{"cwd":"/tmp/project"}'
 bun run src/cli.ts rollup
 bun run src/cli.ts report
+bun run src/cli.ts improve --tool codex
 bun run src/cli.ts watch --tail 10
 bun run src/cli.ts doctor
 bun run src/cli.ts paths
@@ -22,11 +23,12 @@ bun run src/cli.ts paths
 - `emit`: append typed JSONL events
 - `rollup`: ingest JSONL into SQLite with incremental byte offsets
 - `report`: summarize the SQLite store for humans or scripts
+- `improve`: assemble telemetry plus schema/config evidence and ask the active agent for structured recommendations
 - `watch`: stream live events across tools and projects
 - `doctor`: verify Claude, Codex, and OpenCode integration state when their binaries are installed
 
 ## Next Likely Migrations
 
 - Port shell event emitters to call `agent-smith emit`
-- Move analysis/report generation into this package
+- Move apply/evaluate flows into this package on top of the agent-driven `improve` evidence pack
 - Add richer watch renderers, including a future TUI

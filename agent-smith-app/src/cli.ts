@@ -6,6 +6,7 @@ import process from "node:process";
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { resolvePaths } from "./lib/paths";
+import { generateImprovementReport, renderImprovementReport } from "./lib/recommendations";
 import { generateReport, renderTextReport } from "./lib/report";
 import { rollupEvents } from "./lib/rollup";
 import { appendEvent } from "./lib/store";
@@ -32,6 +33,7 @@ function usage(): string {
   agent-smith emit <event_type> [--tool TOOL] [--session-id ID] [--session-hint TEXT] [--metadata JSON|--metadata-file FILE|--metadata-stdin]
   agent-smith rollup [--json]
   agent-smith report [--tool TOOL] [--project NAME] [--limit N] [--format text|json]
+  agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
   agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
@@ -211,6 +213,55 @@ function handleReport(args: string[], io: CliIO): number {
   return 0;
 }
 
+async function handleImprove(args: string[], io: CliIO): Promise<number> {
+  let tool: string | undefined;
+  let project: string | undefined;
+  let limit = 5;
+  let refreshSchema = false;
+  let format: "text" | "json" = "text";
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--tool":
+        tool = shiftValue(args, "--tool");
+        break;
+      case "--project":
+        project = shiftValue(args, "--project");
+        break;
+      case "--limit":
+        limit = parseInteger(shiftValue(args, "--limit"), "--limit");
+        break;
+      case "--refresh-schema":
+        refreshSchema = true;
+        break;
+      case "--format": {
+        const value = shiftValue(args, "--format");
+        if (value !== "text" && value !== "json") {
+          throw new CliUsageError(`Unsupported improve format: ${value}`);
+        }
+        format = value;
+        break;
+      }
+      default:
+        throw new CliUsageError(`Unknown improve argument: ${flag}`);
+    }
+  }
+
+  const report = await generateImprovementReport(resolvePaths(), {
+    tool,
+    project,
+    limit,
+    refreshSchema,
+  });
+  if (format === "json") {
+    writeJson(io, report);
+  } else {
+    io.stdout(renderImprovementReport(report));
+  }
+  return 0;
+}
+
 async function handleWatch(args: string[], io: CliIO): Promise<number> {
   let tool: string | undefined;
   let project: string | undefined;
@@ -322,6 +373,8 @@ export async function runCli(argv: string[], io: CliIO = defaultIo()): Promise<n
       return handleRollup(args, io);
     case "report":
       return handleReport(args, io);
+    case "improve":
+      return await handleImprove(args, io);
     case "watch":
       return await handleWatch(args, io);
     case "doctor":
