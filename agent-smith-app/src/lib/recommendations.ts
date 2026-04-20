@@ -6,13 +6,13 @@ import {
   detectTool,
   ensureSchemaCached,
   existingToolConfigs,
-  findBinary,
   readJsonFile,
   readSchemaMetadata,
   repoRootFromHere,
   schemaCachePath,
   SupportedAgentTool,
 } from "./agent-hosts";
+import { AgentRunner, defaultRunAgent } from "./agent-runner";
 import { eventSnippet, projectFromEvent } from "./events";
 import { resolvePaths, AgentSmithPaths } from "./paths";
 import { generateReport } from "./report";
@@ -108,12 +108,13 @@ export interface ImprovementReport {
 export interface ImproveRuntime {
   env?: NodeJS.ProcessEnv;
   repoRoot?: string;
-  runAgent?: (input: {
-    tool: SupportedAgentTool;
-    prompt: string;
-    repoRoot: string;
-    env: NodeJS.ProcessEnv;
-  }) => { exitCode: number; stdout: string; stderr: string };
+  runAgent?: AgentRunner;
+}
+
+export interface ImprovementPromptContext {
+  completedRecommendationIds?: string[];
+  blockedRecommendationIds?: string[];
+  priorIterationSummaries?: string[];
 }
 
 interface AggregateRow {
@@ -362,53 +363,11 @@ function buildSchemaDiff(
   return { files, topLevelKeys, schemaDescriptionByKey };
 }
 
-function agentCommand(
-  tool: SupportedAgentTool,
-  prompt: string,
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-): string[] {
-  const binary = findBinary(tool, env);
-  if (!binary) {
-    throw new Error(`${tool} CLI not found in PATH`);
-  }
-
-  switch (tool) {
-    case "claude":
-      return [binary, "--plugin-dir", repoRoot, "-p", prompt];
-    case "codex":
-      return [binary, "exec", "-C", repoRoot, prompt];
-    case "opencode":
-      return [binary, "run", "--dir", repoRoot, prompt];
-  }
-}
-
-function defaultRunAgent(input: {
-  tool: SupportedAgentTool;
-  prompt: string;
-  repoRoot: string;
-  env: NodeJS.ProcessEnv;
-}): { exitCode: number; stdout: string; stderr: string } {
-  const command = agentCommand(input.tool, input.prompt, input.repoRoot, input.env);
-  const proc = Bun.spawnSync(command, {
-    env: {
-      ...input.env,
-      AGENT_SMITH_TOOL: input.tool,
-    },
-    cwd: input.repoRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  return {
-    exitCode: proc.exitCode,
-    stdout: proc.stdout.toString(),
-    stderr: proc.stderr.toString(),
-  };
-}
-
-function buildPrompt(evidence: ImprovementEvidence): string {
-  return [
+function buildPrompt(
+  evidence: ImprovementEvidence,
+  context: ImprovementPromptContext = {},
+): string {
+  const lines = [
     "You are Agent Smith's reasoning engine.",
     "Read the empirical telemetry evidence, schema state, and current config structure below.",
     "Produce recommendations that are driven by the evidence, not by generic best practices.",
@@ -438,9 +397,31 @@ function buildPrompt(evidence: ImprovementEvidence): string {
     "  ]",
     "}",
     "",
+  ];
+
+  if ((context.completedRecommendationIds ?? []).length > 0) {
+    lines.push(
+      `Already completed recommendation ids: ${JSON.stringify(context.completedRecommendationIds)}`,
+    );
+  }
+  if ((context.blockedRecommendationIds ?? []).length > 0) {
+    lines.push(`Blocked recommendation ids: ${JSON.stringify(context.blockedRecommendationIds)}`);
+  }
+  if ((context.priorIterationSummaries ?? []).length > 0) {
+    lines.push("Prior iteration summaries:");
+    for (const summary of context.priorIterationSummaries ?? []) {
+      lines.push(`- ${summary}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(
+    "If a recommendation id is already completed or blocked, do not repeat it. Prefer the next-best actionable recommendation instead.",
     "Evidence JSON:",
     JSON.stringify(evidence, null, 2),
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function parseAgentResponse(text: string): { summary: string; recommendations: ImprovementRecommendation[] } {
@@ -531,11 +512,12 @@ export async function generateImprovementReport(
   paths = resolvePaths(),
   filters: ImprovementFilters = {},
   runtime: ImproveRuntime = {},
+  options: { promptContext?: ImprovementPromptContext } = {},
 ): Promise<ImprovementReport> {
   rollupEvents(paths);
 
   const env = runtime.env ?? process.env;
-  const repoRoot = runtime.repoRoot ?? repoRootFromHere();
+  const repoRoot = runtime.repoRoot ?? repoRootFromHere(env);
   const tool = detectTool(filters.tool, env, repoRoot);
 
   await ensureSchemaCached(tool, { env, refresh: filters.refreshSchema });
@@ -584,7 +566,7 @@ export async function generateImprovementReport(
       },
     };
 
-    const prompt = buildPrompt(evidence);
+    const prompt = buildPrompt(evidence, options.promptContext);
     const runAgent = runtime.runAgent ?? defaultRunAgent;
     const result = runAgent({ tool, prompt, repoRoot, env });
     if (result.exitCode !== 0) {

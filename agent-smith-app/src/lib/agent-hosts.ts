@@ -20,7 +20,12 @@ export interface SchemaMetadata {
   fetched_at: string;
 }
 
-export function repoRootFromHere(): string {
+export function repoRootFromHere(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.AGENT_SMITH_REPO_ROOT;
+  if (typeof override === "string" && override.trim().length > 0) {
+    return resolve(override);
+  }
+
   const currentFile = fileURLToPath(import.meta.url);
   return resolve(dirname(currentFile), "..", "..", "..");
 }

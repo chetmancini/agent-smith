@@ -96,6 +96,7 @@ bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-i
 bun run ./agent-smith-app/src/cli.ts rollup
 bun run ./agent-smith-app/src/cli.ts report
 bun run ./agent-smith-app/src/cli.ts improve --tool codex
+bun run ./agent-smith-app/src/cli.ts loop --tool codex
 bun run ./agent-smith-app/src/cli.ts watch --tail 10
 bun run ./agent-smith-app/src/cli.ts doctor
 ```
