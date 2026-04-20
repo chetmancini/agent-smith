@@ -13,6 +13,7 @@ bun run src/cli.ts emit session_start --tool codex --session-id abc123 --metadat
 bun run src/cli.ts rollup
 bun run src/cli.ts report
 bun run src/cli.ts watch --tail 10
+bun run src/cli.ts doctor
 bun run src/cli.ts paths
 ```
 
@@ -22,6 +23,7 @@ bun run src/cli.ts paths
 - `rollup`: ingest JSONL into SQLite with incremental byte offsets
 - `report`: summarize the SQLite store for humans or scripts
 - `watch`: stream live events across tools and projects
+- `doctor`: verify Claude, Codex, and OpenCode integration state when their binaries are installed
 
 ## Next Likely Migrations
 

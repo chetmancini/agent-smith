@@ -1,0 +1,191 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+import { runDoctor } from "../src/lib/doctor";
+import { runCli } from "../src/cli";
+
+function writeExecutable(path: string): void {
+  writeFileSync(path, "#!/bin/sh\nexit 0\n");
+  chmodSync(path, 0o755);
+}
+
+function writeJson(path: string, payload: unknown): void {
+  writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function createIo() {
+  let stdout = "";
+  let stderr = "";
+  return {
+    io: {
+      stdout: (text: string) => {
+        stdout += text;
+      },
+      stderr: (text: string) => {
+        stderr += text;
+      },
+      readStdin: async () => "",
+    },
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
+}
+
+describe("doctor", () => {
+  let sandbox: string;
+  let repoRoot: string;
+  let home: string;
+  let binDir: string;
+  let env: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), "agent-smith-doctor-"));
+    repoRoot = join(sandbox, "repo");
+    home = join(sandbox, "home");
+    binDir = join(sandbox, "bin");
+    mkdirSync(repoRoot, { recursive: true });
+    mkdirSync(home, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+
+    mkdirSync(join(repoRoot, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
+    mkdirSync(join(repoRoot, ".codex"), { recursive: true });
+    mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
+
+    writeJson(join(repoRoot, ".claude-plugin", "plugin.json"), { name: "agent-smith" });
+    writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), { name: "agent-smith" });
+    writeJson(join(repoRoot, ".codex", "hooks.json"), { hooks: {} });
+    writeJson(join(repoRoot, "opencode-plugin", "package.json"), {
+      name: "agent-smith-opencode",
+    });
+
+    env = {
+      ...process.env,
+      HOME: home,
+      PATH: binDir,
+    };
+  });
+
+  afterEach(() => {
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  test("skips hosts with no installed binaries", () => {
+    const report = runDoctor({ repoRoot, env });
+    expect(report.overallStatus).toBe("skip");
+    expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip"]);
+  });
+
+  test("passes when Claude, Codex, and OpenCode are configured", () => {
+    writeExecutable(join(binDir, "claude"));
+    writeExecutable(join(binDir, "codex"));
+    writeExecutable(join(binDir, "opencode"));
+
+    mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+    writeJson(join(home, ".claude", "plugins", "installed_plugins.json"), {
+      version: 2,
+      plugins: {
+        "agent-smith@agent-smith": [{ scope: "user", version: "0.3.0" }],
+      },
+    });
+    writeJson(join(home, ".claude", "plugins", "known_marketplaces.json"), {
+      "agent-smith": {
+        source: { source: "github", repo: "chetmancini/agent-smith" },
+      },
+    });
+    writeJson(join(home, ".claude", "settings.json"), {
+      enabledPlugins: {
+        "agent-smith@agent-smith": true,
+      },
+    });
+
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      `
+[features]
+codex_hooks = true
+
+[projects."${resolve(repoRoot)}"]
+trust_level = "trusted"
+`,
+    );
+
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    writeJson(join(home, ".config", "opencode", "opencode.json"), {
+      plugin: [resolve(repoRoot, "opencode-plugin")],
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    expect(report.overallStatus).toBe("pass");
+    expect(report.hosts.every((host) => host.status === "pass")).toBe(true);
+  });
+
+  test("fails Codex when hooks are not enabled", () => {
+    writeExecutable(join(binDir, "codex"));
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      `
+[features]
+memories = true
+
+[projects."${resolve(repoRoot)}"]
+trust_level = "trusted"
+`,
+    );
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const codex = report.hosts.find((host) => host.host === "codex");
+    expect(codex?.status).toBe("fail");
+    expect(codex?.checks.find((check) => check.id === "codex_hooks_enabled")?.status).toBe(
+      "fail",
+    );
+  });
+
+  test("detects OpenCode plugin from a configured plugin root directory", () => {
+    writeExecutable(join(binDir, "opencode"));
+    const pluginRoot = join(home, ".config", "opencode", "plugins");
+    const pluginDir = join(pluginRoot, "agent-smith-opencode");
+    mkdirSync(pluginDir, { recursive: true });
+    writeJson(join(pluginDir, "package.json"), { name: "agent-smith-opencode" });
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    writeJson(join(home, ".config", "opencode", "opencode.json"), {
+      plugin: [`file:${pluginRoot}`],
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const opencode = report.hosts.find((host) => host.host === "opencode");
+    expect(opencode?.status).toBe("pass");
+  });
+
+  test("cli doctor --json returns nonzero on failures", async () => {
+    writeExecutable(join(binDir, "codex"));
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "[features]\nmemories = true\n");
+
+    const io = createIo();
+    const previousHome = process.env.HOME;
+    const previousPath = process.env.PATH;
+    process.env.HOME = home;
+    process.env.PATH = binDir;
+    try {
+      const exitCode = await runCli(["doctor", "--json"], io.io);
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(io.stdout()).overallStatus).toBe("fail");
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
+  });
+});

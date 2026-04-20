@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 
+import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { resolvePaths } from "./lib/paths";
 import { generateReport, renderTextReport } from "./lib/report";
@@ -32,6 +33,7 @@ function usage(): string {
   agent-smith rollup [--json]
   agent-smith report [--tool TOOL] [--project NAME] [--limit N] [--format text|json]
   agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
+  agent-smith doctor [--json]
   agent-smith paths [--json]
 `;
 }
@@ -260,6 +262,27 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
   return 0;
 }
 
+function handleDoctor(args: string[], io: CliIO): number {
+  let json = false;
+  while (args.length > 0) {
+    const flag = args.shift();
+    if (flag === "--json") {
+      json = true;
+      continue;
+    }
+    throw new CliUsageError(`Unknown doctor argument: ${flag}`);
+  }
+
+  const report = runDoctor();
+  if (json) {
+    writeJson(io, report);
+  } else {
+    io.stdout(renderDoctorReport(report));
+  }
+
+  return report.overallStatus === "fail" ? 1 : 0;
+}
+
 function handlePaths(args: string[], io: CliIO): number {
   let json = false;
   while (args.length > 0) {
@@ -301,6 +324,8 @@ export async function runCli(argv: string[], io: CliIO = defaultIo()): Promise<n
       return handleReport(args, io);
     case "watch":
       return await handleWatch(args, io);
+    case "doctor":
+      return handleDoctor(args, io);
     case "paths":
       return handlePaths(args, io);
     default:
