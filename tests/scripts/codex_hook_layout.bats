@@ -11,7 +11,7 @@ setup() {
 }
 
 @test "Codex hook manifest does not use unsupported async hooks" {
-    run rtk rg -n '"async"\\s*:\\s*true' "$PROJECT_ROOT/.codex/hooks.json" "$PROJECT_ROOT/hooks.json"
+    run grep -nE '"async"[[:space:]]*:[[:space:]]*true' "$PROJECT_ROOT/.codex/hooks.json" "$PROJECT_ROOT/hooks.json"
 
     [ "$status" -eq 1 ]
 }
