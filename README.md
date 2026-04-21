@@ -99,6 +99,9 @@ bun run ./agent-smith-app/src/cli.ts improve --tool codex
 bun run ./agent-smith-app/src/cli.ts loop --tool codex
 bun run ./agent-smith-app/src/cli.ts watch --tail 10
 bun run ./agent-smith-app/src/cli.ts doctor
+bun run ./agent-smith-app/src/cli.ts refresh-schemas --tool codex
+bun run ./agent-smith-app/src/cli.ts validate-agent-config --tool codex --refresh
+bun run ./agent-smith-app/src/cli.ts upgrade-settings --tool codex
 ```
 
 **Schema validation** (scoped to the calling agent):
@@ -112,7 +115,7 @@ bash scripts/validate-agent-config.sh --refresh
 make agent-upgrade-settings TOOL=codex
 ```
 
-Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze-config` skills directly.
+Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze-config` skills directly. The shell scripts remain available, but the Bun CLI now has native `refresh-schemas`, `validate-agent-config`/`validate-schemas`, and `upgrade-settings`/`update-settings` commands for the same workflow.
 
 ### Configuration
 

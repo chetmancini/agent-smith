@@ -11,6 +11,15 @@ import { generateImprovementReport, renderImprovementReport } from "./lib/recomm
 import { ImproveRuntime } from "./lib/recommendations";
 import { generateReport, renderTextReport } from "./lib/report";
 import { rollupEvents } from "./lib/rollup";
+import {
+  generateUpgradeSettingsReport,
+  refreshSchemaCache,
+  renderRefreshSchemaResult,
+  renderUpgradeSettingsReport,
+  renderValidationReport,
+  SchemaToolRuntime,
+  validateAgentConfig,
+} from "./lib/schema-tools";
 import { appendEvent } from "./lib/store";
 import { formatWatchedEvent, watchEvents } from "./lib/watch";
 
@@ -23,6 +32,7 @@ export interface CliIO {
 export interface CliRuntimeOverrides {
   improve?: ImproveRuntime;
   loop?: LoopRuntime;
+  schema?: SchemaToolRuntime;
 }
 
 class CliUsageError extends Error {}
@@ -43,6 +53,11 @@ function usage(): string {
   agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
   agent-smith loop [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--iterations N] [--include-unsafe] [--format text|json]
   agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
+  agent-smith refresh-schemas [--tool TOOL] [--json]
+  agent-smith validate-agent-config [--tool TOOL] [--refresh] [--json]
+  agent-smith validate-schemas [--tool TOOL] [--refresh] [--json]
+  agent-smith upgrade-settings [--tool TOOL] [--refresh] [--format text|json]
+  agent-smith update-settings [--tool TOOL] [--refresh] [--format text|json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
 `;
@@ -392,6 +407,115 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
   return 0;
 }
 
+async function handleRefreshSchemas(
+  args: string[],
+  io: CliIO,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
+  let tool: string | undefined;
+  let json = false;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--tool":
+        tool = shiftValue(args, "--tool");
+        break;
+      case "--json":
+        json = true;
+        break;
+      default:
+        throw new CliUsageError(`Unknown refresh-schemas argument: ${flag}`);
+    }
+  }
+
+  const result = await refreshSchemaCache(tool, runtime);
+  if (json) {
+    writeJson(io, result);
+  } else {
+    io.stdout(renderRefreshSchemaResult(result));
+  }
+  return 0;
+}
+
+async function handleValidateAgentConfig(
+  args: string[],
+  io: CliIO,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
+  let tool: string | undefined;
+  let refresh = false;
+  let json = false;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--tool":
+        tool = shiftValue(args, "--tool");
+        break;
+      case "--refresh":
+        refresh = true;
+        break;
+      case "--json":
+        json = true;
+        break;
+      default:
+        throw new CliUsageError(`Unknown validate-agent-config argument: ${flag}`);
+    }
+  }
+
+  const report = await validateAgentConfig(tool, { ...runtime, refresh });
+  if (json) {
+    writeJson(io, report);
+  } else {
+    io.stdout(renderValidationReport(report));
+  }
+  return report.status === "invalid" ? 1 : 0;
+}
+
+async function handleUpgradeSettings(
+  args: string[],
+  io: CliIO,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
+  let tool: string | undefined;
+  let refresh = true;
+  let format: "text" | "json" = "text";
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--tool":
+        tool = shiftValue(args, "--tool");
+        break;
+      case "--refresh":
+        refresh = true;
+        break;
+      case "--no-refresh":
+        refresh = false;
+        break;
+      case "--format": {
+        const value = shiftValue(args, "--format");
+        if (value !== "text" && value !== "json") {
+          throw new CliUsageError(`Unsupported upgrade-settings format: ${value}`);
+        }
+        format = value;
+        break;
+      }
+      default:
+        throw new CliUsageError(`Unknown upgrade-settings argument: ${flag}`);
+    }
+  }
+
+  const report = await generateUpgradeSettingsReport(tool, { ...runtime, refresh });
+  if (format === "json") {
+    writeJson(io, report);
+  } else {
+    io.stdout(renderUpgradeSettingsReport(report));
+  }
+  return 0;
+}
+
 function handleDoctor(args: string[], io: CliIO): number {
   let json = false;
   while (args.length > 0) {
@@ -462,6 +586,14 @@ export async function runCli(
       return await handleLoop(args, io, runtime.loop);
     case "watch":
       return await handleWatch(args, io);
+    case "refresh-schemas":
+      return await handleRefreshSchemas(args, io, runtime.schema);
+    case "validate-agent-config":
+    case "validate-schemas":
+      return await handleValidateAgentConfig(args, io, runtime.schema);
+    case "upgrade-settings":
+    case "update-settings":
+      return await handleUpgradeSettings(args, io, runtime.schema);
     case "doctor":
       return handleDoctor(args, io);
     case "paths":

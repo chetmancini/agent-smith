@@ -146,6 +146,17 @@ export function schemaUrl(tool: SupportedAgentTool): string {
   }
 }
 
+export function toolLabel(tool: SupportedAgentTool): string {
+  switch (tool) {
+    case "claude":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "opencode":
+      return "OpenCode";
+  }
+}
+
 export function schemaCachePath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv = process.env): string {
   const base = join(homeDir(env), ".config", "agent-smith", "schemas");
   switch (tool) {
@@ -209,7 +220,12 @@ export function readSchemaMetadata(
 
 export async function ensureSchemaCached(
   tool: SupportedAgentTool,
-  options: { env?: NodeJS.ProcessEnv; refresh?: boolean } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    refresh?: boolean;
+    fetchImpl?: typeof fetch;
+    now?: () => Date;
+  } = {},
 ): Promise<{ schemaPath: string; metadataPath: string }> {
   const env = options.env ?? process.env;
   const schemaPath = schemaCachePath(tool, env);
@@ -221,7 +237,8 @@ export async function ensureSchemaCached(
   }
 
   const url = schemaUrl(tool);
-  const response = await fetch(url);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(`failed to fetch schema for ${tool}: ${response.status} ${response.statusText}`);
   }
@@ -235,7 +252,7 @@ export async function ensureSchemaCached(
         tool,
         schema_url: url,
         schema_path: schemaPath,
-        fetched_at: new Date().toISOString(),
+        fetched_at: (options.now ?? (() => new Date()))().toISOString(),
       },
       null,
       2,
