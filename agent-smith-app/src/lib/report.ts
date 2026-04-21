@@ -96,6 +96,25 @@ export interface AgentSmithReport {
   recentFailures: FailureSummary[];
 }
 
+type SessionAggregateRow = Omit<SessionSummary, "status">;
+
+interface SessionHealthRow {
+  activeSessions: number;
+  attentionSessions: number;
+  failureSessions: number;
+  failureEvents: number;
+  denialSessions: number;
+  denialEvents: number;
+  clarificationSessions: number;
+  clarificationEvents: number;
+  testLoopSessions: number;
+  testLoopEvents: number;
+  compressionSessions: number;
+  compressionEvents: number;
+}
+
+const failureEventTypesSql = "('tool_failure', 'command_failure', 'session_error', 'stop_failure')";
+
 function openDatabase(paths: AgentSmithPaths): Database {
   return new Database(paths.dbFile, { create: true, readonly: true });
 }
@@ -151,6 +170,165 @@ function classifySessionStatus(session: Omit<SessionSummary, "status">): Session
   return attention ? "attention" : "completed";
 }
 
+function buildScopedSessionAggregate(filters: ReportFilters): {
+  sql: string;
+  params: string[];
+} {
+  const { where, params } = buildWhere(filters, "e.");
+  return {
+    sql: `
+      SELECT
+        e.session_id AS sessionId,
+        MIN(e.project) AS project,
+        COUNT(*) AS eventCount,
+        COALESCE(SUM(CASE WHEN e.event_type IN ${failureEventTypesSql} THEN 1 ELSE 0 END), 0) AS failureCount,
+        COALESCE(SUM(CASE WHEN e.event_type = 'permission_denied' THEN 1 ELSE 0 END), 0) AS denialCount,
+        COALESCE(SUM(CASE WHEN e.event_type = 'clarifying_question' THEN 1 ELSE 0 END), 0) AS clarificationCount,
+        COALESCE(SUM(CASE WHEN e.event_type = 'test_failure_loop' THEN 1 ELSE 0 END), 0) AS testLoopCount,
+        COALESCE(SUM(CASE WHEN e.event_type = 'context_compression' THEN 1 ELSE 0 END), 0) AS compressionCount
+      FROM events e
+      ${where}
+      GROUP BY e.session_id
+    `,
+    params,
+  };
+}
+
+function buildSessionEventClause(
+  filters: ReportFilters,
+  eventAlias: string,
+  sessionAlias: string,
+): {
+  clause: string;
+  params: string[];
+} {
+  const clauses = [`${eventAlias}.session_id = ${sessionAlias}.session_id`];
+  const params: string[] = [];
+
+  if (filters.tool) {
+    clauses.push(`${eventAlias}.tool = ?`);
+    params.push(filters.tool);
+  }
+
+  if (filters.project) {
+    clauses.push(`${eventAlias}.project = ?`);
+    params.push(filters.project);
+  }
+
+  return {
+    clause: clauses.join(" AND "),
+    params,
+  };
+}
+
+function queryTotalSessions(db: Database, filters: ReportFilters): number {
+  if (!filters.project) {
+    const { where, params } = buildWhere(filters);
+    return (
+      (db.query(`SELECT COUNT(*) AS count FROM sessions ${where}`).get(...params) as { count: number } | null)?.count ??
+      0
+    );
+  }
+
+  const { where, params } = buildWhere(filters);
+  return (
+    (db.query(`SELECT COUNT(DISTINCT session_id) AS count FROM events ${where}`).get(...params) as {
+      count: number;
+    } | null)?.count ?? 0
+  );
+}
+
+function queryHealth(db: Database, filters: ReportFilters): SessionHealthRow {
+  const emptyHealth: SessionHealthRow = {
+    activeSessions: 0,
+    attentionSessions: 0,
+    failureSessions: 0,
+    failureEvents: 0,
+    denialSessions: 0,
+    denialEvents: 0,
+    clarificationSessions: 0,
+    clarificationEvents: 0,
+    testLoopSessions: 0,
+    testLoopEvents: 0,
+    compressionSessions: 0,
+    compressionEvents: 0,
+  };
+
+  if (!filters.project) {
+    const { where, params } = buildWhere(filters);
+    return (
+      (db
+        .query(
+          `
+            SELECT
+              COALESCE(SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END), 0) AS activeSessions,
+              COALESCE(
+                SUM(
+                  CASE
+                    WHEN failure_count > 0 OR denial_count > 0 OR test_loop_count > 0 OR compression_count > 0
+                    THEN 1
+                    ELSE 0
+                  END
+                ),
+                0
+              ) AS attentionSessions,
+              COALESCE(SUM(CASE WHEN failure_count > 0 THEN 1 ELSE 0 END), 0) AS failureSessions,
+              COALESCE(SUM(failure_count), 0) AS failureEvents,
+              COALESCE(SUM(CASE WHEN denial_count > 0 THEN 1 ELSE 0 END), 0) AS denialSessions,
+              COALESCE(SUM(denial_count), 0) AS denialEvents,
+              COALESCE(SUM(CASE WHEN clarification_count > 0 THEN 1 ELSE 0 END), 0) AS clarificationSessions,
+              COALESCE(SUM(clarification_count), 0) AS clarificationEvents,
+              COALESCE(SUM(CASE WHEN test_loop_count > 0 THEN 1 ELSE 0 END), 0) AS testLoopSessions,
+              COALESCE(SUM(test_loop_count), 0) AS testLoopEvents,
+              COALESCE(SUM(CASE WHEN compression_count > 0 THEN 1 ELSE 0 END), 0) AS compressionSessions,
+              COALESCE(SUM(compression_count), 0) AS compressionEvents
+            FROM sessions
+            ${where}
+          `,
+        )
+        .get(...params) as SessionHealthRow | null) ?? emptyHealth
+    );
+  }
+
+  const { sql, params } = buildScopedSessionAggregate(filters);
+  return (
+    (db
+      .query(
+        `
+          WITH scoped AS (${sql})
+          SELECT
+            COALESCE(SUM(CASE WHEN s.ended_at IS NULL THEN 1 ELSE 0 END), 0) AS activeSessions,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN scoped.failureCount > 0
+                    OR scoped.denialCount > 0
+                    OR scoped.testLoopCount > 0
+                    OR scoped.compressionCount > 0
+                  THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS attentionSessions,
+            COALESCE(SUM(CASE WHEN scoped.failureCount > 0 THEN 1 ELSE 0 END), 0) AS failureSessions,
+            COALESCE(SUM(scoped.failureCount), 0) AS failureEvents,
+            COALESCE(SUM(CASE WHEN scoped.denialCount > 0 THEN 1 ELSE 0 END), 0) AS denialSessions,
+            COALESCE(SUM(scoped.denialCount), 0) AS denialEvents,
+            COALESCE(SUM(CASE WHEN scoped.clarificationCount > 0 THEN 1 ELSE 0 END), 0) AS clarificationSessions,
+            COALESCE(SUM(scoped.clarificationCount), 0) AS clarificationEvents,
+            COALESCE(SUM(CASE WHEN scoped.testLoopCount > 0 THEN 1 ELSE 0 END), 0) AS testLoopSessions,
+            COALESCE(SUM(scoped.testLoopCount), 0) AS testLoopEvents,
+            COALESCE(SUM(CASE WHEN scoped.compressionCount > 0 THEN 1 ELSE 0 END), 0) AS compressionSessions,
+            COALESCE(SUM(scoped.compressionCount), 0) AS compressionEvents
+          FROM scoped
+          JOIN sessions s ON s.session_id = scoped.sessionId
+        `,
+      )
+      .get(...params) as SessionHealthRow | null) ?? emptyHealth
+  );
+}
+
 function querySessionRows(
   db: Database,
   filters: ReportFilters,
@@ -158,55 +336,146 @@ function querySessionRows(
   orderBy: string,
   limit: number,
 ): SessionSummary[] {
-  const { where, params } = buildWhere(filters, "s.");
-  const rows = db
-    .query(
-      `
-        SELECT
-          s.session_id AS sessionId,
-          s.tool,
-          s.project,
-          s.started_at AS startedAt,
-          s.ended_at AS endedAt,
-          s.duration_seconds AS durationSeconds,
-          s.stop_reason AS stopReason,
-          s.event_count AS eventCount,
-          s.failure_count AS failureCount,
-          s.denial_count AS denialCount,
-          s.clarification_count AS clarificationCount,
-          s.test_loop_count AS testLoopCount,
-          s.compression_count AS compressionCount,
-          COALESCE(
-            (
-              SELECT e.snippet
-              FROM events e
-              WHERE e.session_id = s.session_id
-                AND e.snippet IS NOT NULL
-                AND e.event_type <> 'session_stop'
-              ORDER BY e.ts DESC, e.id DESC
-              LIMIT 1
-            ),
-            (
-              SELECT e.snippet
-              FROM events e
-              WHERE e.session_id = s.session_id
-                AND e.snippet IS NOT NULL
-              ORDER BY e.ts DESC, e.id DESC
-              LIMIT 1
-            )
-          ) AS lastSnippet
-        FROM sessions s
-        ${finalWhere(where, extraClauses)}
-        ORDER BY ${orderBy}
-        LIMIT ?
-      `,
-    )
-    .all(...params, limit) as Array<Omit<SessionSummary, "status">>;
+  let rows: SessionAggregateRow[];
+
+  if (filters.project) {
+    const { sql, params } = buildScopedSessionAggregate(filters);
+    const { clause: snippetClause, params: snippetParams } = buildSessionEventClause(filters, "se", "s");
+    const { clause: fallbackSnippetClause, params: fallbackSnippetParams } = buildSessionEventClause(filters, "se2", "s");
+
+    rows = db
+      .query(
+        `
+          WITH scoped AS (${sql})
+          SELECT *
+          FROM (
+            SELECT
+              s.session_id AS sessionId,
+              s.tool,
+              COALESCE(scoped.project, s.project) AS project,
+              s.started_at AS startedAt,
+              s.ended_at AS endedAt,
+              s.duration_seconds AS durationSeconds,
+              s.stop_reason AS stopReason,
+              scoped.eventCount AS eventCount,
+              scoped.failureCount AS failureCount,
+              scoped.denialCount AS denialCount,
+              scoped.clarificationCount AS clarificationCount,
+              scoped.testLoopCount AS testLoopCount,
+              scoped.compressionCount AS compressionCount,
+              COALESCE(
+                (
+                  SELECT se.snippet
+                  FROM events se
+                  WHERE ${snippetClause}
+                    AND se.snippet IS NOT NULL
+                    AND se.event_type <> 'session_stop'
+                  ORDER BY se.ts DESC, se.id DESC
+                  LIMIT 1
+                ),
+                (
+                  SELECT se2.snippet
+                  FROM events se2
+                  WHERE ${fallbackSnippetClause}
+                    AND se2.snippet IS NOT NULL
+                  ORDER BY se2.ts DESC, se2.id DESC
+                  LIMIT 1
+                )
+              ) AS lastSnippet
+            FROM scoped
+            JOIN sessions s ON s.session_id = scoped.sessionId
+          ) session_rows
+          ${finalWhere("", extraClauses)}
+          ORDER BY ${orderBy}
+          LIMIT ?
+        `,
+      )
+      .all(...params, ...snippetParams, ...fallbackSnippetParams, limit) as SessionAggregateRow[];
+  } else {
+    const { where, params } = buildWhere(filters, "s.");
+    rows = db
+      .query(
+        `
+          SELECT *
+          FROM (
+            SELECT
+              s.session_id AS sessionId,
+              s.tool,
+              s.project,
+              s.started_at AS startedAt,
+              s.ended_at AS endedAt,
+              s.duration_seconds AS durationSeconds,
+              s.stop_reason AS stopReason,
+              s.event_count AS eventCount,
+              s.failure_count AS failureCount,
+              s.denial_count AS denialCount,
+              s.clarification_count AS clarificationCount,
+              s.test_loop_count AS testLoopCount,
+              s.compression_count AS compressionCount,
+              COALESCE(
+                (
+                  SELECT e.snippet
+                  FROM events e
+                  WHERE e.session_id = s.session_id
+                    AND e.snippet IS NOT NULL
+                    AND e.event_type <> 'session_stop'
+                  ORDER BY e.ts DESC, e.id DESC
+                  LIMIT 1
+                ),
+                (
+                  SELECT e.snippet
+                  FROM events e
+                  WHERE e.session_id = s.session_id
+                    AND e.snippet IS NOT NULL
+                  ORDER BY e.ts DESC, e.id DESC
+                  LIMIT 1
+                )
+              ) AS lastSnippet
+            FROM sessions s
+            ${where}
+          ) session_rows
+          ${finalWhere("", extraClauses)}
+          ORDER BY ${orderBy}
+          LIMIT ?
+        `,
+      )
+      .all(...params, limit) as SessionAggregateRow[];
+  }
 
   return rows.map((row) => ({
     ...row,
     status: classifySessionStatus(row),
   }));
+}
+
+function queryStopReasons(db: Database, filters: ReportFilters, limit: number): StopReasonSummary[] {
+  if (!filters.project) {
+    const { where, params } = buildWhere(filters);
+    return db
+      .query(`
+        SELECT stop_reason AS stopReason, COUNT(*) AS sessions
+        FROM sessions
+        ${finalWhere(where, ["stop_reason IS NOT NULL"])}
+        GROUP BY stop_reason
+        ORDER BY sessions DESC, stop_reason ASC
+        LIMIT ?
+      `)
+      .all(...params, limit) as StopReasonSummary[];
+  }
+
+  const { sql, params } = buildScopedSessionAggregate(filters);
+  return db
+    .query(`
+      WITH scoped AS (${sql})
+      SELECT s.stop_reason AS stopReason, COUNT(*) AS sessions
+      FROM scoped
+      JOIN sessions s ON s.session_id = scoped.sessionId
+      WHERE s.stop_reason IS NOT NULL
+      GROUP BY s.stop_reason
+      ORDER BY sessions DESC, s.stop_reason ASC
+      LIMIT ?
+    `)
+    .all(...params, limit) as StopReasonSummary[];
 }
 
 function compactTimestamp(timestamp: string | null): string {
@@ -305,84 +574,26 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
       (db.query(`SELECT COUNT(*) AS count FROM events ${where}`).get(...params) as { count: number } | null)?.count ??
       0;
 
-    const totalSessions =
-      (db.query(`SELECT COUNT(*) AS count FROM sessions ${where}`).get(...params) as { count: number } | null)?.count ??
-      0;
-
-    const health = (db
-      .query(
-        `
-            SELECT
-              COALESCE(SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END), 0) AS activeSessions,
-              COALESCE(
-                SUM(
-                  CASE
-                    WHEN failure_count > 0 OR denial_count > 0 OR test_loop_count > 0 OR compression_count > 0
-                    THEN 1
-                    ELSE 0
-                  END
-                ),
-                0
-              ) AS attentionSessions,
-              COALESCE(SUM(CASE WHEN failure_count > 0 THEN 1 ELSE 0 END), 0) AS failureSessions,
-              COALESCE(SUM(failure_count), 0) AS failureEvents,
-              COALESCE(SUM(CASE WHEN denial_count > 0 THEN 1 ELSE 0 END), 0) AS denialSessions,
-              COALESCE(SUM(denial_count), 0) AS denialEvents,
-              COALESCE(SUM(CASE WHEN clarification_count > 0 THEN 1 ELSE 0 END), 0) AS clarificationSessions,
-              COALESCE(SUM(clarification_count), 0) AS clarificationEvents,
-              COALESCE(SUM(CASE WHEN test_loop_count > 0 THEN 1 ELSE 0 END), 0) AS testLoopSessions,
-              COALESCE(SUM(test_loop_count), 0) AS testLoopEvents,
-              COALESCE(SUM(CASE WHEN compression_count > 0 THEN 1 ELSE 0 END), 0) AS compressionSessions,
-              COALESCE(SUM(compression_count), 0) AS compressionEvents
-            FROM sessions
-            ${where}
-          `,
-      )
-      .get(...params) as {
-      activeSessions: number;
-      attentionSessions: number;
-      failureSessions: number;
-      failureEvents: number;
-      denialSessions: number;
-      denialEvents: number;
-      clarificationSessions: number;
-      clarificationEvents: number;
-      testLoopSessions: number;
-      testLoopEvents: number;
-      compressionSessions: number;
-      compressionEvents: number;
-    } | null) ?? {
-      activeSessions: 0,
-      attentionSessions: 0,
-      failureSessions: 0,
-      failureEvents: 0,
-      denialSessions: 0,
-      denialEvents: 0,
-      clarificationSessions: 0,
-      clarificationEvents: 0,
-      testLoopSessions: 0,
-      testLoopEvents: 0,
-      compressionSessions: 0,
-      compressionEvents: 0,
-    };
+    const totalSessions = queryTotalSessions(db, filters);
+    const health = queryHealth(db, filters);
 
     const activeSessions = querySessionRows(
       db,
       filters,
-      ["s.ended_at IS NULL"],
-      "COALESCE(s.started_at, '') ASC, s.session_id ASC",
+      ["endedAt IS NULL"],
+      "COALESCE(startedAt, '') ASC, sessionId ASC",
       limit,
     );
 
     const attentionSessions = querySessionRows(
       db,
       filters,
-      ["(s.failure_count > 0 OR s.denial_count > 0 OR s.test_loop_count > 0 OR s.compression_count > 0)"],
+      ["(failureCount > 0 OR denialCount > 0 OR testLoopCount > 0 OR compressionCount > 0)"],
       [
-        "CASE WHEN s.ended_at IS NULL THEN 0 ELSE 1 END ASC",
-        "(s.failure_count + s.denial_count + s.test_loop_count + s.compression_count) DESC",
-        "COALESCE(s.ended_at, s.started_at, '') DESC",
-        "s.session_id ASC",
+        "CASE WHEN endedAt IS NULL THEN 0 ELSE 1 END ASC",
+        "(failureCount + denialCount + testLoopCount + compressionCount) DESC",
+        "COALESCE(endedAt, startedAt, '') DESC",
+        "sessionId ASC",
       ].join(", "),
       limit,
     );
@@ -391,20 +602,11 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
       db,
       filters,
       [],
-      "COALESCE(s.ended_at, s.started_at, '') DESC, s.session_id ASC",
+      "COALESCE(endedAt, startedAt, '') DESC, sessionId ASC",
       limit,
     );
 
-    const stopReasons = db
-      .query(`
-        SELECT stop_reason AS stopReason, COUNT(*) AS sessions
-        FROM sessions
-        ${finalWhere(where, ["stop_reason IS NOT NULL"])}
-        GROUP BY stop_reason
-        ORDER BY sessions DESC, stop_reason ASC
-        LIMIT ?
-      `)
-      .all(...params, limit) as StopReasonSummary[];
+    const stopReasons = queryStopReasons(db, filters, limit);
 
     const failureHotspots = db
       .query(`

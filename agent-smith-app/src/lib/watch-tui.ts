@@ -3,6 +3,7 @@ import process from "node:process";
 import { resolvePaths, type AgentSmithPaths } from "./paths";
 import {
   applyEventToWatchDashboardState,
+  buildWatchDashboardSeed,
   buildWatchDashboardState,
   formatWatchDuration,
   snapshotWatchDashboard,
@@ -291,7 +292,7 @@ export async function runWatchTui(
     },
   });
 
-  let state = buildWatchDashboardState(paths, options);
+  let { state, nextOffset } = buildWatchDashboardSeed(paths, options);
   const seedNote = options.tail && options.tail > 0 ? `seed: last ${options.tail} events` : "seed: full history";
   let closed = false;
   const controller = new AbortController();
@@ -345,6 +346,7 @@ export async function runWatchTui(
       project: options.project,
       pollMs: options.pollMs,
       signal: controller.signal,
+      startOffset: nextOffset,
     })) {
       applyEventToWatchDashboardState(state, event);
       render();
