@@ -140,9 +140,20 @@ function renderAggregations(snapshot: WatchDashboardSnapshot): string {
   return lines.join("\n");
 }
 
-function colorizeRecentEvent(line: string): string {
-  if (line.includes("tool_failure") || line.includes("command_failure") || line.includes("session_error")) {
-    return `{red-fg}${line}{/red-fg}`;
+function escapeBlessedTagText(value: string): string {
+  return value.replace(/[{}]/g, (char) => (char === "{" ? "{open}" : "{close}"));
+}
+
+export function colorizeRecentEvent(line: string): string {
+  const escapedLine = escapeBlessedTagText(line);
+
+  if (
+    line.includes("tool_failure") ||
+    line.includes("command_failure") ||
+    line.includes("session_error") ||
+    line.includes("stop_failure")
+  ) {
+    return `{red-fg}${escapedLine}{/red-fg}`;
   }
 
   if (
@@ -150,18 +161,18 @@ function colorizeRecentEvent(line: string): string {
     line.includes("test_failure_loop") ||
     line.includes("context_compression")
   ) {
-    return `{yellow-fg}${line}{/yellow-fg}`;
+    return `{yellow-fg}${escapedLine}{/yellow-fg}`;
   }
 
   if (line.includes("session_stop")) {
-    return `{cyan-fg}${line}{/cyan-fg}`;
+    return `{cyan-fg}${escapedLine}{/cyan-fg}`;
   }
 
   if (line.includes("session_start")) {
-    return `{green-fg}${line}{/green-fg}`;
+    return `{green-fg}${escapedLine}{/green-fg}`;
   }
 
-  return `{white-fg}${line}{/white-fg}`;
+  return `{white-fg}${escapedLine}{/white-fg}`;
 }
 
 function donutData(snapshot: WatchDashboardSnapshot): Array<{
