@@ -112,7 +112,7 @@ help:
 	fi
 
 test:
-	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/codex_hook_layout.bats
+	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/release.bats tests/scripts/codex_hook_layout.bats
 	cd agent-smith-app && $(APP_BUN) test
 	cd opencode-plugin && bun test
 

@@ -332,7 +332,7 @@ make release VERSION=1.0.1
 
 If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude and Codex manifests plus [`agent-smith-app/package.json`](agent-smith-app/package.json) and [`opencode-plugin/package.json`](opencode-plugin/package.json).
 
-`make release` requires a clean git worktree and an authenticated `gh` session. If you only want to bump versioned release files without publishing yet, use `make set-version VERSION=1.0.1`.
+`make release` requires a clean git worktree, a freshly fetched local `main` that exactly matches `origin/main`, and an authenticated `gh` session. Run it from `main` after `git pull --ff-only origin main`. If you only want to bump versioned release files without publishing yet, use `make set-version VERSION=1.0.1`.
 
 The GitHub release flow does not publish the standalone CLI package to npm for you. After cutting the repo release, publish it separately from `agent-smith-app/` when you are ready:
 

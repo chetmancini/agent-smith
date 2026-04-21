@@ -36,6 +36,33 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 	exit 1
 fi
 
+if ! git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+	echo "Local main branch is required for releases." >&2
+	echo "Run git fetch origin main && git checkout main, then rerun make release VERSION=${version}." >&2
+	exit 1
+fi
+
+if ! git fetch --quiet origin main; then
+	echo "Failed to refresh origin/main; aborting release." >&2
+	exit 1
+fi
+
+local_main=$(git rev-parse refs/heads/main)
+remote_main=$(git rev-parse refs/remotes/origin/main)
+head_sha=$(git rev-parse HEAD)
+
+if [[ $local_main != "$remote_main" ]]; then
+	echo "Local main does not match origin/main; aborting release." >&2
+	echo "Run git checkout main && git pull --ff-only origin main, then rerun make release VERSION=${version}." >&2
+	exit 1
+fi
+
+if [[ $head_sha != "$remote_main" ]]; then
+	echo "Release must run from the up-to-date main branch." >&2
+	echo "Run git checkout main && git pull --ff-only origin main, then rerun make release VERSION=${version}." >&2
+	exit 1
+fi
+
 if git rev-parse --verify --quiet "$tag" >/dev/null; then
 	echo "Tag already exists: $tag" >&2
 	exit 1
