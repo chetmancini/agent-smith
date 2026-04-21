@@ -51,6 +51,7 @@ describe("doctor", () => {
 
     mkdirSync(join(repoRoot, ".claude-plugin"), { recursive: true });
     mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
+    mkdirSync(join(repoRoot, ".agents", "plugins"), { recursive: true });
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
 
@@ -59,6 +60,10 @@ describe("doctor", () => {
     });
     writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), {
       name: "agent-smith",
+    });
+    writeJson(join(repoRoot, ".agents", "plugins", "marketplace.json"), {
+      name: "agent-smith-local",
+      plugins: [{ name: "agent-smith", source: { source: "local", path: "./" } }],
     });
     writeJson(join(repoRoot, ".codex", "hooks.json"), { hooks: {} });
     writeJson(join(repoRoot, "opencode-plugin", "package.json"), {
@@ -115,6 +120,13 @@ codex_hooks = true
 [projects."${resolve(repoRoot)}"]
 trust_level = "trusted"
 `,
+    );
+    mkdirSync(join(home, ".codex", "plugins", "cache", "agent-smith-local", "agent-smith", "local", ".codex-plugin"), {
+      recursive: true,
+    });
+    writeJson(
+      join(home, ".codex", "plugins", "cache", "agent-smith-local", "agent-smith", "local", ".codex-plugin", "plugin.json"),
+      { name: "agent-smith" },
     );
 
     mkdirSync(join(home, ".config", "opencode"), { recursive: true });

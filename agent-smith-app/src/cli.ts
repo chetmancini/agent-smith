@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 
 import { type SupportedAgentTool, validateToolName } from "./lib/agent-hosts";
+import { installCodexPlugin } from "./lib/codex-install";
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { type LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
@@ -60,6 +61,7 @@ function usage(): string {
   agent-smith validate-schemas [--tool TOOL] [--refresh] [--json]
   agent-smith upgrade-settings [--tool TOOL] [--refresh] [--format text|json]
   agent-smith update-settings [--tool TOOL] [--refresh] [--format text|json]
+  agent-smith install-codex [--repo-root PATH] [--json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
 `;
@@ -560,6 +562,46 @@ async function handleUpgradeSettings(args: string[], io: CliIO, runtime: SchemaT
   return 0;
 }
 
+function handleInstallCodex(args: string[], io: CliIO): number {
+  let json = false;
+  let repoRoot: string | undefined;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--json":
+        json = true;
+        break;
+      case "--repo-root":
+        repoRoot = shiftValue(args, "--repo-root");
+        break;
+      default:
+        throw new CliUsageError(`Unknown install-codex argument: ${flag}`);
+    }
+  }
+
+  const result = installCodexPlugin({ repoRoot });
+  if (json) {
+    writeJson(io, result);
+    return 0;
+  }
+
+  io.stdout("Codex install scaffold is ready.\n");
+  io.stdout(`Repo root: ${result.paths.repoRoot}\n`);
+  io.stdout(`Linked plugin source: ${result.paths.personalPluginPath}\n`);
+  io.stdout(`Updated marketplace: ${result.paths.personalMarketplacePath}\n`);
+  io.stdout(`Updated config: ${result.paths.codexConfigPath}\n`);
+  io.stdout("\nChanges:\n");
+  io.stdout(`- plugin link: ${result.changed.pluginLink ? "updated" : "already current"}\n`);
+  io.stdout(`- personal marketplace: ${result.changed.marketplace ? "updated" : "already current"}\n`);
+  io.stdout(`- codex config: ${result.changed.config ? "updated" : "already current"}\n`);
+  io.stdout("\nNext:\n");
+  for (const step of result.manualSteps) {
+    io.stdout(`- ${step}\n`);
+  }
+  return 0;
+}
+
 function handleDoctor(args: string[], io: CliIO): number {
   let json = false;
   while (args.length > 0) {
@@ -638,6 +680,8 @@ export async function runCli(
     case "upgrade-settings":
     case "update-settings":
       return await handleUpgradeSettings(args, io, runtime.schema);
+    case "install-codex":
+      return handleInstallCodex(args, io);
     case "doctor":
       return handleDoctor(args, io);
     case "paths":
