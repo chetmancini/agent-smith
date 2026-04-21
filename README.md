@@ -222,7 +222,7 @@ Schema validation and upgrade planning are available for all four agents. As of 
 
 Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
 
-`make demo` now runs an isolated sandbox under `.context/full-loop-demo/`, simulates Claude working through a tiny Bun todo app, emits synthetic tool attempts and failures, rolls the stream into SQLite, generates report and improve artifacts, applies safe loop recommendations inside the sandbox repo, and shows the live watch TUI while the scenario progresses.
+`make demo` now runs an isolated sandbox under `.context/full-loop-demo/`, simulates Claude working through a tiny Bun todo app, emits synthetic tool attempts and failures, rolls the stream into SQLite, generates report and improve artifacts, applies safe loop recommendations inside the sandbox repo, and shows the live watch TUI plus a `Claude Working` pane while the scenario progresses.
 
 When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to the active agent.
 

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -27,6 +27,7 @@ export interface FullLoopDemoArtifacts {
   loopReport: string;
   finalReport: string;
   summary: string;
+  workingLog: string;
 }
 
 export interface FullLoopDemoResult {
@@ -266,9 +267,18 @@ function appendDemoEvent(
   );
 }
 
+function demoWorkingLogPath(paths: AgentSmithPaths): string {
+  return join(paths.reportsDir, "demo-claude-working.log");
+}
+
+function appendWorkingLog(paths: AgentSmithPaths, message: string): void {
+  appendFileSync(demoWorkingLogPath(paths), `${new Date().toISOString().slice(11, 19)} ${message}\n`);
+}
+
 function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
   return ({ prompt, repoRoot }) => {
     if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+      appendWorkingLog(sandbox.paths, "Claude is reviewing the telemetry summary");
       appendDemoEvent(
         sandbox.paths,
         {
@@ -331,6 +341,7 @@ function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
 
     if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
       if (prompt.includes("tighten-request-contract")) {
+        appendWorkingLog(sandbox.paths, "Claude is tightening AGENTS.md guidance");
         writeFile(
           join(repoRoot, "AGENTS.md"),
           [
@@ -372,6 +383,7 @@ function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
         };
       }
 
+      appendWorkingLog(sandbox.paths, "Claude is updating README.md with the demo flow");
       writeFile(
         join(repoRoot, "README.md"),
         [
@@ -423,6 +435,10 @@ function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
 
     if (prompt.includes("You are evaluating whether a just-applied Agent Smith improvement")) {
       const resolvedReadme = prompt.includes("document-full-loop-demo");
+      appendWorkingLog(
+        sandbox.paths,
+        resolvedReadme ? "Claude is verifying the README workflow change" : "Claude is checking the AGENTS.md contract",
+      );
       appendDemoEvent(
         sandbox.paths,
         {
@@ -481,6 +497,7 @@ function writeReportArtifacts(
     loopReport: join(sandbox.paths.reportsDir, "demo-loop-report.txt"),
     finalReport: join(sandbox.paths.reportsDir, "demo-final-report.txt"),
     summary: join(sandbox.paths.reportsDir, "demo-summary.json"),
+    workingLog: demoWorkingLogPath(sandbox.paths),
   };
 
   writeFileSync(artifacts.initialReport, renderTextReport(reports.initialReport, theme));
@@ -493,6 +510,7 @@ function writeReportArtifacts(
 
 async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<FullLoopDemoResult> {
   const demoTool = "claude";
+  writeFileSync(demoWorkingLogPath(sandbox.paths), "Claude Working\n");
   const emit = async (
     eventType: string,
     sessionId: string,
@@ -530,18 +548,25 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
     );
     await pause(delayMs);
   };
+  const working = async (message: string): Promise<void> => {
+    appendWorkingLog(sandbox.paths, message);
+    await pause(delayMs);
+  };
 
   const runner = createDemoAgentRunner(sandbox);
 
   await note("boot -> simulating Claude fixing a tiny todo app");
+  await working("Claude is scanning the demo repo");
   await emit("session_start", "demo-alpha", {
     prompt_snippet: "Fix the todo completion bug in the demo app and tell me what you validated.",
   });
+  await working("Claude is listing files");
   await toolAttempt("demo-alpha", "Bash", {
     command: "ls",
     turn_id: "turn-alpha-1",
     tool_use_id: "tool-alpha-1",
   });
+  await working("Claude is running bun test");
   await toolAttempt("demo-alpha", "Bash", {
     command: "bun test",
     turn_id: "turn-alpha-2",
@@ -564,6 +589,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
     turn_id: "turn-alpha-2",
     tool_use_id: "tool-alpha-2",
   });
+  await working("Claude saw the failing assertion and is editing src/todos.ts");
   await toolAttempt("demo-alpha", "Edit", {
     file_path: "src/todos.ts",
     turn_id: "turn-alpha-3",
@@ -576,11 +602,13 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
     tool_name: "Write",
     command: "rm -rf ~/.cache/agent-smith",
   });
+  await working("Claude wrapped the first pass and handed back a scoped question");
   await emit("session_stop", "demo-alpha", { stop_reason: "end_turn", duration_seconds: 43 });
 
   await emit("session_start", "demo-bravo", {
     prompt_snippet: "Fix the tests and keep retrying until the todo app passes.",
   });
+  await working("Claude reopened src/todos.ts to inspect the bug");
   await toolAttempt("demo-bravo", "Bash", {
     command: "sed -n '1,200p' src/todos.ts",
     turn_id: "turn-bravo-1",
@@ -591,12 +619,14 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
     turn_id: "turn-bravo-2",
     tool_use_id: "tool-bravo-2",
   });
+  await working("Claude is rerunning bun test");
   await toolAttempt("demo-bravo", "Bash", {
     command: "bun test",
     turn_id: "turn-bravo-3",
     tool_use_id: "tool-bravo-3",
   });
   await emit("test_failure_loop", "demo-bravo", { command: "bun test" });
+  await working("Claude is checking AGENTS.md and README.md for missing operator context");
   await toolAttempt("demo-bravo", "Bash", {
     command: 'rg -n "scope|validation|demo" AGENTS.md README.md',
     turn_id: "turn-bravo-4",
@@ -605,11 +635,13 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
   await emit("context_compression", "demo-bravo", {
     prompt_snippet: "Compressed prior retries, failing test output, and app file context",
   });
+  await working("Claude compressed prior retries before the next turn");
   await emit("session_stop", "demo-bravo", { stop_reason: "end_turn", duration_seconds: 57 });
 
   await emit("session_start", "demo-charlie", {
     prompt_snippet: "Update docs after the runtime change so future Claude runs start cleaner.",
   });
+  await working("Claude is reading README.md");
   await toolAttempt("demo-charlie", "Bash", {
     command: "sed -n '1,200p' README.md",
     turn_id: "turn-charlie-1",
@@ -620,6 +652,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
     turn_id: "turn-charlie-2",
     tool_use_id: "tool-charlie-2",
   });
+  await working("Claude finished the first documentation pass");
   await emit("session_stop", "demo-charlie", { stop_reason: "end_turn", duration_seconds: 18 });
 
   const rollup = rollupEvents(sandbox.paths);
@@ -637,6 +670,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
   );
   await note(`improve -> ${improvementReport.recommendations.length} safe recommendations`);
 
+  await working("Claude is auto-applying the safe recommendations");
   const loopReport = await runImprovementLoop(
     { tool: demoTool, iterations: 2 },
     { env: sandbox.env, repoRoot: sandbox.repoRoot, runAgent: runner },
@@ -646,6 +680,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
   await emit("session_start", "demo-delta", {
     prompt_snippet: "Scoped request: update the docs and run focused validation for the todo app only.",
   });
+  await working("Claude is running the final focused validation");
   await toolAttempt("demo-delta", "Bash", {
     command: 'rg -n "make demo|bun test" README.md AGENTS.md',
     turn_id: "turn-delta-1",
@@ -684,7 +719,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
 
 export async function runFullLoopDemo(options: FullLoopDemoOptions = {}): Promise<FullLoopDemoResult> {
   const sandbox = createDemoSandbox(options.demoDir);
-  const delayMs = options.delayMs ?? 320;
+  const delayMs = options.delayMs ?? 450;
 
   if (!options.watch) {
     return await runDemoScenario(sandbox, delayMs);
@@ -695,6 +730,10 @@ export async function runFullLoopDemo(options: FullLoopDemoOptions = {}): Promis
     tail: 0,
     pollMs: 120,
     signal: controller.signal,
+    extraPane: {
+      filePath: demoWorkingLogPath(sandbox.paths),
+      label: " Claude Working ",
+    },
   });
 
   await pause(delayMs);
@@ -730,6 +769,7 @@ export function renderFullLoopDemo(result: FullLoopDemoResult): string {
     `  improve report: ${result.artifacts.improveReport}`,
     `  loop report: ${result.artifacts.loopReport}`,
     `  final report: ${result.artifacts.finalReport}`,
+    `  working log: ${result.artifacts.workingLog}`,
     `  summary json: ${result.artifacts.summary}`,
     "",
   ].join("\n");
