@@ -54,8 +54,7 @@
           {
             "type": "command",
             "command": "AGENT_SMITH_TOOL=codex bash ./hooks/analyze-trigger.sh",
-            "timeout": 10,
-            "async": true
+            "timeout": 10
           }
         ]
       }
