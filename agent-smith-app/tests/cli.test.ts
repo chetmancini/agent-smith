@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -239,6 +249,56 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
       eventsFile: `${metricsDir}/events.jsonl`,
       dbFile: `${metricsDir}/rollup.db`,
     });
+  });
+
+  test("install-codex links the plugin, writes the personal marketplace, and updates codex config", async () => {
+    mkdirSync(join(repoDir, ".codex-plugin"), { recursive: true });
+    mkdirSync(join(repoDir, ".codex"), { recursive: true });
+    writeFileSync(
+      join(repoDir, ".codex-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "agent-smith",
+        version: "0.4.0",
+        description: "Agent Smith",
+      }),
+    );
+    writeFileSync(join(repoDir, ".codex", "hooks.json"), JSON.stringify({ hooks: {} }));
+
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      const { io, getStdout } = createIo();
+      const exitCode = await runCli(["install-codex", "--repo-root", repoDir], io);
+      expect(exitCode).toBe(0);
+      expect(getStdout()).toContain("Codex install scaffold is ready");
+
+      const pluginLink = join(homeDir, ".codex", "plugins", "agent-smith");
+      expect(lstatSync(pluginLink).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(pluginLink)).toBe(repoDir);
+
+      const marketplace = JSON.parse(readFileSync(join(homeDir, ".agents", "plugins", "marketplace.json"), "utf8")) as {
+        plugins: Array<{ name: string; source: { path: string } }>;
+      };
+      expect(marketplace.plugins).toContainEqual(
+        expect.objectContaining({
+          name: "agent-smith",
+          source: expect.objectContaining({ path: "./.codex/plugins/agent-smith" }),
+        }),
+      );
+
+      const configText = readFileSync(join(homeDir, ".codex", "config.toml"), "utf8");
+      expect(configText).toContain("[features]");
+      expect(configText).toContain("codex_hooks = true");
+      expect(configText).toContain(`[projects."${repoDir}"]`);
+      expect(configText).toContain('trust_level = "trusted"');
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
   });
 
   test("refresh-schemas writes the detected tool schema without shelling out", async () => {

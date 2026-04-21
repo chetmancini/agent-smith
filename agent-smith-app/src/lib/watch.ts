@@ -11,6 +11,7 @@ export interface WatchOptions {
   tail?: number;
   pollMs?: number;
   signal?: AbortSignal;
+  startOffset?: number;
 }
 
 const failureEventTypes = new Set(["tool_failure", "command_failure", "session_error", "stop_failure"]);
@@ -96,13 +97,18 @@ export interface WatchDashboardState {
   recentEvents: string[];
 }
 
+export interface WatchDashboardSeed {
+  state: WatchDashboardState;
+  nextOffset: number;
+}
+
 export async function* watchEvents(
   paths = resolvePaths(),
   options: WatchOptions = {},
 ): AsyncGenerator<AgentSmithEvent> {
-  let offset = currentEventFileSize(paths.eventsFile);
+  let offset = options.startOffset ?? currentEventFileSize(paths.eventsFile);
 
-  if (options.tail && options.tail > 0) {
+  if (options.startOffset === undefined && options.tail && options.tail > 0) {
     const recent = readAllEvents(paths, {
       tool: options.tool,
       project: options.project,
@@ -318,18 +324,32 @@ export function buildWatchDashboardState(
   paths: AgentSmithPaths = resolvePaths(),
   options: Pick<WatchOptions, "tool" | "project" | "tail"> = {},
 ): WatchDashboardState {
+  return buildWatchDashboardSeed(paths, options).state;
+}
+
+export function buildWatchDashboardSeed(
+  paths: AgentSmithPaths = resolvePaths(),
+  options: Pick<WatchOptions, "tool" | "project" | "tail"> = {},
+): WatchDashboardSeed {
   const state = createWatchDashboardState();
-  const events = readAllEvents(paths, {
-    tool: options.tool,
-    project: options.project,
-    limit: options.tail && options.tail > 0 ? options.tail : undefined,
-  });
+  const chunk = readEventsSince(paths.eventsFile, 0);
+  const filtered = chunk.events.filter((event) =>
+    matchesEvent(event, {
+      tool: options.tool,
+      project: options.project,
+    }),
+  );
+  const events =
+    options.tail && options.tail > 0 && filtered.length > options.tail ? filtered.slice(-options.tail) : filtered;
 
   for (const event of events) {
     applyEventToWatchDashboardState(state, event);
   }
 
-  return state;
+  return {
+    state,
+    nextOffset: chunk.nextOffset,
+  };
 }
 
 export function snapshotWatchDashboard(

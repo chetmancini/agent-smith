@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { codexPluginInstalledInCache, personalMarketplaceHasAgentSmith } from "./codex-install";
+
 export type DoctorStatus = "pass" | "warn" | "fail" | "skip";
 
 export interface DoctorCheck {
@@ -319,6 +321,12 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
   const configText = readText(configPath) ?? "";
   const repoManifest = join(repoRoot, ".codex-plugin", "plugin.json");
   const repoHooks = join(repoRoot, ".codex", "hooks.json");
+  const repoMarketplace = join(repoRoot, ".agents", "plugins", "marketplace.json");
+  const personalPluginPath = join(home, ".codex", "plugins", "agent-smith");
+  const personalMarketplacePath = join(home, ".agents", "plugins", "marketplace.json");
+  const installSurfaceReady =
+    existsSync(repoMarketplace) ||
+    (existsSync(personalPluginPath) && personalMarketplaceHasAgentSmith(personalMarketplacePath));
 
   const checks: DoctorCheck[] = [
     makeCheck(
@@ -334,6 +342,22 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
       existsSync(repoHooks),
       `${repoHooks} exists`,
       `${repoHooks} is missing`,
+    ),
+    makeCheck(
+      "codex_plugin_install_surface",
+      "Codex plugin marketplace",
+      installSurfaceReady,
+      existsSync(repoMarketplace)
+        ? `${repoMarketplace} is available for repo-scoped install`
+        : `${personalMarketplacePath} points to ${personalPluginPath}`,
+      `Add a repo marketplace at ${repoMarketplace} or run agent-smith install-codex`,
+    ),
+    makeCheck(
+      "codex_plugin_installed",
+      "Installed Codex plugin",
+      codexPluginInstalledInCache(env),
+      "Agent Smith is installed in the Codex plugin cache",
+      "Agent Smith is not installed yet; open the Plugin Directory and install it from the marketplace",
     ),
     makeCheck(
       "codex_config_present",
@@ -367,8 +391,8 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
     status,
     summary:
       status === "pass"
-        ? "Codex binary found and repo-local Agent Smith integration is ready"
-        : "Codex binary found, but repo-local Agent Smith integration is incomplete",
+        ? "Codex binary found and Agent Smith is installed and ready"
+        : "Codex binary found, but Agent Smith still needs Codex setup or install steps",
     checks,
   };
 }

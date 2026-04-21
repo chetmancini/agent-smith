@@ -23,24 +23,35 @@ claude plugins install agent-smith@agent-smith
 claude --plugin-dir path/to/agent-smith
 ```
 
-**Codex:** For local development, keep this repo checked out locally and run Agent Smith through the Codex helpers in this checkout. Those helpers invoke `codex exec -C` so Codex loads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json) directly from the repo.
+**Codex:** Agent Smith now ships a repo marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) plus an install helper that lays down the personal marketplace entry, links the plugin source into `~/.codex/plugins/agent-smith`, enables `features.codex_hooks = true`, and trusts this checkout in `~/.codex/config.toml`.
 
-Enable Codex hooks once in `~/.codex/config.toml` if you want automatic metrics collection from Codex sessions:
+From a local clone:
 
-```toml
-[features]
-codex_hooks = true
+```bash
+bun run ./agent-smith-app/src/cli.ts install-codex
 ```
 
-Codex currently discovers repo-local hooks from [`.codex/hooks.json`](.codex/hooks.json), so keep this checkout trusted and launch Codex from anywhere inside the repo when you want the automatic hook flow.
+Or:
+
+```bash
+make codex-install
+```
+
+That automates everything Agent Smith can safely write itself. One manual Codex step remains:
+
+1. Restart Codex.
+2. Open the Plugin Directory.
+3. Choose your personal marketplace.
+4. Install `Agent Smith`.
+5. Run `bun run ./agent-smith-app/src/cli.ts doctor`.
+
+Codex loads automatic hook telemetry from the repo-local [`.codex/hooks.json`](.codex/hooks.json) file, so the checkout still needs to stay trusted.
 
 ```bash
 make codex-analyze
 make codex-validate-schemas
 make codex-upgrade-settings
 ```
-
-If you publish Agent Smith through your own Codex plugin source, point that source at this repo root so Codex can read [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json). For hook-based metrics in a checkout, Codex uses the repo-local [`.codex/hooks.json`](.codex/hooks.json) file.
 
 ### OpenCode
 
@@ -73,7 +84,7 @@ This is the supported OpenCode integration path and provides the full OpenCode-n
 
 ### Usage
 
-Claude Code starts collecting metrics as soon as its hook manifest loads. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, the skill and helper workflow works as soon as the plugin loads, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
+Claude Code starts collecting metrics as soon as its hook manifest loads. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, skills work after the plugin is installed from the marketplace, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
 
 **Slash command** (inside any supported agent):
 ```text
@@ -98,6 +109,7 @@ bun run ./agent-smith-app/src/cli.ts report
 bun run ./agent-smith-app/src/cli.ts improve --tool codex
 bun run ./agent-smith-app/src/cli.ts loop --tool codex
 bun run ./agent-smith-app/src/cli.ts watch --tail 10
+bun run ./agent-smith-app/src/cli.ts install-codex
 bun run ./agent-smith-app/src/cli.ts doctor
 bun run ./agent-smith-app/src/cli.ts refresh-schemas --tool codex
 bun run ./agent-smith-app/src/cli.ts validate-agent-config --tool codex --refresh
@@ -246,6 +258,7 @@ agent-smith/
 │   └── tests/*.test.ts           # Bun test coverage for the new app
 ├── .claude-plugin/plugin.json    # Claude Code manifest
 ├── .codex-plugin/plugin.json     # Codex manifest
+├── .agents/plugins/marketplace.json # Codex repo marketplace
 ├── .codex/
 │   └── hooks.json                # Codex repo-local hook registration
 ├── hooks.json                    # Legacy Codex hook copy kept in sync with .codex/hooks.json

@@ -7,6 +7,7 @@ import { createEvent } from "../src/lib/events";
 import { resolvePaths } from "../src/lib/paths";
 import { appendEvent } from "../src/lib/store";
 import {
+  buildWatchDashboardSeed,
   buildWatchDashboardState,
   createSessionWatchFormatter,
   formatWatchedEvent,
@@ -68,6 +69,47 @@ describe("watch", () => {
       throw new Error("expected watch iterator to yield an event");
     }
     expect(formatWatchedEvent(second.value)).toContain("npm test");
+
+    controller.abort();
+  });
+
+  test("watch can resume from a seed snapshot offset without dropping handoff events", async () => {
+    const paths = resolvePaths(process.env);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "watch-seed",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+
+    const seed = buildWatchDashboardSeed(paths);
+    expect(seed.state.totalEvents).toBe(1);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "command_failure",
+        tool: "codex",
+        sessionId: "watch-seed",
+        metadata: { cwd: "/tmp/project-a", command: "npm test" },
+      }),
+    );
+
+    const controller = new AbortController();
+    const iterator = watchEvents(paths, {
+      startOffset: seed.nextOffset,
+      pollMs: 10,
+      signal: controller.signal,
+    });
+
+    const next = await iterator.next();
+    expect(next.done).toBe(false);
+    expect(next.value?.event_type).toBe("command_failure");
+    expect(next.value?.session_id).toBe("watch-seed");
 
     controller.abort();
   });
