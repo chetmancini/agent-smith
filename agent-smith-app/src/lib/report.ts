@@ -232,9 +232,11 @@ function queryTotalSessions(db: Database, filters: ReportFilters): number {
 
   const { where, params } = buildWhere(filters);
   return (
-    (db.query(`SELECT COUNT(DISTINCT session_id) AS count FROM events ${where}`).get(...params) as {
-      count: number;
-    } | null)?.count ?? 0
+    (
+      db.query(`SELECT COUNT(DISTINCT session_id) AS count FROM events ${where}`).get(...params) as {
+        count: number;
+      } | null
+    )?.count ?? 0
   );
 }
 
@@ -341,7 +343,11 @@ function querySessionRows(
   if (filters.project) {
     const { sql, params } = buildScopedSessionAggregate(filters);
     const { clause: snippetClause, params: snippetParams } = buildSessionEventClause(filters, "se", "s");
-    const { clause: fallbackSnippetClause, params: fallbackSnippetParams } = buildSessionEventClause(filters, "se2", "s");
+    const { clause: fallbackSnippetClause, params: fallbackSnippetParams } = buildSessionEventClause(
+      filters,
+      "se2",
+      "s",
+    );
 
     rows = db
       .query(
