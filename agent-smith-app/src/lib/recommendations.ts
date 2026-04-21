@@ -10,11 +10,11 @@ import {
   readSchemaMetadata,
   repoRootFromHere,
   schemaCachePath,
-  SupportedAgentTool,
+  type SupportedAgentTool,
 } from "./agent-hosts";
-import { AgentRunner, defaultRunAgent } from "./agent-runner";
-import { eventSnippet, projectFromEvent } from "./events";
-import { resolvePaths, AgentSmithPaths } from "./paths";
+import { type AgentRunner, defaultRunAgent } from "./agent-runner";
+import { eventSnippet } from "./events";
+import { resolvePaths, type AgentSmithPaths } from "./paths";
 import { generateReport } from "./report";
 import { rollupEvents } from "./rollup";
 
@@ -172,10 +172,7 @@ function rate(sessions: number, totalSessions: number, eventCount: number): Sign
   };
 }
 
-function queryAggregate(
-  db: Database,
-  filters: { tool?: string; project?: string },
-): AggregateRow {
+function queryAggregate(db: Database, filters: { tool?: string; project?: string }): AggregateRow {
   const { where, params } = buildWhere(filters);
   const row = db
     .query(
@@ -239,12 +236,12 @@ function queryExamples(
       `,
     )
     .all(...params, ...eventTypes, limit) as Array<{
-      ts: string;
-      sessionId: string;
-      project: string | null;
-      snippet: string | null;
-      metadata: string;
-    }>;
+    ts: string;
+    sessionId: string;
+    project: string | null;
+    snippet: string | null;
+    metadata: string;
+  }>;
 
   return rows.map((row) => {
     const metadata = (() => {
@@ -273,7 +270,10 @@ function queryExamples(
   });
 }
 
-function parseConfigFile(path: string): { parseMode: "json" | "toml"; value: Record<string, unknown> } {
+function parseConfigFile(path: string): {
+  parseMode: "json" | "toml";
+  value: Record<string, unknown>;
+} {
   const text = readFileSync(path, "utf8");
   if (path.endsWith(".toml")) {
     return {
@@ -306,9 +306,7 @@ function redactConfig(value: unknown, path = ""): unknown {
   for (const [key, child] of Object.entries(value)) {
     const lowered = key.toLowerCase();
     const looksSecret =
-      /(api.?key|token|secret|password|passwd|authorization|credential|private.?key|client.?secret)/.test(
-        lowered,
-      );
+      /(api.?key|token|secret|password|passwd|authorization|credential|private.?key|client.?secret)/.test(lowered);
     result[key] = looksSecret ? "[REDACTED]" : redactConfig(child, `${path}.${key}`);
   }
   return result;
@@ -324,7 +322,11 @@ function schemaProperties(schema: SchemaDocument): Record<string, { description?
 function buildSchemaDiff(
   tool: SupportedAgentTool,
   env: NodeJS.ProcessEnv,
-): { files: SchemaConfigDiff[]; topLevelKeys: string[]; schemaDescriptionByKey: Record<string, string> } {
+): {
+  files: SchemaConfigDiff[];
+  topLevelKeys: string[];
+  schemaDescriptionByKey: Record<string, string>;
+} {
   const schemaPath = schemaCachePath(tool, env);
   const schemaPayload = readJsonFile(schemaPath) as SchemaDocument | null;
   if (!schemaPayload) {
@@ -336,9 +338,7 @@ function buildSchemaDiff(
   const schemaDescriptionByKey = Object.fromEntries(
     topLevelKeys.flatMap((key) => {
       const description = properties[key]?.description;
-      return typeof description === "string" && description.trim().length > 0
-        ? [[key, description.trim()]]
-        : [];
+      return typeof description === "string" && description.trim().length > 0 ? [[key, description.trim()]] : [];
     }),
   );
 
@@ -363,10 +363,7 @@ function buildSchemaDiff(
   return { files, topLevelKeys, schemaDescriptionByKey };
 }
 
-function buildPrompt(
-  evidence: ImprovementEvidence,
-  context: ImprovementPromptContext = {},
-): string {
+function buildPrompt(evidence: ImprovementEvidence, context: ImprovementPromptContext = {}): string {
   const lines = [
     "You are Agent Smith's reasoning engine.",
     "Read the empirical telemetry evidence, schema state, and current config structure below.",
@@ -375,7 +372,7 @@ function buildPrompt(
     "Return JSON only. No markdown, no commentary outside JSON.",
     "",
     "Return an object with this exact shape:",
-    '{',
+    "{",
     '  "summary": "string",',
     '  "recommendations": [',
     "    {",
@@ -400,9 +397,7 @@ function buildPrompt(
   ];
 
   if ((context.completedRecommendationIds ?? []).length > 0) {
-    lines.push(
-      `Already completed recommendation ids: ${JSON.stringify(context.completedRecommendationIds)}`,
-    );
+    lines.push(`Already completed recommendation ids: ${JSON.stringify(context.completedRecommendationIds)}`);
   }
   if ((context.blockedRecommendationIds ?? []).length > 0) {
     lines.push(`Blocked recommendation ids: ${JSON.stringify(context.blockedRecommendationIds)}`);
@@ -424,7 +419,10 @@ function buildPrompt(
   return lines.join("\n");
 }
 
-function parseAgentResponse(text: string): { summary: string; recommendations: ImprovementRecommendation[] } {
+function parseAgentResponse(text: string): {
+  summary: string;
+  recommendations: ImprovementRecommendation[];
+} {
   const trimmed = text.trim();
   const start = trimmed.indexOf("{");
   const end = trimmed.lastIndexOf("}");
@@ -466,7 +464,10 @@ function parseAgentResponse(text: string): { summary: string; recommendations: I
       throw new Error(`recommendation ${index} is missing required fields`);
     }
 
-    const actions = candidate.actions.map((action, actionIndex) => {
+    const priority: ImprovementRecommendation["priority"] = candidate.priority;
+    const category: ImprovementRecommendation["category"] = candidate.category;
+
+    const actions: ImprovementAction[] = candidate.actions.map((action, actionIndex) => {
       if (!action || typeof action !== "object" || Array.isArray(action)) {
         throw new Error(`recommendation ${index} action ${actionIndex} is not an object`);
       }
@@ -483,8 +484,10 @@ function parseAgentResponse(text: string): { summary: string; recommendations: I
         throw new Error(`recommendation ${index} action ${actionIndex} is missing required fields`);
       }
 
+      const type: ImprovementAction["type"] = actionCandidate.type;
+
       return {
-        type: actionCandidate.type,
+        type,
         description: actionCandidate.description,
         targetFiles: actionCandidate.targetFiles.filter((value): value is string => typeof value === "string"),
         safeToAutoApply: actionCandidate.safeToAutoApply,
@@ -494,8 +497,8 @@ function parseAgentResponse(text: string): { summary: string; recommendations: I
     return {
       id: candidate.id,
       title: candidate.title,
-      priority: candidate.priority,
-      category: candidate.category,
+      priority,
+      category,
       rationale: candidate.rationale,
       evidence: candidate.evidence.filter((value): value is string => typeof value === "string"),
       actions,
@@ -527,7 +530,11 @@ export async function generateImprovementReport(
   try {
     const limit = filters.limit ?? 5;
     const aggregate = queryAggregate(db, { tool, project: filters.project });
-    const report = generateReport(paths, { tool, project: filters.project, limit });
+    const report = generateReport(paths, {
+      tool,
+      project: filters.project,
+      limit,
+    });
     const evidence: ImprovementEvidence = {
       tool,
       project: filters.project,
@@ -535,21 +542,18 @@ export async function generateImprovementReport(
       report,
       signalRates: {
         failures: rate(aggregate.failureSessions, aggregate.totalSessions, aggregate.failureEvents),
-        clarifications: rate(
-          aggregate.clarificationSessions,
-          aggregate.totalSessions,
-          aggregate.clarifications,
-        ),
+        clarifications: rate(aggregate.clarificationSessions, aggregate.totalSessions, aggregate.clarifications),
         permissionDenials: rate(aggregate.denialSessions, aggregate.totalSessions, aggregate.denials),
-        contextCompression: rate(
-          aggregate.compressionSessions,
-          aggregate.totalSessions,
-          aggregate.compressions,
-        ),
+        contextCompression: rate(aggregate.compressionSessions, aggregate.totalSessions, aggregate.compressions),
         testFailureLoops: rate(aggregate.testLoopSessions, aggregate.totalSessions, aggregate.testLoops),
       },
       recentExamples: {
-        failures: queryExamples(db, { tool, project: filters.project }, ["command_failure", "tool_failure", "session_error", "stop_failure"], limit),
+        failures: queryExamples(
+          db,
+          { tool, project: filters.project },
+          ["command_failure", "tool_failure", "session_error", "stop_failure"],
+          limit,
+        ),
         clarifications: queryExamples(db, { tool, project: filters.project }, ["clarifying_question"], limit),
         permissionDenials: queryExamples(db, { tool, project: filters.project }, ["permission_denied"], limit),
         contextCompression: queryExamples(db, { tool, project: filters.project }, ["context_compression"], limit),

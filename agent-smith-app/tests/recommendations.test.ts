@@ -74,16 +74,9 @@ describe("recommendations", () => {
     mkdirSync(join(home, ".codex"), { recursive: true });
     writeFileSync(
       join(home, ".codex", "config.toml"),
-      [
-        'model = "gpt-5"',
-        "",
-        "[features]",
-        "codex_hooks = true",
-        "",
-        "[approval]",
-        'policy = "on-request"',
-        "",
-      ].join("\n"),
+      ['model = "gpt-5"', "", "[features]", "codex_hooks = true", "", "[approval]", 'policy = "on-request"', ""].join(
+        "\n",
+      ),
     );
 
     const schemaDir = join(home, ".config", "agent-smith", "schemas");
@@ -96,8 +89,14 @@ describe("recommendations", () => {
           properties: {
             model: { type: "string", description: "Model identifier to use." },
             features: { type: "object", description: "Feature toggles." },
-            profiles: { type: "object", description: "Reusable execution profiles." },
-            permissions: { type: "object", description: "Permission policy controls." },
+            profiles: {
+              type: "object",
+              description: "Reusable execution profiles.",
+            },
+            permissions: {
+              type: "object",
+              description: "Permission policy controls.",
+            },
           },
         },
         null,
@@ -127,14 +126,21 @@ describe("recommendations", () => {
 
   test("assembles empirical and schema evidence before asking the agent for recommendations", async () => {
     seedSession("session-1", [
-      { eventType: "clarifying_question", metadata: { prompt_snippet: "fix it" } },
-      { eventType: "command_failure", metadata: { command: "pnpm test", error: "exit 1" } },
+      {
+        eventType: "clarifying_question",
+        metadata: { prompt_snippet: "fix it" },
+      },
+      {
+        eventType: "command_failure",
+        metadata: { command: "pnpm test", error: "exit 1" },
+      },
     ]);
-    seedSession("session-2", [
-      { eventType: "permission_denied", metadata: { command: "rm -rf build" } },
-    ]);
+    seedSession("session-2", [{ eventType: "permission_denied", metadata: { command: "rm -rf build" } }]);
     seedSession("session-3", [
-      { eventType: "context_compression", metadata: { reason: "too much context" } },
+      {
+        eventType: "context_compression",
+        metadata: { reason: "too much context" },
+      },
     ]);
 
     let capturedPrompt = "";
@@ -190,22 +196,26 @@ describe("recommendations", () => {
     expect(report.evidence.config.files[0]?.availableTopLevelKeys).toContain("permissions");
     expect(capturedPrompt).toContain('"signalRates"');
     expect(capturedPrompt).toContain('"schemaDescriptionByKey"');
-    expect(capturedPrompt).toContain('pnpm test');
+    expect(capturedPrompt).toContain("pnpm test");
   });
 
   test("fails when the agent does not return valid json", async () => {
     seedSession("session-1", []);
 
     await expect(
-      generateImprovementReport(resolvePaths(process.env), { tool: "codex" }, {
-        env: process.env,
-        repoRoot,
-        runAgent: () => ({
-          exitCode: 0,
-          stdout: "not json",
-          stderr: "",
-        }),
-      }),
+      generateImprovementReport(
+        resolvePaths(process.env),
+        { tool: "codex" },
+        {
+          env: process.env,
+          repoRoot,
+          runAgent: () => ({
+            exitCode: 0,
+            stdout: "not json",
+            stderr: "",
+          }),
+        },
+      ),
     ).rejects.toThrow("JSON object");
   });
 

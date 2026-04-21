@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { eventSnippet, AgentSmithEvent, projectFromEvent } from "./events";
-import { resolvePaths, AgentSmithPaths } from "./paths";
+import { eventSnippet, type AgentSmithEvent, projectFromEvent } from "./events";
+import { resolvePaths } from "./paths";
 import { currentEventFileSize, matchesEvent, readAllEvents, readEventsSince } from "./store";
 
 export interface WatchOptions {
@@ -39,7 +39,9 @@ export async function* watchEvents(
       }
     }
 
-    await sleep(options.pollMs ?? 1000, undefined, { signal: options.signal }).catch((error) => {
+    await sleep(options.pollMs ?? 1000, undefined, {
+      signal: options.signal,
+    }).catch((error) => {
       if (options.signal?.aborted || error?.name === "AbortError") {
         return;
       }

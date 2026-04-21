@@ -108,7 +108,9 @@ describe("cli", () => {
     mkdirSync(home, { recursive: true });
     mkdirSync(binDir, { recursive: true });
     mkdirSync(join(home, ".codex"), { recursive: true });
-    mkdirSync(join(home, ".config", "agent-smith", "schemas"), { recursive: true });
+    mkdirSync(join(home, ".config", "agent-smith", "schemas"), {
+      recursive: true,
+    });
 
     writeFileSync(join(home, ".codex", "config.toml"), 'model = "gpt-5"\n');
     writeFileSync(
@@ -237,37 +239,28 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     writeFileSync(join(homeDir, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
 
     const { io, getStdout } = createIo();
-    const exitCode = await runCli(
-      ["refresh-schemas"],
-      io,
-      {
-        schema: {
-          env: { ...process.env, HOME: homeDir, PATH: "" },
-          cwd: repoDir,
-          now: () => new Date("2026-04-20T12:00:00.000Z"),
-          fetchImpl: async () =>
-            new Response(
-              JSON.stringify({
-                type: "object",
-                properties: { model: { type: "string" } },
-              }),
-              { status: 200 },
-            ),
-        },
+    const exitCode = await runCli(["refresh-schemas"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        now: () => new Date("2026-04-20T12:00:00.000Z"),
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              type: "object",
+              properties: { model: { type: "string" } },
+            }),
+            { status: 200 },
+          ),
       },
-    );
+    });
 
     expect(exitCode).toBe(0);
     expect(getStdout()).toContain("Refreshed Codex schema");
-    expect(
-      existsSync(join(homeDir, ".config", "agent-smith", "schemas", "codex-config.schema.json")),
-    ).toBe(true);
+    expect(existsSync(join(homeDir, ".config", "agent-smith", "schemas", "codex-config.schema.json"))).toBe(true);
     expect(
       JSON.parse(
-        readFileSync(
-          join(homeDir, ".config", "agent-smith", "schemas", "codex-config.schema.metadata.json"),
-          "utf8",
-        ),
+        readFileSync(join(homeDir, ".config", "agent-smith", "schemas", "codex-config.schema.metadata.json"), "utf8"),
       ),
     ).toMatchObject({
       tool: "codex",
@@ -277,7 +270,9 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
 
   test("validate-schemas reports fallback validation details from the native CLI", async () => {
     mkdirSync(join(homeDir, ".codex"), { recursive: true });
-    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), { recursive: true });
+    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
+      recursive: true,
+    });
     writeFileSync(
       join(homeDir, ".codex", "config.toml"),
       ['model = "gpt-5.4"', 'approval_policy = "on-request"', ""].join("\n"),
@@ -295,17 +290,13 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     );
 
     const { io, getStdout } = createIo();
-    const exitCode = await runCli(
-      ["validate-schemas", "--tool", "codex"],
-      io,
-      {
-        schema: {
-          env: { ...process.env, HOME: homeDir, PATH: "" },
-          cwd: repoDir,
-          runAjv: () => ({ exitCode: -1, stdout: "", stderr: "" }),
-        },
+    const exitCode = await runCli(["validate-schemas", "--tool", "codex"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        runAjv: () => ({ exitCode: -1, stdout: "", stderr: "" }),
       },
-    );
+    });
 
     expect(exitCode).toBe(0);
     expect(getStdout()).toContain("Tool: Codex");
@@ -317,7 +308,9 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
 
   test("update-settings alias returns a deterministic upgrade plan from native schema logic", async () => {
     mkdirSync(join(homeDir, ".codex"), { recursive: true });
-    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), { recursive: true });
+    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
+      recursive: true,
+    });
     writeFileSync(
       join(homeDir, ".codex", "config.toml"),
       ['model = "gpt-5.4"', 'approval_policy = "on-request"', ""].join("\n"),
@@ -334,7 +327,10 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
             description: "Old approval setting.",
           },
           sandbox_mode: { type: "string", description: "Sandbox policy." },
-          profiles: { type: "object", description: "Named configuration profiles." },
+          profiles: {
+            type: "object",
+            description: "Named configuration profiles.",
+          },
         },
       }),
     );
@@ -349,17 +345,13 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     );
 
     const { io, getStdout } = createIo();
-    const exitCode = await runCli(
-      ["update-settings", "--tool", "codex", "--no-refresh"],
-      io,
-      {
-        schema: {
-          env: { ...process.env, HOME: homeDir, PATH: "" },
-          cwd: repoDir,
-          runAjv: () => ({ exitCode: -1, stdout: "", stderr: "" }),
-        },
+    const exitCode = await runCli(["update-settings", "--tool", "codex", "--no-refresh"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        runAjv: () => ({ exitCode: -1, stdout: "", stderr: "" }),
       },
-    );
+    });
 
     expect(exitCode).toBe(0);
     expect(getStdout()).toContain("Settings Upgrade Plan");

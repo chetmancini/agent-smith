@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 
-import { AgentSmithEvent, eventSnippet, projectFromEvent } from "./events";
-import { resolvePaths, AgentSmithPaths, ensureMetricsLayout, hardenPrivateFile } from "./paths";
+import { type AgentSmithEvent, eventSnippet, projectFromEvent } from "./events";
+import { resolvePaths, type AgentSmithPaths, ensureMetricsLayout, hardenPrivateFile } from "./paths";
 import { readEventsSince } from "./store";
 
 export interface RollupResult {
@@ -81,9 +81,9 @@ function openDatabase(paths: AgentSmithPaths): Database {
 }
 
 function getCurrentOffset(db: Database, eventsFile: string): number {
-  const row = db
-    .query("SELECT byte_offset FROM ingestion_state WHERE file_path = ?")
-    .get(eventsFile) as { byte_offset: number } | null;
+  const row = db.query("SELECT byte_offset FROM ingestion_state WHERE file_path = ?").get(eventsFile) as {
+    byte_offset: number;
+  } | null;
 
   return row?.byte_offset ?? 0;
 }
@@ -108,7 +108,11 @@ export function rollupEvents(paths = resolvePaths()): RollupResult {
     const chunk = readEventsSince(paths.eventsFile, offset);
 
     if (chunk.events.length === 0 && chunk.skippedLines === 0) {
-      return { ingestedEvents: 0, skippedLines: 0, nextOffset: chunk.nextOffset };
+      return {
+        ingestedEvents: 0,
+        skippedLines: 0,
+        nextOffset: chunk.nextOffset,
+      };
     }
 
     const insertEvent = db.query(`
@@ -194,12 +198,8 @@ export function rollupEvents(paths = resolvePaths()): RollupResult {
           event.event_type === "session_start" ? event.ts : null,
           isSessionStop ? event.ts : null,
           isSessionStop ? event.ts : null,
-          isSessionStop && typeof event.metadata.duration_seconds === "number"
-            ? event.metadata.duration_seconds
-            : null,
-          isSessionStop && typeof event.metadata.stop_reason === "string"
-            ? event.metadata.stop_reason
-            : null,
+          isSessionStop && typeof event.metadata.duration_seconds === "number" ? event.metadata.duration_seconds : null,
+          isSessionStop && typeof event.metadata.stop_reason === "string" ? event.metadata.stop_reason : null,
           failureEvents.has(event.event_type) ? 1 : 0,
           event.event_type === "clarifying_question" ? 1 : 0,
           event.event_type === "test_failure_loop" ? 1 : 0,

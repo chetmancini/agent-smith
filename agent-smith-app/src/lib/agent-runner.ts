@@ -1,4 +1,4 @@
-import { SupportedAgentTool, findBinary } from "./agent-hosts";
+import { type SupportedAgentTool, findBinary } from "./agent-hosts";
 
 export interface AgentRunInput {
   tool: SupportedAgentTool;

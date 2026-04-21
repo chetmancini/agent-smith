@@ -3,12 +3,13 @@
 import { readFileSync } from "node:fs";
 import process from "node:process";
 
+import { type SupportedAgentTool, validateToolName } from "./lib/agent-hosts";
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
-import { LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
+import { type LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
 import { resolvePaths } from "./lib/paths";
 import { generateImprovementReport, renderImprovementReport } from "./lib/recommendations";
-import { ImproveRuntime } from "./lib/recommendations";
+import type { ImproveRuntime } from "./lib/recommendations";
 import { generateReport, renderTextReport } from "./lib/report";
 import { rollupEvents } from "./lib/rollup";
 import {
@@ -17,7 +18,7 @@ import {
   renderRefreshSchemaResult,
   renderUpgradeSettingsReport,
   renderValidationReport,
-  SchemaToolRuntime,
+  type SchemaToolRuntime,
   validateAgentConfig,
 } from "./lib/schema-tools";
 import { appendEvent } from "./lib/store";
@@ -79,6 +80,14 @@ function parseInteger(value: string, flag: string): number {
   return parsed;
 }
 
+function shiftToolValue(args: string[], flag: string): SupportedAgentTool {
+  const value = shiftValue(args, flag);
+  if (!validateToolName(value)) {
+    throw new CliUsageError(`Unsupported tool for ${flag}: ${value}`);
+  }
+  return value;
+}
+
 async function parseMetadata(args: string[], io: CliIO): Promise<Record<string, unknown>> {
   let raw = "{}";
 
@@ -122,17 +131,20 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
     throw new CliUsageError("emit requires an event type");
   }
 
-  let tool: string | undefined;
+  let tool: SupportedAgentTool | undefined;
   let sessionId: string | undefined;
   let sessionHint: string | undefined;
   let timestamp: string | undefined;
-  let metadataSource: { kind: "inline" | "file" | "stdin"; value?: string } | null = null;
+  let metadataSource: {
+    kind: "inline" | "file" | "stdin";
+    value?: string;
+  } | null = null;
 
   while (args.length > 0) {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--session-id":
         sessionId = shiftValue(args, "--session-id");
@@ -144,10 +156,16 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
         timestamp = shiftValue(args, "--ts");
         break;
       case "--metadata":
-        metadataSource = { kind: "inline", value: shiftValue(args, "--metadata") };
+        metadataSource = {
+          kind: "inline",
+          value: shiftValue(args, "--metadata"),
+        };
         break;
       case "--metadata-file":
-        metadataSource = { kind: "file", value: shiftValue(args, "--metadata-file") };
+        metadataSource = {
+          kind: "file",
+          value: shiftValue(args, "--metadata-file"),
+        };
         break;
       case "--metadata-stdin":
         metadataSource = { kind: "stdin" };
@@ -159,16 +177,31 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
 
   const metadataArgs: string[] = [];
   if (metadataSource?.kind === "inline") {
-    metadataArgs.push("--metadata", metadataSource.value!);
+    const value = metadataSource.value;
+    if (!value) {
+      throw new CliUsageError("Missing value for --metadata");
+    }
+    metadataArgs.push("--metadata", value);
   } else if (metadataSource?.kind === "file") {
-    metadataArgs.push("--metadata-file", metadataSource.value!);
+    const value = metadataSource.value;
+    if (!value) {
+      throw new CliUsageError("Missing value for --metadata-file");
+    }
+    metadataArgs.push("--metadata-file", value);
   } else if (metadataSource?.kind === "stdin") {
     metadataArgs.push("--metadata-stdin");
   }
 
   const metadata = await parseMetadata(metadataArgs, io);
   const paths = resolvePaths();
-  const event = createEvent({ eventType, tool, sessionId, sessionHint, timestamp, metadata });
+  const event = createEvent({
+    eventType,
+    tool,
+    sessionId,
+    sessionHint,
+    timestamp,
+    metadata,
+  });
   appendEvent(paths, event);
   writeJson(io, { ok: true, paths, event });
   return 0;
@@ -197,7 +230,7 @@ function handleRollup(args: string[], io: CliIO): number {
 }
 
 function handleReport(args: string[], io: CliIO): number {
-  let tool: string | undefined;
+  let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let limit = 5;
   let format: "text" | "json" = "text";
@@ -206,7 +239,7 @@ function handleReport(args: string[], io: CliIO): number {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -236,12 +269,8 @@ function handleReport(args: string[], io: CliIO): number {
   return 0;
 }
 
-async function handleImprove(
-  args: string[],
-  io: CliIO,
-  runtime: ImproveRuntime = {},
-): Promise<number> {
-  let tool: string | undefined;
+async function handleImprove(args: string[], io: CliIO, runtime: ImproveRuntime = {}): Promise<number> {
+  let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let limit = 5;
   let refreshSchema = false;
@@ -251,7 +280,7 @@ async function handleImprove(
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -275,12 +304,16 @@ async function handleImprove(
     }
   }
 
-  const report = await generateImprovementReport(resolvePaths(), {
-    tool,
-    project,
-    limit,
-    refreshSchema,
-  }, runtime);
+  const report = await generateImprovementReport(
+    resolvePaths(),
+    {
+      tool,
+      project,
+      limit,
+      refreshSchema,
+    },
+    runtime,
+  );
   if (format === "json") {
     writeJson(io, report);
   } else {
@@ -290,7 +323,7 @@ async function handleImprove(
 }
 
 async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}): Promise<number> {
-  let tool: string | undefined;
+  let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let limit = 5;
   let iterations = 3;
@@ -302,7 +335,7 @@ async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}):
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -357,7 +390,7 @@ async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}):
 }
 
 async function handleWatch(args: string[], io: CliIO): Promise<number> {
-  let tool: string | undefined;
+  let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let tail = 0;
   let pollMs = 1000;
@@ -367,7 +400,7 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -407,19 +440,15 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
   return 0;
 }
 
-async function handleRefreshSchemas(
-  args: string[],
-  io: CliIO,
-  runtime: SchemaToolRuntime = {},
-): Promise<number> {
-  let tool: string | undefined;
+async function handleRefreshSchemas(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+  let tool: SupportedAgentTool | undefined;
   let json = false;
 
   while (args.length > 0) {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--json":
         json = true;
@@ -438,12 +467,8 @@ async function handleRefreshSchemas(
   return 0;
 }
 
-async function handleValidateAgentConfig(
-  args: string[],
-  io: CliIO,
-  runtime: SchemaToolRuntime = {},
-): Promise<number> {
-  let tool: string | undefined;
+async function handleValidateAgentConfig(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+  let tool: SupportedAgentTool | undefined;
   let refresh = false;
   let json = false;
 
@@ -451,7 +476,7 @@ async function handleValidateAgentConfig(
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--refresh":
         refresh = true;
@@ -473,12 +498,8 @@ async function handleValidateAgentConfig(
   return report.status === "invalid" ? 1 : 0;
 }
 
-async function handleUpgradeSettings(
-  args: string[],
-  io: CliIO,
-  runtime: SchemaToolRuntime = {},
-): Promise<number> {
-  let tool: string | undefined;
+async function handleUpgradeSettings(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+  let tool: SupportedAgentTool | undefined;
   let refresh = true;
   let format: "text" | "json" = "text";
 
@@ -486,7 +507,7 @@ async function handleUpgradeSettings(
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftValue(args, "--tool");
+        tool = shiftToolValue(args, "--tool");
         break;
       case "--refresh":
         refresh = true;
@@ -507,7 +528,10 @@ async function handleUpgradeSettings(
     }
   }
 
-  const report = await generateUpgradeSettingsReport(tool, { ...runtime, refresh });
+  const report = await generateUpgradeSettingsReport(tool, {
+    ...runtime,
+    refresh,
+  });
   if (format === "json") {
     writeJson(io, report);
   } else {
