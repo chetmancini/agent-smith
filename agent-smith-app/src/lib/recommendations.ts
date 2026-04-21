@@ -116,6 +116,7 @@ export interface ImprovementPromptContext {
   completedRecommendationIds?: string[];
   blockedRecommendationIds?: string[];
   priorIterationSummaries?: string[];
+  historicalRecommendationOutcomes?: string[];
 }
 
 interface AggregateRow {
@@ -410,9 +411,17 @@ function buildPrompt(evidence: ImprovementEvidence, context: ImprovementPromptCo
     }
     lines.push("");
   }
+  if ((context.historicalRecommendationOutcomes ?? []).length > 0) {
+    lines.push("Historical recommendation outcomes from prior loop runs:");
+    for (const summary of context.historicalRecommendationOutcomes ?? []) {
+      lines.push(`- ${summary}`);
+    }
+    lines.push("");
+  }
 
   lines.push(
     "If a recommendation id is already completed or blocked, do not repeat it. Prefer the next-best actionable recommendation instead.",
+    "If prior loop history shows a resolved recommendation resurfacing, treat that as a regression and explain why it returned.",
     "Evidence JSON:",
     JSON.stringify(evidence, null, 2),
   );

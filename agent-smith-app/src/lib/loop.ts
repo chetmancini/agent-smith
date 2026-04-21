@@ -1,7 +1,16 @@
 import { basename, relative, resolve } from "node:path";
 
 import { type AgentRunner, defaultRunAgent } from "./agent-runner";
-import { repoRootFromHere, type SupportedAgentTool } from "./agent-hosts";
+import { detectTool, repoRootFromHere, type SupportedAgentTool } from "./agent-hosts";
+import {
+  createLoopRunId,
+  loadRecommendationHistory,
+  recommendationFingerprint,
+  recordRecommendationOutcome,
+  syncSeenRecommendations,
+  type RecommendationHistoryMemory,
+  type RecommendationHistoryState,
+} from "./recommendation-history";
 import {
   type ImproveRuntime,
   type ImprovementAction,
@@ -219,21 +228,26 @@ function allowedActions(recommendation: ImprovementRecommendation, includeUnsafe
 
 function chooseRecommendation(
   report: ImprovementReport,
-  attemptedIds: Map<string, number>,
-  completedIds: Set<string>,
-  blockedIds: Set<string>,
+  repoRoot: string,
+  history: RecommendationHistoryMemory,
+  completedFingerprints: Set<string>,
+  blockedFingerprints: Set<string>,
   includeUnsafe: boolean,
 ): ImprovementRecommendation | null {
   for (const recommendation of report.recommendations) {
-    if (completedIds.has(recommendation.id)) {
+    const fingerprint = recommendationFingerprint(repoRoot, recommendation);
+    const historicalState = history.byFingerprint.get(fingerprint)?.lastState;
+    const historicalAttempts = history.attemptedCounts.get(fingerprint) ?? 0;
+
+    if (completedFingerprints.has(fingerprint) || history.completedFingerprints.has(fingerprint)) {
       continue;
     }
 
-    if (blockedIds.has(recommendation.id)) {
+    if (blockedFingerprints.has(fingerprint) || history.blockedFingerprints.has(fingerprint)) {
       continue;
     }
 
-    if ((attemptedIds.get(recommendation.id) ?? 0) >= 2) {
+    if (historicalState !== "regressed" && historicalAttempts >= 2) {
       continue;
     }
 
@@ -408,16 +422,23 @@ export async function runImprovementLoop(
   const runAgent = runtime.runAgent ?? defaultRunAgent;
   const maxIterations = filters.iterations ?? 3;
   const includeUnsafe = filters.includeUnsafe ?? false;
+  const runId = createLoopRunId();
+  const initialTool = detectTool(filters.tool, env, repoRoot);
 
   const iterations: ImprovementLoopIteration[] = [];
   const completedIds = new Set<string>();
   const blockedIds = new Set<string>();
-  const attemptedIds = new Map<string, number>();
+  const completedFingerprints = new Set<string>();
+  const blockedFingerprints = new Set<string>();
   const priorIterationSummaries: string[] = [];
-  let lastTool: SupportedAgentTool | null = null;
+  let lastTool: SupportedAgentTool = initialTool;
   let stopReason: ImprovementLoopReport["stopReason"] = "max_iterations";
 
   for (let index = 1; index <= maxIterations; index += 1) {
+    const promptHistory = loadRecommendationHistory(paths, {
+      repoRoot,
+      tool: lastTool,
+    });
     const report = await generateImprovementReport(
       paths,
       filters,
@@ -427,18 +448,37 @@ export async function runImprovementLoop(
           completedRecommendationIds: [...completedIds],
           blockedRecommendationIds: [...blockedIds],
           priorIterationSummaries,
+          historicalRecommendationOutcomes: promptHistory.historicalOutcomes,
         },
       },
     );
     lastTool = report.tool;
+    syncSeenRecommendations(paths, {
+      repoRoot,
+      tool: report.tool,
+      runId,
+      recommendations: report.recommendations,
+    });
+    const selectionHistory = loadRecommendationHistory(paths, {
+      repoRoot,
+      tool: report.tool,
+    });
 
-    const recommendation = chooseRecommendation(report, attemptedIds, completedIds, blockedIds, includeUnsafe);
+    const recommendation = chooseRecommendation(
+      report,
+      repoRoot,
+      selectionHistory,
+      completedFingerprints,
+      blockedFingerprints,
+      includeUnsafe,
+    );
     if (!recommendation) {
       stopReason = "no_auto_applicable_recommendations";
       break;
     }
 
-    attemptedIds.set(recommendation.id, (attemptedIds.get(recommendation.id) ?? 0) + 1);
+    const fingerprint = recommendationFingerprint(repoRoot, recommendation);
+    const totalAttempts = (selectionHistory.attemptedCounts.get(fingerprint) ?? 0) + 1;
 
     const apply = applyRecommendation({
       report,
@@ -450,7 +490,22 @@ export async function runImprovementLoop(
       runAgent,
     });
     if (apply.changedFiles.length === 0) {
-      stopReason = "no_changes_applied";
+      const noChangeState: RecommendationHistoryState = totalAttempts >= 2 ? "stalled" : "no_changes";
+      recordRecommendationOutcome({
+        paths,
+        repoRoot,
+        tool: report.tool,
+        runId,
+        iterationIndex: index,
+        recommendation,
+        state: noChangeState,
+        applySummary: apply.summary,
+        changedFiles: apply.changedFiles,
+      });
+      if (noChangeState === "stalled") {
+        blockedFingerprints.add(fingerprint);
+      }
+      stopReason = noChangeState === "stalled" ? "stalled" : "no_changes_applied";
       break;
     }
 
@@ -476,19 +531,36 @@ export async function runImprovementLoop(
       evaluation,
     });
 
-    priorIterationSummaries.push(
-      `${recommendation.id}: ${apply.summary}; evaluation=${evaluation.outcome}; files=${apply.changedFiles.join(", ")}`,
-    );
-
-    if (evaluation.outcome === "resolved") {
-      completedIds.add(recommendation.id);
-    } else if (evaluation.outcome === "blocked") {
-      blockedIds.add(recommendation.id);
-      stopReason = "blocked";
-      break;
+    let persistedState: RecommendationHistoryState = evaluation.outcome;
+    if (evaluation.outcome !== "resolved" && evaluation.outcome !== "blocked" && totalAttempts >= 2) {
+      persistedState = "stalled";
     }
 
-    if ((attemptedIds.get(recommendation.id) ?? 0) >= 2 && evaluation.outcome !== "resolved") {
+    const iterationSummary = `${recommendation.id}: ${apply.summary}; evaluation=${evaluation.outcome}; files=${apply.changedFiles.join(", ")}`;
+    priorIterationSummaries.push(iterationSummary);
+    recordRecommendationOutcome({
+      paths,
+      repoRoot,
+      tool: report.tool,
+      runId,
+      iterationIndex: index,
+      recommendation,
+      state: persistedState,
+      applySummary: apply.summary,
+      evaluationSummary: evaluation.summary,
+      changedFiles: apply.changedFiles,
+    });
+
+    if (persistedState === "resolved") {
+      completedIds.add(recommendation.id);
+      completedFingerprints.add(fingerprint);
+    } else if (persistedState === "blocked") {
+      blockedIds.add(recommendation.id);
+      blockedFingerprints.add(fingerprint);
+      stopReason = "blocked";
+      break;
+    } else if (persistedState === "stalled") {
+      blockedFingerprints.add(fingerprint);
       stopReason = "stalled";
       break;
     }

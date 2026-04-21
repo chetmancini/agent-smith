@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,6 +70,33 @@ function runGit(repoRoot: string, args: string[]): void {
   });
   if (proc.exitCode !== 0) {
     throw new Error(proc.stderr.toString() || proc.stdout.toString());
+  }
+}
+
+function readHistoryRow() {
+  const paths = resolvePaths(process.env);
+  const db = new Database(paths.dbFile, { readonly: true });
+  try {
+    return db
+      .query(
+        `
+          SELECT recommendation_id, total_attempts, resolved_count, blocked_count, stalled_count, regression_count, last_state, last_summary
+          FROM recommendation_history
+          LIMIT 1
+        `,
+      )
+      .get() as {
+      recommendation_id: string;
+      total_attempts: number;
+      resolved_count: number;
+      blocked_count: number;
+      stalled_count: number;
+      regression_count: number;
+      last_state: string;
+      last_summary: string | null;
+    } | null;
+  } finally {
+    db.close();
   }
 }
 
@@ -316,5 +344,295 @@ describe("loop", () => {
     ]);
     expect(readFileSync(join(repoRoot, "AGENTS.md"), "utf8")).toContain("target command");
     expect(readFileSync(join(repoRoot, "README.md"), "utf8")).toContain("agent-smith loop");
+  });
+
+  test("loop persists resolved outcomes and tracks regressions across runs", async () => {
+    const { io: firstIo } = createIo();
+
+    const firstExit = await runCli(["loop", "--tool", "codex", "--iterations", "1", "--format", "json"], firstIo, {
+      loop: {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "Tighten the operator contract first.",
+                recommendations: [
+                  {
+                    id: "tighten-request-contract",
+                    title: "Tighten the request contract",
+                    priority: "high",
+                    category: "prompt",
+                    rationale: "Permission denials suggest the initial prompt is weak.",
+                    evidence: ["permission denials are present"],
+                    actions: [
+                      {
+                        type: "prompt_change",
+                        description: "Strengthen AGENTS guidance.",
+                        targetFiles: [join(repoRoot, "AGENTS.md")],
+                        safeToAutoApply: true,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              stderr: "",
+            };
+          }
+
+          if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+            writeFileSync(join(repoRoot, "AGENTS.md"), "# Agent instructions\n\nState scope before execution.\n");
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "updated AGENTS guidance",
+                changedFiles: ["AGENTS.md"],
+                validation: [],
+                followUps: [],
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The file now matches the recommendation.",
+              outcome: "resolved",
+              rationale: "The requested text was added.",
+              continueLoop: false,
+              nextFocus: "",
+            }),
+            stderr: "",
+          };
+        },
+      },
+    });
+
+    expect(firstExit).toBe(0);
+
+    let secondAnalysisCalls = 0;
+    const { io: secondIo, getStdout: getSecondStdout } = createIo();
+    const secondExit = await runCli(["loop", "--tool", "codex", "--iterations", "1", "--format", "json"], secondIo, {
+      loop: {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+            secondAnalysisCalls += 1;
+            expect(prompt).toContain("Historical recommendation outcomes from prior loop runs");
+            expect(prompt).toContain("[resolved] tighten-request-contract: The file now matches the recommendation.");
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "The earlier fix regressed and needs to be restored.",
+                recommendations: [
+                  {
+                    id: "tighten-request-contract",
+                    title: "Tighten the request contract",
+                    priority: "high",
+                    category: "prompt",
+                    rationale: "The previously resolved prompt issue returned.",
+                    evidence: ["the guidance regressed"],
+                    actions: [
+                      {
+                        type: "prompt_change",
+                        description: "Restore the stronger AGENTS guidance.",
+                        targetFiles: [join(repoRoot, "AGENTS.md")],
+                        safeToAutoApply: true,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              stderr: "",
+            };
+          }
+
+          if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+            writeFileSync(join(repoRoot, "AGENTS.md"), "# Agent instructions\n\nState scope before execution.\n");
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "restored AGENTS guidance",
+                changedFiles: ["AGENTS.md"],
+                validation: [],
+                followUps: [],
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The regression was re-resolved.",
+              outcome: "resolved",
+              rationale: "The guidance is back in place.",
+              continueLoop: false,
+              nextFocus: "",
+            }),
+            stderr: "",
+          };
+        },
+      },
+    });
+
+    expect(secondExit).toBe(0);
+    expect(secondAnalysisCalls).toBe(1);
+
+    const secondPayload = JSON.parse(getSecondStdout()) as {
+      stopReason: string;
+      iterations: Array<{ recommendationId: string }>;
+    };
+    expect(secondPayload.stopReason).toBe("completed");
+    expect(secondPayload.iterations.map((iteration) => iteration.recommendationId)).toEqual([
+      "tighten-request-contract",
+    ]);
+
+    const history = readHistoryRow();
+    expect(history).not.toBeNull();
+    expect(history?.recommendation_id).toBe("tighten-request-contract");
+    expect(history?.total_attempts).toBe(2);
+    expect(history?.resolved_count).toBe(2);
+    expect(history?.regression_count).toBe(1);
+    expect(history?.last_state).toBe("resolved");
+    expect(history?.last_summary).toBe("The regression was re-resolved.");
+  });
+
+  test("loop skips recommendations that already stalled on a prior run", async () => {
+    const { io: firstIo, getStdout: getFirstStdout } = createIo();
+    let firstAnalysisCalls = 0;
+
+    const firstExit = await runCli(["loop", "--tool", "codex", "--iterations", "3", "--format", "json"], firstIo, {
+      loop: {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+            firstAnalysisCalls += 1;
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "README workflow guidance needs cleanup.",
+                recommendations: [
+                  {
+                    id: "refresh-readme-workflow",
+                    title: "Refresh README workflow copy",
+                    priority: "medium",
+                    category: "workflow",
+                    rationale: "The workflow description is stale.",
+                    evidence: ["README guidance is incomplete"],
+                    actions: [
+                      {
+                        type: "workflow_change",
+                        description: "Refresh the README workflow section.",
+                        targetFiles: [join(repoRoot, "README.md")],
+                        safeToAutoApply: true,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              stderr: "",
+            };
+          }
+
+          if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+            writeFileSync(join(repoRoot, "README.md"), `# Agent Smith\n\nAttempt ${firstAnalysisCalls}\n`);
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: `updated README attempt ${firstAnalysisCalls}`,
+                changedFiles: ["README.md"],
+                validation: [],
+                followUps: [],
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The edits did not address the workflow gap.",
+              outcome: "partial",
+              rationale: "The README still lacks the required workflow detail.",
+              continueLoop: true,
+              nextFocus: "Try one more focused README update.",
+            }),
+            stderr: "",
+          };
+        },
+      },
+    });
+
+    expect(firstExit).toBe(0);
+    const firstPayload = JSON.parse(getFirstStdout()) as { stopReason: string };
+    expect(firstPayload.stopReason).toBe("stalled");
+
+    const { io: secondIo, getStdout: getSecondStdout } = createIo();
+    let secondAnalysisCalls = 0;
+    const secondExit = await runCli(["loop", "--tool", "codex", "--iterations", "1", "--format", "json"], secondIo, {
+      loop: {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+            secondAnalysisCalls += 1;
+            expect(prompt).toContain("[stalled] refresh-readme-workflow: The edits did not address the workflow gap.");
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "The same README recommendation still appears in the analysis.",
+                recommendations: [
+                  {
+                    id: "refresh-readme-workflow",
+                    title: "Refresh README workflow copy",
+                    priority: "medium",
+                    category: "workflow",
+                    rationale: "The workflow copy is still stale.",
+                    evidence: ["README guidance is incomplete"],
+                    actions: [
+                      {
+                        type: "workflow_change",
+                        description: "Refresh the README workflow section.",
+                        targetFiles: [join(repoRoot, "README.md")],
+                        safeToAutoApply: true,
+                      },
+                    ],
+                  },
+                ],
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 1,
+            stdout: "",
+            stderr: "should not reach apply/evaluate for stalled history",
+          };
+        },
+      },
+    });
+
+    expect(secondExit).toBe(0);
+    expect(secondAnalysisCalls).toBe(1);
+
+    const secondPayload = JSON.parse(getSecondStdout()) as {
+      stopReason: string;
+      iterations: Array<{ recommendationId: string }>;
+    };
+    expect(secondPayload.stopReason).toBe("no_auto_applicable_recommendations");
+    expect(secondPayload.iterations).toEqual([]);
+
+    const history = readHistoryRow();
+    expect(history?.recommendation_id).toBe("refresh-readme-workflow");
+    expect(history?.stalled_count).toBe(1);
+    expect(history?.last_state).toBe("stalled");
+    expect(history?.total_attempts).toBe(2);
   });
 });

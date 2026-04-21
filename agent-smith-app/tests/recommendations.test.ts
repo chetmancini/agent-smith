@@ -247,6 +247,7 @@ describe("recommendations", () => {
           completedRecommendationIds: ["tighten-request-contract"],
           blockedRecommendationIds: ["needs-human-approval"],
           priorIterationSummaries: ["tighten-request-contract: updated operator guidance"],
+          historicalRecommendationOutcomes: ["[resolved] tighten-request-contract: updated operator guidance"],
         },
       },
     );
@@ -254,6 +255,8 @@ describe("recommendations", () => {
     expect(capturedPrompt).toContain('"tighten-request-contract"');
     expect(capturedPrompt).toContain('"needs-human-approval"');
     expect(capturedPrompt).toContain("updated operator guidance");
+    expect(capturedPrompt).toContain("Historical recommendation outcomes from prior loop runs");
+    expect(capturedPrompt).toContain("[resolved] tighten-request-contract");
     expect(capturedPrompt).toContain("do not repeat it");
   });
 });
