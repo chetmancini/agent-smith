@@ -102,6 +102,13 @@ describe("cli", () => {
     expect(reportIo.getStdout()).toContain("npm test");
   });
 
+  test("watch rejects json output with tui view", async () => {
+    const { io } = createIo();
+    await expect(runCli(["watch", "--view", "tui", "--json"], io)).rejects.toThrow(
+      "--json cannot be combined with --view tui",
+    );
+  });
+
   test("improve prints structured recommendations as json", async () => {
     const home = join(metricsDir, "home");
     const binDir = join(metricsDir, "bin");

@@ -22,7 +22,8 @@ import {
   validateAgentConfig,
 } from "./lib/schema-tools";
 import { appendEvent } from "./lib/store";
-import { formatWatchedEvent, watchEvents } from "./lib/watch";
+import { runWatchTui } from "./lib/watch-tui";
+import { createSessionWatchFormatter, formatWatchedEvent, watchEvents } from "./lib/watch";
 
 export interface CliIO {
   stdout: (text: string) => void;
@@ -53,7 +54,7 @@ function usage(): string {
   agent-smith report [--tool TOOL] [--project NAME] [--limit N] [--format text|json]
   agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
   agent-smith loop [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--iterations N] [--include-unsafe] [--format text|json]
-  agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
+  agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--view tui|sessions|events] [--json]
   agent-smith refresh-schemas [--tool TOOL] [--json]
   agent-smith validate-agent-config [--tool TOOL] [--refresh] [--json]
   agent-smith validate-schemas [--tool TOOL] [--refresh] [--json]
@@ -395,6 +396,7 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
   let tail = 0;
   let pollMs = 1000;
   let json = false;
+  let view: "tui" | "sessions" | "events" | null = null;
 
   while (args.length > 0) {
     const flag = args.shift();
@@ -411,6 +413,14 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
       case "--poll-ms":
         pollMs = parseInteger(shiftValue(args, "--poll-ms"), "--poll-ms");
         break;
+      case "--view": {
+        const value = shiftValue(args, "--view");
+        if (value !== "tui" && value !== "sessions" && value !== "events") {
+          throw new CliUsageError(`Unsupported watch view: ${value}`);
+        }
+        view = value;
+        break;
+      }
       case "--json":
         json = true;
         break;
@@ -419,9 +429,19 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     }
   }
 
+  const resolvedView = view ?? (json ? "events" : process.stdout.isTTY && process.stdin.isTTY ? "tui" : "sessions");
+  if (json && resolvedView === "tui") {
+    throw new CliUsageError("--json cannot be combined with --view tui");
+  }
+
+  if (resolvedView === "tui") {
+    return await runWatchTui(resolvePaths(), { tool, project, tail, pollMs });
+  }
+
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort());
   process.once("SIGTERM", () => controller.abort());
+  const sessionFormatter = createSessionWatchFormatter();
 
   for await (const event of watchEvents(resolvePaths(), {
     tool,
@@ -433,7 +453,7 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     if (json) {
       io.stdout(`${JSON.stringify(event)}\n`);
     } else {
-      io.stdout(`${formatWatchedEvent(event)}\n`);
+      io.stdout(`${resolvedView === "events" ? formatWatchedEvent(event) : sessionFormatter(event)}\n`);
     }
   }
 
