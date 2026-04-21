@@ -80,6 +80,13 @@ if [ "$is_vague" -eq 1 ]; then
 			}
 		}'
 		;;
+	gemini)
+		jq -nc --arg note "$note" '{
+			hookSpecificOutput: {
+				additionalContext: $note
+			}
+		}'
+		;;
 	opencode)
 		# OpenCode expects plain text on stdout, similar to Claude Code
 		printf '\n%s\n' "$note"

@@ -345,6 +345,18 @@ EOF
     [[ "$output" == *"brief and may be ambiguous"* ]]
 }
 
+@test "vague-prompt emits Gemini additionalContext JSON and logs a gemini event" {
+    run bash -c "printf '%s' '{\"prompt\":\"fix it\"}' | AGENT_SMITH_TOOL=gemini METRICS_DIR='$METRICS_DIR' bash '$HOOKS_DIR/vague-prompt.sh'"
+    assert_success
+    local hook_output="$output"
+
+    run jq -r '.hookSpecificOutput.additionalContext' <<<"$hook_output"
+    [[ "$output" == *"brief and may be ambiguous"* ]]
+
+    run jq -r '.tool' "$METRICS_FILE"
+    assert_output "gemini"
+}
+
 @test "tool-failure detects Codex Bash failures from post-tool-use payloads" {
     printf '{"tool_name":"Bash","turn_id":"turn-codex-1","tool_use_id":"tool-use-1","tool_input":{"command":"npm test"},"tool_response":{"exit_code":1,"stderr":"boom","stdout":"failing test output"}}' | \
         env AGENT_SMITH_TOOL=codex \
@@ -395,6 +407,26 @@ EOF
 
     run jq -r 'select(.event_type == "tool_failure") | .metadata.stdout_snippet' "$METRICS_FILE"
     assert_output "string output"
+}
+
+@test "tool-failure normalizes Gemini shell payloads into Bash failures" {
+    printf '%s' '{"tool_name":"run_shell_command","turn_id":"turn-gemini-1","tool_use_id":"tool-gemini-1","tool_input":{"command":"npm test"},"tool_response":{"Exit Code":1,"Stderr":"boom","Stdout":"gemini output"}}' | \
+        env AGENT_SMITH_TOOL=gemini \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-failure.sh"
+
+    local event_types
+    event_types=$(jq -r '.event_type' "$METRICS_FILE")
+    [ "$event_types" = $'tool_failure\ncommand_failure' ]
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.tool_name' "$METRICS_FILE"
+    assert_output "Bash"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.exit_code' "$METRICS_FILE"
+    assert_output "1"
+
+    run jq -r 'select(.event_type == "tool_failure") | .metadata.stderr_snippet' "$METRICS_FILE"
+    assert_output "boom"
 }
 
 @test "compact hook reads COMPACT_TRIGGER env for trigger type" {
@@ -895,6 +927,19 @@ JSONL
     line=$(cat "$METRICS_FILE")
     [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Edit" ]
     [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/main.ts" ]
+}
+
+@test "tool-attempt normalizes Gemini write_file payloads" {
+    : > "$METRICS_FILE"
+    printf '{"tool_name":"write_file","tool_input":{"file_path":"src/gemini.ts"},"session_id":"hint","tool_use_id":"tu-gemini"}' | \
+        env AGENT_SMITH_TOOL=gemini \
+        METRICS_DIR="$METRICS_DIR" \
+        bash "$HOOKS_DIR/tool-attempt.sh"
+
+    local line
+    line=$(cat "$METRICS_FILE")
+    [ "$(echo "$line" | jq -r '.metadata.tool_name')" = "Write" ]
+    [ "$(echo "$line" | jq -r '.metadata.file_path')" = "src/gemini.ts" ]
 }
 
 @test "tool-attempt silently exits for Read tool" {

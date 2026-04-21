@@ -1,6 +1,6 @@
 #!/bin/bash
 # Config analyzer: gather metrics and optionally invoke the active agent for tuning suggestions
-# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
+# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
 
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|codex|opencode] [--llm] [--include-settings] [--auto]
+Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode] [--llm] [--include-settings] [--auto]
 
 Generate a local Agent Smith metrics report, optionally followed by active-agent recommendations.
 EOF
@@ -60,7 +60,7 @@ EOF
 done
 
 if [ -n "$TOOL_FILTER" ] && ! agent_smith_validate_tool_name "$TOOL_FILTER"; then
-	echo "Error: unsupported tool '$TOOL_FILTER' (expected claude, codex, or opencode)" >&2
+	echo "Error: unsupported tool '$TOOL_FILTER' (expected claude, gemini, codex, or opencode)" >&2
 	exit 1
 fi
 
@@ -92,6 +92,7 @@ llm_cli_bin() {
 llm_cli_label() {
 	case "$1" in
 	claude) printf '%s\n' 'Claude' ;;
+	gemini) printf '%s\n' 'Gemini CLI' ;;
 	codex) printf '%s\n' 'Codex' ;;
 	opencode) printf '%s\n' 'OpenCode' ;;
 	*) return 1 ;;
@@ -102,6 +103,9 @@ run_llm_prompt() {
 	case "$LLM_TOOL" in
 	claude)
 		"$LLM_BIN" -p --output-format text "$prompt" >"$output_file" 2>/dev/null
+		;;
+	gemini)
+		"$LLM_BIN" -p "$prompt" >"$output_file" 2>/dev/null
 		;;
 	codex)
 		"$LLM_BIN" exec -C "$PLUGIN_ROOT" "$prompt" >"$output_file" 2>/dev/null
@@ -190,6 +194,13 @@ read_redacted_settings_snapshot() {
 		;;
 	opencode)
 		if settings_path=$(agent_smith_first_existing_tool_config opencode); then
+			redact_settings_json "$settings_path"
+			return $?
+		fi
+		return 1
+		;;
+	gemini)
+		if settings_path=$(agent_smith_first_existing_tool_config gemini); then
 			redact_settings_json "$settings_path"
 			return $?
 		fi

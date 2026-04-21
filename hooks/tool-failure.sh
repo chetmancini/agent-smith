@@ -10,7 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+raw_tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+tool_name=$(normalize_hook_tool_name "$raw_tool_name")
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // .filePath // ""')
 session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
@@ -19,7 +20,7 @@ tool_use_id=$(echo "$input" | jq -r '.tool_use_id // .toolUseId // empty')
 
 restore_metrics_session_id "$session_id" || true
 
-if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ]; then
+if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "gemini" ]; then
 	exit_code=$(echo "$input" | jq -r '
 		def parsed_tool_response:
 			(.tool_response // null) as $response
@@ -30,7 +31,7 @@ if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}
 			end;
 		parsed_tool_response as $response
 		| if ($response | type) == "object" then
-			($response.exit_code // $response.exitCode // $response.status // 0)
+			($response.exit_code // $response.exitCode // $response.status // $response["Exit Code"] // 0)
 		else
 			0
 		end
@@ -50,7 +51,7 @@ if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}
 			end;
 		parsed_tool_response as $response
 		| if ($response | type) == "object" then
-			($response.stderr // $response.error // $response.message // "")
+			($response.stderr // $response.error // $response.message // $response["Stderr"] // "")
 		else
 			""
 		end
@@ -65,7 +66,7 @@ if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}
 			end;
 		parsed_tool_response as $response
 		| if ($response | type) == "object" then
-			($response.stdout // "")
+			($response.stdout // $response["Stdout"] // "")
 		else
 			""
 		end
@@ -80,7 +81,7 @@ if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}
 			end;
 		parsed_tool_response as $response
 		| if ($response | type) == "object" then
-			($response.stderr // $response.error // $response.message // ("exit " + (($response.exit_code // $response.exitCode // $response.status // 1) | tostring)))
+			($response.stderr // $response.error // $response.message // $response["Stderr"] // ("exit " + (($response.exit_code // $response.exitCode // $response.status // $response["Exit Code"] // 1) | tostring)))
 		else
 			"exit 1"
 		end

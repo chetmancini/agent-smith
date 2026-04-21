@@ -1,6 +1,6 @@
 {
   "name": "agent-smith-opencode",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Agent Smith plugin for OpenCode - self-tuning feedback loop with session metrics and analysis",
   "type": "module",
   "main": "dist/index.js",

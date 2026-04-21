@@ -85,6 +85,7 @@ restore_metrics_session_id() {
 	for env_session_id in \
 		"${AGENT_SMITH_SESSION_ID:-}" \
 		"${CLAUDE_SESSION_ID:-}" \
+		"${GEMINI_SESSION_ID:-}" \
 		"${CODEX_SESSION_ID:-}" \
 		"${OPENCODE_SESSION_ID:-}"; do
 		if [ -n "$env_session_id" ]; then
@@ -95,6 +96,15 @@ restore_metrics_session_id() {
 	done
 
 	load_active_session_id
+}
+
+normalize_hook_tool_name() {
+	case "${1:-unknown}" in
+	run_shell_command) printf '%s' "Bash" ;;
+	write_file) printf '%s' "Write" ;;
+	replace) printf '%s' "Edit" ;;
+	*) printf '%s' "${1:-unknown}" ;;
+	esac
 }
 
 metrics_test_fail_counter_file() {
