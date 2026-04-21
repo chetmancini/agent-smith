@@ -18,7 +18,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help test app-test app-build app-compile app-pack-check lint version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
@@ -31,11 +31,17 @@ help:
 		printf '\033[1mAgent Smith Make Targets\033[0m\n\n'; \
 		printf '\033[36mCore\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make deps" "Install Bun dependencies for the TypeScript packages"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make build" "Build the standalone app and the OpenCode plugin"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-compile" "Build a standalone executable for the current host"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make format-check" "Run formatter checks for the standalone app"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make typecheck" "Run TypeScript type checks for the app and OpenCode plugin"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make pre-push" "Run the full local validation gate before pushing"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
@@ -74,11 +80,17 @@ help:
 		printf 'Agent Smith Make Targets\n\n'; \
 		printf 'Core\n'; \
 		printf '  %-30s %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
+		printf '  %-30s %s\n' "make deps" "Install Bun dependencies for the TypeScript packages"; \
 		printf '  %-30s %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
 		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  %-30s %s\n' "make build" "Build the standalone app and the OpenCode plugin"; \
 		printf '  %-30s %s\n' "make app-compile" "Build a standalone executable for the current host"; \
 		printf '  %-30s %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
+		printf '  %-30s %s\n' "make format-check" "Run formatter checks for the standalone app"; \
+		printf '  %-30s %s\n' "make typecheck" "Run TypeScript type checks for the app and OpenCode plugin"; \
+		printf '  %-30s %s\n' "make pre-push" "Run the full local validation gate before pushing"; \
+		printf '  %-30s %s\n' "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
 		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  %-30s %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
@@ -111,22 +123,54 @@ help:
 		printf '  HELP_HEADER=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
 	fi
 
-test:
+deps:
+	@$(MAKE) app-install
+	@$(MAKE) opencode-install
+
+app-install:
+	cd agent-smith-app && $(APP_BUN) install --frozen-lockfile
+
+opencode-install:
+	cd opencode-plugin && $(APP_BUN) install --frozen-lockfile
+
+shell-test:
 	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/release.bats tests/scripts/codex_hook_layout.bats
-	cd agent-smith-app && $(APP_BUN) test
-	cd opencode-plugin && bun test
+
+test:
+	@$(MAKE) shell-test
+	@$(MAKE) app-test
+	@$(MAKE) opencode-test
 
 app-test:
 	cd agent-smith-app && $(APP_BUN) test
 
+opencode-test:
+	cd opencode-plugin && $(APP_BUN) test
+
+app-format:
+	cd agent-smith-app && $(APP_BUN) run format
+
+app-lint:
+	cd agent-smith-app && $(APP_BUN) run lint
+
 app-build:
 	cd agent-smith-app && $(APP_BUN) run build
+
+opencode-build:
+	cd opencode-plugin && $(APP_BUN) run build
+
+build:
+	@$(MAKE) app-build
+	@$(MAKE) opencode-build
 
 app-compile:
 	cd agent-smith-app && $(APP_BUN) run build:compile
 
 app-pack-check:
 	cd agent-smith-app && $(APP_BUN) run pack:check
+
+format-check:
+	@$(MAKE) app-format
 
 lint:
 	find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
@@ -146,6 +190,28 @@ lint:
 	$(SHELLCHECK) -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(SHFMT) -d hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(MARKDOWNLINT) README.md commands/**/*.md skills/**/*.md
+
+typecheck:
+	@$(MAKE) app-typecheck
+	@$(MAKE) opencode-typecheck
+
+app-typecheck:
+	cd agent-smith-app && $(APP_BUN) run typecheck
+
+opencode-typecheck:
+	cd opencode-plugin && $(APP_BUN) run typecheck
+
+pre-push:
+	@$(MAKE) deps
+	@$(MAKE) lint
+	@$(MAKE) format-check
+	@$(MAKE) app-lint
+	@$(MAKE) typecheck
+	@$(MAKE) test
+	@$(MAKE) build
+
+install-git-hooks:
+	"$(SHELL)" scripts/install-git-hooks.sh
 
 version:
 	@cat VERSION

@@ -11,7 +11,7 @@ Development guide for the `agent-smith-opencode` npm plugin.
 
 ```bash
 cd opencode-plugin
-bun install
+bun install --frozen-lockfile
 ```
 
 ## Development Workflow

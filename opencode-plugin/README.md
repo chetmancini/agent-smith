@@ -67,7 +67,7 @@ Or use the `/agent-smith:analyze` slash command inside OpenCode.
 
 ```bash
 cd opencode-plugin
-bun install
+bun install --frozen-lockfile
 bun run typecheck
 bun run build
 ```

@@ -78,6 +78,7 @@ This is the supported OpenCode integration path and provides the full OpenCode-n
 
 ### Prerequisites
 
+- **Bun** `>=1.3.0` — required for the standalone app, the OpenCode plugin, and `make pre-push`
 - **jq** — `brew install jq`
 - **sqlite3** — ships with macOS
 - **python3** — for Codex TOML parsing during schema validation
@@ -310,8 +311,27 @@ bats --print-output-on-failure \
   tests/lib/metrics.bats \
   tests/hooks/security.bats \
   tests/hooks/integration.bats \
-  tests/scripts/schema_tools.bats
+  tests/scripts/schema_tools.bats \
+  tests/scripts/run_agent_skill.bats \
+  tests/scripts/release.bats \
+  tests/scripts/codex_hook_layout.bats
 ```
+
+### Local Validation Before Push
+
+```bash
+make pre-push
+```
+
+`make pre-push` installs Bun dependencies for the tracked TypeScript packages, then runs repo linting, formatter checks, type checks, the full test suite, and both package builds. This is the command agents should run before pushing or updating a PR.
+
+To block pushes automatically for this clone:
+
+```bash
+make install-git-hooks
+```
+
+That installs a shared git `pre-push` dispatcher which resolves the current worktree's tracked [`.githooks/pre-push`](.githooks/pre-push).
 
 ### Linting
 
@@ -319,6 +339,8 @@ bats --print-output-on-failure \
 brew install jq shellcheck shfmt
 npm install --global markdownlint-cli
 make lint
+make format-check
+make typecheck
 ```
 
 ### Releases
@@ -362,6 +384,10 @@ make agent-analyze TOOL=codex SESSIONS=100
 # Local schema tools
 make refresh-schemas
 make validate-agent-config
+
+# Full repo validation before push
+make pre-push
+make install-git-hooks
 ```
 
 `TOOL=claude`, `TOOL=codex`, and `TOOL=opencode` are accepted anywhere this repo exposes a tool selector.
