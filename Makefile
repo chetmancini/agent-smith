@@ -21,7 +21,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test release-test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -141,7 +141,7 @@ _help:
 		print_row "make version" "Print the current release version"; \
 		print_row "make sync-version" "Sync package metadata to the checked-in VERSION"; \
 		print_row "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
-		print_row "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
+		print_row "make release VERSION=1.0.1" "Run tests, then bump, tag, push, and create a GitHub release"; \
 		print_section "Contributor Maintenance"; \
 		print_row "make app-install" "Install Bun dependencies for the standalone app"; \
 		print_row "make opencode-install" "Install Bun dependencies for the OpenCode plugin"; \
@@ -171,6 +171,10 @@ test:
 	@$(MAKE) shell-test
 	@$(MAKE) app-test
 	@$(MAKE) opencode-test
+
+release-test:
+	@$(MAKE) deps
+	@$(MAKE) test
 
 app-test:
 	cd agent-smith-app && $(APP_BUN) test

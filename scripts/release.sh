@@ -68,6 +68,8 @@ if git rev-parse --verify --quiet "$tag" >/dev/null; then
 	exit 1
 fi
 
+make release-test
+
 if ! command -v gh >/dev/null 2>&1; then
 	echo "gh CLI is required for releases." >&2
 	exit 1
