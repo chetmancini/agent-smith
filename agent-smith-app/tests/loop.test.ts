@@ -9,6 +9,13 @@ import type { AgentRunner } from "../src/lib/agent-runner";
 import { createEvent } from "../src/lib/events";
 import type { ImprovementLoopReport } from "../src/lib/loop";
 import { resolvePaths } from "../src/lib/paths";
+import {
+  loadRecommendationHistory,
+  recommendationFingerprint,
+  recordRecommendationOutcome,
+  syncSeenRecommendations,
+} from "../src/lib/recommendation-history";
+import type { ImprovementRecommendation } from "../src/lib/recommendations";
 import { appendEvent } from "../src/lib/store";
 
 function createIo() {
@@ -122,6 +129,25 @@ async function runLoopCli(repoRoot: string, runAgent: AgentRunner, iterations = 
 
   expect(exitCode).toBe(0);
   return JSON.parse(getStdout()) as ImprovementLoopReport;
+}
+
+function makeRecommendation(repoRoot: string, id: string, targetFile: string): ImprovementRecommendation {
+  return {
+    id,
+    title: `Recommendation ${id}`,
+    priority: "medium",
+    category: "workflow",
+    rationale: `Rationale for ${id}`,
+    evidence: [`Evidence for ${id}`],
+    actions: [
+      {
+        type: "workflow_change",
+        description: `Update ${targetFile}`,
+        targetFiles: [join(repoRoot, targetFile)],
+        safeToAutoApply: true,
+      },
+    ],
+  };
 }
 
 describe("loop", () => {
@@ -614,6 +640,307 @@ describe("loop", () => {
     expect(history?.stalled_count).toBe(1);
     expect(history?.last_state).toBe("stalled");
     expect(history?.total_attempts).toBe(2);
+  });
+
+  test("loop uses full history when filtering older stalled recommendations", async () => {
+    const paths = resolvePaths(process.env);
+    const stalledRecommendation = makeRecommendation(repoRoot, "stalled-readme-gap", "README.md");
+    syncSeenRecommendations(paths, {
+      repoRoot,
+      tool: "codex",
+      runId: "seed-stalled",
+      recommendations: [stalledRecommendation],
+    });
+    recordRecommendationOutcome({
+      paths,
+      repoRoot,
+      tool: "codex",
+      runId: "seed-stalled",
+      iterationIndex: 1,
+      recommendation: stalledRecommendation,
+      state: "stalled",
+      applySummary: "Attempted the README update.",
+      evaluationSummary: "The gap is still stalled.",
+      changedFiles: ["README.md"],
+    });
+
+    await Bun.sleep(10);
+
+    const fillerRecommendations = Array.from({ length: 20 }, (_, index) =>
+      makeRecommendation(repoRoot, `filler-${index + 1}`, `filler-${index + 1}.md`),
+    );
+    syncSeenRecommendations(paths, {
+      repoRoot,
+      tool: "codex",
+      runId: "seed-fillers",
+      recommendations: fillerRecommendations,
+    });
+
+    const payload = await runLoopCli(
+      repoRoot,
+      ({ prompt }) => {
+        if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "One older stalled recommendation and one fresh recommendation are present.",
+              recommendations: [
+                stalledRecommendation,
+                makeRecommendation(repoRoot, "fresh-readme-guidance", "README.md"),
+              ],
+            }),
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+          if (prompt.includes("stalled-readme-gap")) {
+            return {
+              exitCode: 1,
+              stdout: "",
+              stderr: "stalled recommendation should have been skipped",
+            };
+          }
+
+          writeFileSync(join(repoRoot, "README.md"), "# Agent Smith\n\nFresh README guidance.\n");
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "Applied the fresh README guidance.",
+              changedFiles: ["README.md"],
+              validation: [],
+              followUps: [],
+            }),
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("You are evaluating whether a just-applied Agent Smith improvement")) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The fresh recommendation was resolved.",
+              outcome: "resolved",
+              rationale: "The new README guidance landed in the target file.",
+              continueLoop: false,
+              nextFocus: "",
+            }),
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "unexpected prompt",
+        };
+      },
+      1,
+    );
+
+    expect(payload.stopReason).toBe("completed");
+    expect(payload.iterations).toHaveLength(1);
+    expect(payload.iterations[0]?.recommendationId).toBe("fresh-readme-guidance");
+  });
+
+  test("loop skips already completed recommendation ids even when the action payload changes", async () => {
+    let analysisCalls = 0;
+
+    const payload = await runLoopCli(
+      repoRoot,
+      ({ prompt }) => {
+        if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+          analysisCalls += 1;
+
+          if (analysisCalls === 1) {
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "Tighten the request contract first, then refresh the README.",
+                recommendations: [
+                  {
+                    id: "tighten-request-contract",
+                    title: "Tighten the request contract",
+                    priority: "high",
+                    category: "prompt",
+                    rationale: "The opening guidance is too loose.",
+                    evidence: ["operators need a stronger prompt contract"],
+                    actions: [
+                      {
+                        type: "prompt_change",
+                        description: "Update AGENTS.md with the expected request shape.",
+                        targetFiles: [join(repoRoot, "AGENTS.md")],
+                        safeToAutoApply: true,
+                      },
+                    ],
+                  },
+                  makeRecommendation(repoRoot, "refresh-readme-guidance", "README.md"),
+                ],
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The prior prompt recommendation appears again with a different payload.",
+              recommendations: [
+                {
+                  id: "tighten-request-contract",
+                  title: "Tighten the request contract",
+                  priority: "high",
+                  category: "prompt",
+                  rationale: "The model restated the same recommendation with a broader action set.",
+                  evidence: ["the recommendation id is unchanged"],
+                  actions: [
+                    {
+                      type: "prompt_change",
+                      description: "Update AGENTS.md with the expected request shape.",
+                      targetFiles: [join(repoRoot, "AGENTS.md")],
+                      safeToAutoApply: true,
+                    },
+                    {
+                      type: "workflow_change",
+                      description: "Mirror the contract update in README.md.",
+                      targetFiles: [join(repoRoot, "README.md")],
+                      safeToAutoApply: true,
+                    },
+                  ],
+                },
+                makeRecommendation(repoRoot, "refresh-readme-guidance", "README.md"),
+              ],
+            }),
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+          if (prompt.includes("AGENTS.md")) {
+            writeFileSync(join(repoRoot, "AGENTS.md"), "# Agent instructions\n\nState scope before execution.\n");
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "updated AGENTS guidance",
+                changedFiles: ["AGENTS.md"],
+                validation: [],
+                followUps: [],
+              }),
+              stderr: "",
+            };
+          }
+
+          writeFileSync(join(repoRoot, "README.md"), "# Agent Smith\n\nFresh README guidance.\n");
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "updated README guidance",
+              changedFiles: ["README.md"],
+              validation: [],
+              followUps: [],
+            }),
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("You are evaluating whether a just-applied Agent Smith improvement")) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              summary: "The requested file change landed.",
+              outcome: "resolved",
+              rationale: "The target file now reflects the recommendation.",
+              continueLoop: true,
+              nextFocus: "Move to the next recommendation.",
+            }),
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "unexpected prompt",
+        };
+      },
+      2,
+    );
+
+    expect(payload.stopReason).toBe("max_iterations");
+    expect(payload.completedRecommendationIds).toEqual(["tighten-request-contract", "refresh-readme-guidance"]);
+    expect(payload.iterations.map((iteration) => iteration.recommendationId)).toEqual([
+      "tighten-request-contract",
+      "refresh-readme-guidance",
+    ]);
+  });
+
+  test("recommendation fingerprints stay stable when action order changes", () => {
+    const paths = resolvePaths(process.env);
+    const firstOrdering: ImprovementRecommendation = {
+      id: "stabilize-fingerprint-order",
+      title: "Stabilize fingerprint ordering",
+      priority: "medium",
+      category: "workflow",
+      rationale: "Equivalent recommendations should reuse history regardless of action order.",
+      evidence: ["action order from the agent can vary"],
+      actions: [
+        {
+          type: "workflow_change",
+          description: "Update the README guidance.",
+          targetFiles: [join(repoRoot, "README.md")],
+          safeToAutoApply: true,
+        },
+        {
+          type: "prompt_change",
+          description: "Update the AGENTS guidance.",
+          targetFiles: [join(repoRoot, "AGENTS.md")],
+          safeToAutoApply: false,
+        },
+      ],
+    };
+    const secondOrdering: ImprovementRecommendation = {
+      ...firstOrdering,
+      actions: [...firstOrdering.actions].reverse(),
+    };
+
+    const firstFingerprint = recommendationFingerprint(repoRoot, firstOrdering);
+    const secondFingerprint = recommendationFingerprint(repoRoot, secondOrdering);
+    expect(firstFingerprint).toBe(secondFingerprint);
+
+    syncSeenRecommendations(paths, {
+      repoRoot,
+      tool: "codex",
+      runId: "seed-first-ordering",
+      recommendations: [firstOrdering],
+    });
+    recordRecommendationOutcome({
+      paths,
+      repoRoot,
+      tool: "codex",
+      runId: "seed-first-ordering",
+      iterationIndex: 1,
+      recommendation: firstOrdering,
+      state: "stalled",
+      applySummary: "Applied the first ordering.",
+      evaluationSummary: "The first ordering stalled.",
+      changedFiles: ["README.md", "AGENTS.md"],
+    });
+    syncSeenRecommendations(paths, {
+      repoRoot,
+      tool: "codex",
+      runId: "seed-second-ordering",
+      recommendations: [secondOrdering],
+    });
+
+    const history = loadRecommendationHistory(paths, {
+      repoRoot,
+      tool: "codex",
+      limit: null,
+    });
+
+    expect(history.byFingerprint.size).toBe(1);
+    expect(history.blockedFingerprints.has(secondFingerprint)).toBe(true);
+    expect(history.byFingerprint.get(secondFingerprint)?.recommendationId).toBe("stabilize-fingerprint-order");
   });
 
   test("loop stops immediately when evaluation reports a blocked recommendation", async () => {
