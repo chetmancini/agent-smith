@@ -58,7 +58,7 @@ bun run pack:check
 - `improve`: assemble telemetry plus schema/config evidence and ask the active agent for structured recommendations
 - `loop`: run bounded analysis -> apply -> evaluate iterations using the active agent, auto-applying only actions marked safe unless you opt into unsafe actions
 - `watch`: launch a multi-pane TUI by default on a real terminal, with session/event text fallbacks for scripts
-- `demo`: run an isolated full-loop sandbox that generates signals, writes reports, drives the loop, and animates the TUI
+- `demo`: run an isolated full-loop sandbox that simulates Claude fixing a tiny todo app, emits tool-call telemetry, writes reports, drives the loop, and animates the TUI
 - `doctor`: verify Claude, Codex, and OpenCode integration state when their binaries are installed
 
 ## Next Likely Migrations

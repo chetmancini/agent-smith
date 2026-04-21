@@ -84,27 +84,36 @@ function createDemoSandbox(inputDir?: string): DemoSandbox {
     ...process.env,
     HOME: homeDir,
     METRICS_DIR: metricsDir,
-    AGENT_SMITH_TOOL: "codex",
+    AGENT_SMITH_TOOL: "claude",
   };
   const paths = resolvePaths(env);
   ensureMetricsLayout(paths);
 
   writeFile(
-    join(homeDir, ".codex", "config.toml"),
-    ['model = "gpt-5"', 'approval_policy = "on-request"', 'sandbox_mode = "workspace-write"', ""].join("\n"),
+    join(homeDir, ".claude", "settings.json"),
+    `${JSON.stringify(
+      {
+        permissions: {
+          defaultMode: "acceptEdits",
+          allow: ["Bash(bun test)", "Bash(rg:*)", "Edit(src/**)", "Edit(README.md)"],
+        },
+        model: "claude-sonnet-4-20250514",
+      },
+      null,
+      2,
+    )}\n`,
   );
 
   const schemaDir = join(homeDir, ".config", "agent-smith", "schemas");
   mkdirSync(schemaDir, { recursive: true });
   writeFile(
-    join(schemaDir, "codex-config.schema.json"),
+    join(schemaDir, "claude-code-settings.schema.json"),
     `${JSON.stringify(
       {
         type: "object",
         properties: {
-          model: { type: "string", description: "Primary model selection." },
-          approval_policy: { type: "string", description: "Approval mode for command execution." },
-          sandbox_mode: { type: "string", description: "Filesystem sandbox mode." },
+          permissions: { type: "object", description: "Allowed tool patterns and execution defaults." },
+          model: { type: "string", description: "Primary Claude model selection." },
         },
       },
       null,
@@ -112,12 +121,12 @@ function createDemoSandbox(inputDir?: string): DemoSandbox {
     )}\n`,
   );
   writeFile(
-    join(schemaDir, "codex-config.schema.metadata.json"),
+    join(schemaDir, "claude-code-settings.schema.metadata.json"),
     `${JSON.stringify(
       {
-        tool: "codex",
-        schema_url: "https://developers.openai.com/codex/config-schema.json",
-        schema_path: join(schemaDir, "codex-config.schema.json"),
+        tool: "claude",
+        schema_url: "https://json.schemastore.org/claude-code-settings.json",
+        schema_path: join(schemaDir, "claude-code-settings.schema.json"),
         fetched_at: "2026-04-21T00:00:00.000Z",
       },
       null,
@@ -127,14 +136,89 @@ function createDemoSandbox(inputDir?: string): DemoSandbox {
 
   writeFile(
     join(repoRoot, "AGENTS.md"),
-    ["# Demo Agent Instructions", "", "- Start fast.", "- Help if asked.", ""].join("\n"),
+    [
+      "# Demo Agent Instructions",
+      "",
+      "- Start with scope, target command, and the validation plan.",
+      "- Keep fixes inside the todo app unless the operator asks for docs.",
+      "- Call out any permission barriers before retrying broad commands.",
+      "",
+    ].join("\n"),
   );
   writeFile(
     join(repoRoot, "README.md"),
     [
-      "# Demo Repo",
+      "# Todo Demo App",
       "",
-      "This sandbox simulates an operator repo with a loose handoff and no documented full-loop workflow yet.",
+      "Tiny Bun todo app used to simulate Agent Smith's full-loop telemetry.",
+      "",
+      "## Local commands",
+      "",
+      "- `bun test` runs the focused todo tests.",
+      "- `bun run src/index.ts` prints the current todo labels.",
+      "",
+    ].join("\n"),
+  );
+  writeFile(
+    join(repoRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "todo-demo-app",
+        private: true,
+        type: "module",
+        scripts: {
+          test: "bun test",
+          start: "bun run src/index.ts",
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFile(
+    join(repoRoot, "src", "todos.ts"),
+    [
+      "export interface Todo {",
+      "  id: string;",
+      "  title: string;",
+      "  done: boolean;",
+      "}",
+      "",
+      "export function completeTodo(todo: Todo): Todo {",
+      "  return {",
+      "    ...todo,",
+      "    done: false,",
+      "  };",
+      "}",
+      "",
+      "export function todoLabel(todo: Todo): string {",
+      "  return `" + "$" + '{todo.done ? "[x]" : "[ ]"} ' + "$" + "{todo.title}" + "`;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeFile(
+    join(repoRoot, "src", "index.ts"),
+    [
+      'import { completeTodo, todoLabel } from "./todos";',
+      "",
+      'const todo = completeTodo({ id: "1", title: "ship docs", done: false });',
+      "console.log(todoLabel(todo));",
+      "",
+    ].join("\n"),
+  );
+  writeFile(
+    join(repoRoot, "tests", "todos.test.ts"),
+    [
+      'import { expect, test } from "bun:test";',
+      "",
+      'import { completeTodo, todoLabel } from "../src/todos";',
+      "",
+      'test("completeTodo marks the todo as done", () => {',
+      '  const todo = completeTodo({ id: "1", title: "ship docs", done: false });',
+      "  expect(todo.done).toBe(true);",
+      '  expect(todoLabel(todo)).toBe("[x] ship docs");',
+      "});",
       "",
     ].join("\n"),
   );
@@ -142,7 +226,11 @@ function createDemoSandbox(inputDir?: string): DemoSandbox {
   runGit(repoRoot, ["init"], env);
   runGit(repoRoot, ["config", "user.email", "demo@agent-smith.local"], env);
   runGit(repoRoot, ["config", "user.name", "Agent Smith Demo"], env);
-  runGit(repoRoot, ["add", "AGENTS.md", "README.md"], env);
+  runGit(
+    repoRoot,
+    ["add", "AGENTS.md", "README.md", "package.json", "src/index.ts", "src/todos.ts", "tests/todos.test.ts"],
+    env,
+  );
   runGit(repoRoot, ["commit", "-m", "seed demo sandbox"], env);
 
   return {
@@ -197,7 +285,7 @@ function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
         exitCode: 0,
         stdout: JSON.stringify({
           summary:
-            "Permission denials and repeated clarifications show the opening operator contract is underspecified, and the repo should advertise the full-loop workflow explicitly.",
+            "Claude explored the todo app with repeated Bash/Edit tool calls, but the opening operator contract is still underspecified and the repo should advertise the full-loop workflow explicitly.",
           recommendations: [
             {
               id: "tighten-request-contract",
@@ -287,9 +375,14 @@ function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
       writeFile(
         join(repoRoot, "README.md"),
         [
-          "# Demo Repo",
+          "# Todo Demo App",
           "",
-          "This sandbox simulates an operator repo with a loose handoff and no documented full-loop workflow yet.",
+          "Tiny Bun todo app used to simulate Agent Smith's full-loop telemetry.",
+          "",
+          "## Local commands",
+          "",
+          "- `bun test` runs the focused todo tests.",
+          "- `bun run src/index.ts` prints the current todo labels.",
           "",
           "## Full Loop",
           "",
@@ -399,14 +492,30 @@ function writeReportArtifacts(
 }
 
 async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<FullLoopDemoResult> {
+  const demoTool = "claude";
   const emit = async (
     eventType: string,
     sessionId: string,
     metadata: Record<string, unknown> = {},
-    tool = "codex",
+    tool = demoTool,
   ): Promise<void> => {
     appendDemoEvent(sandbox.paths, { eventType, tool, sessionId, metadata }, sandbox.repoRoot);
     await pause(delayMs);
+  };
+  const toolAttempt = async (
+    sessionId: string,
+    toolName: string,
+    metadata: {
+      command?: string;
+      file_path?: string;
+      turn_id?: string;
+      tool_use_id?: string;
+    },
+  ): Promise<void> => {
+    await emit("tool_attempt", sessionId, {
+      tool_name: toolName,
+      ...metadata,
+    });
   };
   const note = async (message: string): Promise<void> => {
     appendDemoEvent(
@@ -424,49 +533,128 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
 
   const runner = createDemoAgentRunner(sandbox);
 
-  await note("boot -> generating messy operator sessions");
-  await emit("session_start", "demo-alpha", { prompt_snippet: "Ship the fix quickly." });
-  await emit("clarifying_question", "demo-alpha", { prompt_snippet: "Need scope, target command, or validation?" });
-  await emit("permission_denied", "demo-alpha", { command: "rm -rf ~/.cache/agent-smith" });
-  await emit("command_failure", "demo-alpha", { command: "pnpm test" });
+  await note("boot -> simulating Claude fixing a tiny todo app");
+  await emit("session_start", "demo-alpha", {
+    prompt_snippet: "Fix the todo completion bug in the demo app and tell me what you validated.",
+  });
+  await toolAttempt("demo-alpha", "Bash", {
+    command: "ls",
+    turn_id: "turn-alpha-1",
+    tool_use_id: "tool-alpha-1",
+  });
+  await toolAttempt("demo-alpha", "Bash", {
+    command: "bun test",
+    turn_id: "turn-alpha-2",
+    tool_use_id: "tool-alpha-2",
+  });
+  await emit("tool_failure", "demo-alpha", {
+    tool_name: "Bash",
+    command: "bun test",
+    error: "1 failing test: completeTodo marks the todo as done",
+    exit_code: 1,
+    stderr_snippet: "Expected: true\nReceived: false",
+    turn_id: "turn-alpha-2",
+    tool_use_id: "tool-alpha-2",
+  });
+  await emit("command_failure", "demo-alpha", {
+    command: "bun test",
+    error: "1 failing test: completeTodo marks the todo as done",
+    exit_code: 1,
+    stderr_snippet: "Expected: true\nReceived: false",
+    turn_id: "turn-alpha-2",
+    tool_use_id: "tool-alpha-2",
+  });
+  await toolAttempt("demo-alpha", "Edit", {
+    file_path: "src/todos.ts",
+    turn_id: "turn-alpha-3",
+    tool_use_id: "tool-alpha-3",
+  });
+  await emit("clarifying_question", "demo-alpha", {
+    prompt_snippet: "Should I keep the fix scoped to src/todos.ts, or also update README and AGENTS?",
+  });
+  await emit("permission_denied", "demo-alpha", {
+    tool_name: "Write",
+    command: "rm -rf ~/.cache/agent-smith",
+  });
   await emit("session_stop", "demo-alpha", { stop_reason: "end_turn", duration_seconds: 43 });
 
-  await emit("session_start", "demo-bravo", { prompt_snippet: "Fix the tests and keep retrying." });
-  await emit("test_failure_loop", "demo-bravo", { command: "pnpm test" });
-  await emit("context_compression", "demo-bravo", { prompt_snippet: "Compressed prior retries and failure context" });
+  await emit("session_start", "demo-bravo", {
+    prompt_snippet: "Fix the tests and keep retrying until the todo app passes.",
+  });
+  await toolAttempt("demo-bravo", "Bash", {
+    command: "sed -n '1,200p' src/todos.ts",
+    turn_id: "turn-bravo-1",
+    tool_use_id: "tool-bravo-1",
+  });
+  await toolAttempt("demo-bravo", "Edit", {
+    file_path: "src/todos.ts",
+    turn_id: "turn-bravo-2",
+    tool_use_id: "tool-bravo-2",
+  });
+  await toolAttempt("demo-bravo", "Bash", {
+    command: "bun test",
+    turn_id: "turn-bravo-3",
+    tool_use_id: "tool-bravo-3",
+  });
+  await emit("test_failure_loop", "demo-bravo", { command: "bun test" });
+  await toolAttempt("demo-bravo", "Bash", {
+    command: 'rg -n "scope|validation|demo" AGENTS.md README.md',
+    turn_id: "turn-bravo-4",
+    tool_use_id: "tool-bravo-4",
+  });
+  await emit("context_compression", "demo-bravo", {
+    prompt_snippet: "Compressed prior retries, failing test output, and app file context",
+  });
   await emit("session_stop", "demo-bravo", { stop_reason: "end_turn", duration_seconds: 57 });
 
-  await emit("session_start", "demo-charlie", { prompt_snippet: "Update docs after the runtime change." });
+  await emit("session_start", "demo-charlie", {
+    prompt_snippet: "Update docs after the runtime change so future Claude runs start cleaner.",
+  });
+  await toolAttempt("demo-charlie", "Bash", {
+    command: "sed -n '1,200p' README.md",
+    turn_id: "turn-charlie-1",
+    tool_use_id: "tool-charlie-1",
+  });
+  await toolAttempt("demo-charlie", "Edit", {
+    file_path: "README.md",
+    turn_id: "turn-charlie-2",
+    tool_use_id: "tool-charlie-2",
+  });
   await emit("session_stop", "demo-charlie", { stop_reason: "end_turn", duration_seconds: 18 });
 
   const rollup = rollupEvents(sandbox.paths);
   await note(`rollup -> ${rollup.ingestedEvents} events landed in SQLite`);
 
-  const initialReport = generateReport(sandbox.paths, { tool: "codex", limit: 5 });
+  const initialReport = generateReport(sandbox.paths, { tool: demoTool, limit: 5 });
   await note(
     `report -> ${initialReport.totalSessions} sessions, ${initialReport.health.attentionSessions} attention, ${initialReport.health.failures.events} failures`,
   );
 
   const improvementReport = await generateImprovementReport(
     sandbox.paths,
-    { tool: "codex", limit: 5 },
+    { tool: demoTool, limit: 5 },
     { env: sandbox.env, repoRoot: sandbox.repoRoot, runAgent: runner },
   );
   await note(`improve -> ${improvementReport.recommendations.length} safe recommendations`);
 
   const loopReport = await runImprovementLoop(
-    { tool: "codex", iterations: 2 },
+    { tool: demoTool, iterations: 2 },
     { env: sandbox.env, repoRoot: sandbox.repoRoot, runAgent: runner },
   );
   await note(`loop -> ${loopReport.completedRecommendationIds.length} recommendations resolved`);
 
   await emit("session_start", "demo-delta", {
-    prompt_snippet: "Scoped request: update the docs and run focused validation only.",
+    prompt_snippet: "Scoped request: update the docs and run focused validation for the todo app only.",
+  });
+  await toolAttempt("demo-delta", "Bash", {
+    command: 'rg -n "make demo|bun test" README.md AGENTS.md',
+    turn_id: "turn-delta-1",
+    tool_use_id: "tool-delta-1",
   });
   await emit("session_stop", "demo-delta", { stop_reason: "end_turn", duration_seconds: 14 });
 
   rollupEvents(sandbox.paths);
-  const finalReport = generateReport(sandbox.paths, { tool: "codex", limit: 5 });
+  const finalReport = generateReport(sandbox.paths, { tool: demoTool, limit: 5 });
   await note(`final -> clean session added; latest run has ${finalReport.health.activeSessions} active sessions`);
 
   const artifacts = writeReportArtifacts(sandbox, {
@@ -496,7 +684,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
 
 export async function runFullLoopDemo(options: FullLoopDemoOptions = {}): Promise<FullLoopDemoResult> {
   const sandbox = createDemoSandbox(options.demoDir);
-  const delayMs = options.delayMs ?? 220;
+  const delayMs = options.delayMs ?? 320;
 
   if (!options.watch) {
     return await runDemoScenario(sandbox, delayMs);
