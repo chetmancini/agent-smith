@@ -8,6 +8,7 @@ import {
   ensureSchemaCached,
   existingToolConfigs,
   findBinary,
+  modelsDevSchemaCachePath,
   readJsonFile,
   readSchemaMetadata,
   type SupportedAgentTool,
@@ -172,6 +173,7 @@ function validateWithAjv(
   schemaPath: string,
   configPath: string,
   parseMode: SchemaConfigParseMode,
+  tool: SupportedAgentTool,
   runtime: SchemaToolRuntime,
 ): { status: SchemaValidationStatus; details: string[] } {
   const runner = runtime.runAjv ?? defaultRunAjv;
@@ -184,6 +186,9 @@ function validateWithAjv(
     configPath,
     `--spec=${parseMode === "toml" ? "draft2020" : "draft7"}`,
   ];
+  if (tool === "opencode") {
+    args.push("-r", modelsDevSchemaCachePath(env));
+  }
   const result = runner(args, env);
 
   if (result.exitCode === -1) {
@@ -316,7 +321,7 @@ export async function validateAgentConfig(
         writeFileSync(ajvConfigPath, `${JSON.stringify(parsed.value, null, 2)}\n`);
       }
 
-      const schemaCheck = validateWithAjv(schemaPath, ajvConfigPath, parsed.parseMode, options);
+      const schemaCheck = validateWithAjv(schemaPath, ajvConfigPath, parsed.parseMode, tool, options);
       results.push({
         configPath,
         parseMode: parsed.parseMode,

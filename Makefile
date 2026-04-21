@@ -140,7 +140,7 @@ _help:
 		print_row "make opencode-install" "Install Bun dependencies for the OpenCode plugin"; \
 		print_row "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
 		print_section "Variables"; \
-		print_var "TOOL" "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex|opencode)"; \
+		print_var "TOOL" "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|gemini|codex|opencode)"; \
 		print_var "SESSIONS" "$(SESSIONS)" "(used by analyze and loop helpers)"; \
 		print_var "HELP_ASCII" "$(HELP_ASCII)" "(set to 0 to hide the full help header image)"; \
 		print_var "AGENT_CLI" "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \

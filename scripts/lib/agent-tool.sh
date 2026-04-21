@@ -197,6 +197,10 @@ agent_smith_schema_cache_path() {
 	esac
 }
 
+agent_smith_models_dev_schema_cache_path() {
+	printf '%s\n' "${HOME}/.config/agent-smith/schemas/models-dev-model.schema.json"
+}
+
 agent_smith_schema_metadata_path() {
 	case "$1" in
 	claude) printf '%s\n' "${HOME}/.config/agent-smith/schemas/claude-code-settings.schema.metadata.json" ;;

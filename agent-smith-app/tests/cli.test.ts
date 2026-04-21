@@ -448,6 +448,55 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     });
   });
 
+  test("refresh-schemas caches the OpenCode schema and models.dev reference schema", async () => {
+    mkdirSync(join(homeDir, ".config", "opencode"), { recursive: true });
+    writeFileSync(
+      join(homeDir, ".config", "opencode", "opencode.json"),
+      '{ "model": "anthropic/claude-sonnet-4-6" }\n',
+    );
+
+    const fetchedUrls: string[] = [];
+    const { io, getStdout } = createIo();
+    const exitCode = await runCli(["refresh-schemas", "--tool", "opencode"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        now: () => new Date("2026-04-20T12:00:00.000Z"),
+        fetchImpl: async (input) => {
+          fetchedUrls.push(input);
+          if (input === "https://opencode.ai/config.json") {
+            return new Response(
+              JSON.stringify({
+                type: "object",
+                properties: {
+                  model: { $ref: "https://models.dev/model-schema.json#/$defs/Model" },
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          if (input === "https://models.dev/model-schema.json") {
+            return new Response(
+              JSON.stringify({
+                $defs: {
+                  Model: { type: "string" },
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("not found", { status: 404, statusText: "Not Found" });
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(getStdout()).toContain("Refreshed OpenCode schema");
+    expect(existsSync(join(homeDir, ".config", "agent-smith", "schemas", "opencode-config.schema.json"))).toBe(true);
+    expect(existsSync(join(homeDir, ".config", "agent-smith", "schemas", "models-dev-model.schema.json"))).toBe(true);
+    expect(fetchedUrls).toEqual(["https://opencode.ai/config.json", "https://models.dev/model-schema.json"]);
+  });
+
   test("validate-schemas reports fallback validation details from the native CLI", async () => {
     mkdirSync(join(homeDir, ".codex"), { recursive: true });
     mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
@@ -484,6 +533,53 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     expect(getStdout()).toContain("Schema check: skipped (ajv not installed); using schema diff fallback");
     expect(getStdout()).toContain("Deprecated top-level keys in use: approval_policy");
     expect(getStdout()).toContain("Available top-level schema keys not set: sandbox_mode");
+  });
+
+  test("validate-schemas passes models.dev ref to ajv for OpenCode", async () => {
+    mkdirSync(join(homeDir, ".config", "opencode"), { recursive: true });
+    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(homeDir, ".config", "opencode", "opencode.json"),
+      '{ "model": "anthropic/claude-sonnet-4-6" }\n',
+    );
+    writeFileSync(
+      join(homeDir, ".config", "agent-smith", "schemas", "opencode-config.schema.json"),
+      JSON.stringify({
+        type: "object",
+        properties: {
+          model: { $ref: "https://models.dev/model-schema.json#/$defs/Model" },
+        },
+      }),
+    );
+    writeFileSync(
+      join(homeDir, ".config", "agent-smith", "schemas", "models-dev-model.schema.json"),
+      JSON.stringify({
+        $defs: {
+          Model: { type: "string" },
+        },
+      }),
+    );
+
+    const ajvCalls: string[][] = [];
+    const { io, getStdout } = createIo();
+    const exitCode = await runCli(["validate-schemas", "--tool", "opencode"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        runAjv: (args) => {
+          ajvCalls.push(args);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(getStdout()).toContain("Tool: OpenCode");
+    expect(ajvCalls).toHaveLength(1);
+    expect(ajvCalls[0]).toContain("-r");
+    expect(ajvCalls[0]).toContain(join(homeDir, ".config", "agent-smith", "schemas", "models-dev-model.schema.json"));
   });
 
   test("update-settings alias returns a deterministic upgrade plan from native schema logic", async () => {

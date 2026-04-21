@@ -163,6 +163,10 @@ export function schemaCachePath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv
   }
 }
 
+export function modelsDevSchemaCachePath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(homeDir(env), ".config", "agent-smith", "schemas", "models-dev-model.schema.json");
+}
+
 export function schemaMetadataPath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv = process.env): string {
   const base = join(homeDir(env), ".config", "agent-smith", "schemas");
   switch (tool) {
@@ -222,8 +226,9 @@ export async function ensureSchemaCached(
   const schemaPath = schemaCachePath(tool, env);
   const metadataPath = schemaMetadataPath(tool, env);
   mkdirSync(dirname(schemaPath), { recursive: true, mode: 0o700 });
+  const modelsDevPath = modelsDevSchemaCachePath(env);
 
-  if (!options.refresh && existsSync(schemaPath)) {
+  if (!options.refresh && existsSync(schemaPath) && (tool !== "opencode" || existsSync(modelsDevPath))) {
     return { schemaPath, metadataPath };
   }
 
@@ -236,6 +241,18 @@ export async function ensureSchemaCached(
 
   const body = await response.text();
   writeFileSync(schemaPath, body, { mode: 0o600 });
+
+  if (tool === "opencode") {
+    const modelsResponse = await fetchImpl("https://models.dev/model-schema.json");
+    if (!modelsResponse.ok) {
+      throw new Error(
+        `failed to fetch models.dev schema for ${tool}: ${modelsResponse.status} ${modelsResponse.statusText}`,
+      );
+    }
+
+    writeFileSync(modelsDevPath, await modelsResponse.text(), { mode: 0o600 });
+  }
+
   writeFileSync(
     metadataPath,
     `${JSON.stringify(
