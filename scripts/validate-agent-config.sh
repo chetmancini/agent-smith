@@ -153,7 +153,15 @@ PY
 	printf 'Parse: valid %s\n' "$parse_mode"
 
 	if [ -n "$AJV_BIN" ]; then
-		if ajv validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
+		if [ "$TOOL" = "opencode" ]; then
+			if ajv validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec" -r "$(agent_smith_models_dev_schema_cache_path)" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
+				printf 'Schema check: valid (ajv)\n'
+			else
+				printf 'Schema check: invalid (ajv)\n'
+				sed 's/^/  /' /tmp/agent-smith-ajv.err
+				VALIDATION_STATUS=1
+			fi
+		elif ajv validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
 			printf 'Schema check: valid (ajv)\n'
 		else
 			printf 'Schema check: invalid (ajv)\n'

@@ -33,7 +33,7 @@ done
 
 refresh_schema() {
 	local tool="$1"
-	local schema_url schema_path metadata_path schema_dir
+	local schema_url schema_path metadata_path schema_dir models_dev_schema_path
 
 	schema_url="$(agent_smith_schema_url "$tool")"
 	schema_path="$(agent_smith_schema_cache_path "$tool")"
@@ -47,6 +47,15 @@ refresh_schema() {
 	mv "$TMP_SCHEMA" "$schema_path"
 	TMP_SCHEMA=""
 	chmod 600 "$schema_path" 2>/dev/null || true
+
+	if [ "$tool" = "opencode" ]; then
+		models_dev_schema_path="$(agent_smith_models_dev_schema_cache_path)"
+		TMP_SCHEMA="$(mktemp "${TMPDIR:-/tmp}/agent-smith-schema.XXXXXX")"
+		curl -fsSL "https://models.dev/model-schema.json" -o "$TMP_SCHEMA"
+		mv "$TMP_SCHEMA" "$models_dev_schema_path"
+		TMP_SCHEMA=""
+		chmod 600 "$models_dev_schema_path" 2>/dev/null || true
+	fi
 
 	python3 - "$tool" "$schema_url" "$schema_path" "$metadata_path" <<'PY'
 import json
@@ -69,6 +78,9 @@ PY
 	chmod 600 "$metadata_path" 2>/dev/null || true
 
 	printf 'Refreshed %s schema: %s\n' "$(agent_smith_tool_label "$tool")" "$schema_path"
+	if [ "$tool" = "opencode" ]; then
+		printf 'Refreshed models.dev schema: %s\n' "$(agent_smith_models_dev_schema_cache_path)"
+	fi
 }
 
 cleanup() {
