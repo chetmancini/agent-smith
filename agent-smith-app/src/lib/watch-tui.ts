@@ -80,58 +80,88 @@ function tableRowsForSessions(sessions: WatchSessionSummary[]): string[][] {
 }
 
 function renderStats(snapshot: WatchDashboardSnapshot, seedNote: string): string {
+  const attention = snapshot.attentionSessions > 0 ? `{yellow-fg}${snapshot.attentionSessions}{/yellow-fg}` : "0";
+  const failures = snapshot.failureEvents > 0 ? `{red-fg}${snapshot.failureEvents}{/red-fg}` : "0";
+  const denials = snapshot.denialEvents > 0 ? `{yellow-fg}${snapshot.denialEvents}{/yellow-fg}` : "0";
+  const loops = snapshot.testLoopEvents > 0 ? `{yellow-fg}${snapshot.testLoopEvents}{/yellow-fg}` : "0";
+  const compressions = snapshot.compressionEvents > 0 ? `{yellow-fg}${snapshot.compressionEvents}{/yellow-fg}` : "0";
+
   return [
-    "{bold}Totals{/bold}",
-    `events: ${snapshot.totalEvents}`,
-    `sessions: ${snapshot.totalSessions}`,
-    `active: ${snapshot.activeSessions}`,
+    "{bold}{cyan-fg}Totals{/cyan-fg}{/bold}",
+    `events: {blue-fg}${snapshot.totalEvents}{/blue-fg}`,
+    `sessions: {blue-fg}${snapshot.totalSessions}{/blue-fg}`,
+    `active: {green-fg}${snapshot.activeSessions}{/green-fg}`,
     `historic: ${snapshot.completedSessions}`,
-    `attention: ${snapshot.attentionSessions}`,
+    `attention: ${attention}`,
     "",
-    "{bold}Signals{/bold}",
-    `failures: ${snapshot.failureEvents}`,
-    `denials: ${snapshot.denialEvents}`,
-    `clarifying: ${snapshot.clarificationEvents}`,
-    `test loops: ${snapshot.testLoopEvents}`,
-    `compressions: ${snapshot.compressionEvents}`,
+    "{bold}{magenta-fg}Signals{/magenta-fg}{/bold}",
+    `failures: ${failures}`,
+    `denials: ${denials}`,
+    `clarifying: {blue-fg}${snapshot.clarificationEvents}{/blue-fg}`,
+    `test loops: ${loops}`,
+    `compressions: ${compressions}`,
     "",
-    `{bold}Updated{/bold} ${snapshot.lastUpdatedAt ? compactTimestamp(snapshot.lastUpdatedAt) : "-"}`,
-    seedNote,
+    `{bold}{green-fg}Updated{/green-fg}{/bold} ${snapshot.lastUpdatedAt ? compactTimestamp(snapshot.lastUpdatedAt) : "-"}`,
+    `{gray-fg}${seedNote}{/gray-fg}`,
     "",
-    "{bold}Keys{/bold}",
-    "q/esc exit",
-    "r refresh seed",
+    "{bold}{yellow-fg}Keys{/yellow-fg}{/bold}",
+    "{yellow-fg}q{/yellow-fg}/{yellow-fg}esc{/yellow-fg} exit",
+    "{yellow-fg}r{/yellow-fg} refresh seed",
   ].join("\n");
 }
 
 function renderAggregations(snapshot: WatchDashboardSnapshot): string {
   const lines: string[] = [];
-  lines.push("{bold}Tools{/bold}");
+  lines.push("{bold}{cyan-fg}Tools{/cyan-fg}{/bold}");
   for (const row of snapshot.toolSummary.slice(0, 4)) {
     lines.push(
-      `${row.name.padEnd(8)} ev=${String(row.events).padStart(3)} s=${String(row.sessions).padStart(2)} a=${row.activeSessions} !${row.attentionSessions}`,
+      `{cyan-fg}${row.name.padEnd(8)}{/cyan-fg} ev=${String(row.events).padStart(3)} s=${String(row.sessions).padStart(2)} a={green-fg}${row.activeSessions}{/green-fg} !{yellow-fg}${row.attentionSessions}{/yellow-fg}`,
     );
   }
 
   lines.push("");
-  lines.push("{bold}Projects{/bold}");
+  lines.push("{bold}{magenta-fg}Projects{/magenta-fg}{/bold}");
   for (const row of snapshot.projectSummary.slice(0, 4)) {
     lines.push(
-      `${truncate(row.name, 12).padEnd(12)} ev=${String(row.events).padStart(3)} s=${String(row.sessions).padStart(2)} a=${row.activeSessions} !${row.attentionSessions}`,
+      `{magenta-fg}${truncate(row.name, 12).padEnd(12)}{/magenta-fg} ev=${String(row.events).padStart(3)} s=${String(row.sessions).padStart(2)} a={green-fg}${row.activeSessions}{/green-fg} !{yellow-fg}${row.attentionSessions}{/yellow-fg}`,
     );
   }
 
   if (snapshot.historicalSessionRows.length > 0) {
     lines.push("");
-    lines.push("{bold}Last finished{/bold}");
+    lines.push("{bold}{green-fg}Last finished{/green-fg}{/bold}");
     for (const session of snapshot.historicalSessionRows.slice(0, 2)) {
       lines.push(
-        `${session.tool.padEnd(8)} ${truncate(session.project ?? "-", 12).padEnd(12)} ${formatWatchDuration(session.durationSeconds)} ${compactSessionLabel(session)}`,
+        `{green-fg}${session.tool.padEnd(8)}{/green-fg} ${truncate(session.project ?? "-", 12).padEnd(12)} ${formatWatchDuration(session.durationSeconds)} ${compactSessionLabel(session)}`,
       );
     }
   }
 
   return lines.join("\n");
+}
+
+function colorizeRecentEvent(line: string): string {
+  if (line.includes("tool_failure") || line.includes("command_failure") || line.includes("session_error")) {
+    return `{red-fg}${line}{/red-fg}`;
+  }
+
+  if (
+    line.includes("permission_denied") ||
+    line.includes("test_failure_loop") ||
+    line.includes("context_compression")
+  ) {
+    return `{yellow-fg}${line}{/yellow-fg}`;
+  }
+
+  if (line.includes("session_stop")) {
+    return `{cyan-fg}${line}{/cyan-fg}`;
+  }
+
+  if (line.includes("session_start")) {
+    return `{green-fg}${line}{/green-fg}`;
+  }
+
+  return `{white-fg}${line}{/white-fg}`;
 }
 
 function donutData(snapshot: WatchDashboardSnapshot): Array<{
@@ -283,11 +313,11 @@ export async function runWatchTui(
     width: "100%",
     height: "15%",
     label: " Recent Events ",
-    tags: false,
+    tags: true,
     padding: { left: 1, right: 1 },
     border: { type: "line" },
     style: {
-      border: { fg: "white" },
+      border: { fg: "green" },
       fg: "white",
     },
   });
@@ -315,7 +345,7 @@ export async function runWatchTui(
     statsBox.setContent(renderStats(snapshot, seedNote));
     aggregationBox.setContent(renderAggregations(snapshot));
     statusDonut.setData(donutData(snapshot));
-    feedBox.setContent(snapshot.recentEvents.join("\n"));
+    feedBox.setContent(snapshot.recentEvents.map((line) => colorizeRecentEvent(line)).join("\n"));
     screen.render();
   };
 

@@ -17,6 +17,7 @@ import { eventSnippet } from "./events";
 import { resolvePaths, type AgentSmithPaths } from "./paths";
 import { generateReport } from "./report";
 import { rollupEvents } from "./rollup";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export interface ImprovementFilters {
   tool?: SupportedAgentTool;
@@ -593,36 +594,52 @@ export async function generateImprovementReport(
   }
 }
 
-export function renderImprovementReport(report: ImprovementReport): string {
+function priorityTone(priority: ImprovementRecommendation["priority"]): "danger" | "warning" | "info" {
+  switch (priority) {
+    case "high":
+      return "danger";
+    case "medium":
+      return "warning";
+    case "low":
+      return "info";
+  }
+}
+
+export function renderImprovementReport(
+  report: ImprovementReport,
+  theme: TerminalTheme = createTerminalTheme(),
+): string {
   const lines: string[] = [];
 
-  lines.push("Agent Smith Improve");
-  lines.push(`Metrics dir: ${report.metricsDir}`);
-  lines.push(`Tool: ${report.tool}`);
-  lines.push(`Sessions: ${report.evidence.totalSessions}`);
+  lines.push(theme.bold(theme.accent("Agent Smith Improve")));
+  lines.push(`${theme.dim("Metrics dir:")} ${report.metricsDir}`);
+  lines.push(`${theme.dim("Tool:")} ${theme.accent(report.tool)}`);
+  lines.push(`${theme.dim("Sessions:")} ${report.evidence.totalSessions}`);
   if (report.project) {
-    lines.push(`Project: ${report.project}`);
+    lines.push(`${theme.dim("Project:")} ${report.project}`);
   }
 
   lines.push("");
-  lines.push("Summary:");
+  lines.push(theme.bold(theme.info("Summary")));
   lines.push(`  ${report.summary}`);
 
   if (report.recommendations.length === 0) {
     lines.push("");
-    lines.push("Recommendations:");
-    lines.push("  None");
+    lines.push(theme.bold(theme.info("Recommendations")));
+    lines.push(`  ${theme.muted("None")}`);
     return `${lines.join("\n")}\n`;
   }
 
   lines.push("");
-  lines.push("Recommendations:");
+  lines.push(theme.bold(theme.info("Recommendations")));
 
   for (const recommendation of report.recommendations) {
-    lines.push(`  [${recommendation.priority}] ${recommendation.title} (${recommendation.category})`);
-    lines.push(`    Why: ${recommendation.rationale}`);
+    lines.push(
+      `  ${theme.tone(`[${recommendation.priority}]`, priorityTone(recommendation.priority))} ${recommendation.title} ${theme.dim(`(${recommendation.category})`)}`,
+    );
+    lines.push(`    ${theme.dim("Why:")} ${recommendation.rationale}`);
     if (recommendation.evidence.length > 0) {
-      lines.push(`    Evidence: ${recommendation.evidence.join(" | ")}`);
+      lines.push(`    ${theme.dim("Evidence:")} ${recommendation.evidence.join(" | ")}`);
     }
     for (const action of recommendation.actions) {
       const targets =
@@ -630,7 +647,7 @@ export function renderImprovementReport(report: ImprovementReport): string {
           ? ` -> ${action.targetFiles.map((file) => basename(file) || file).join(", ")}`
           : "";
       lines.push(
-        `    Action: ${action.type}${action.safeToAutoApply ? " [safe]" : ""} ${action.description}${targets}`,
+        `    ${theme.dim("Action:")} ${action.type}${action.safeToAutoApply ? ` ${theme.success("[safe]")}` : ""} ${action.description}${targets}`,
       );
     }
   }

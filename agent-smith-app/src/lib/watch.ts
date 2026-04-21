@@ -4,6 +4,7 @@ import type { AgentSmithPaths } from "./paths";
 import { eventSnippet, type AgentSmithEvent, projectFromEvent } from "./events";
 import { resolvePaths } from "./paths";
 import { currentEventFileSize, matchesEvent, readAllEvents, readEventsSince } from "./store";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export interface WatchOptions {
   tool?: string;
@@ -140,14 +141,32 @@ export async function* watchEvents(
   }
 }
 
-export function formatWatchedEvent(event: AgentSmithEvent): string {
+function eventTone(eventType: string): "success" | "warning" | "danger" | "info" {
+  switch (eventType) {
+    case "session_start":
+      return "success";
+    case "permission_denied":
+    case "test_failure_loop":
+    case "context_compression":
+      return "warning";
+    case "tool_failure":
+    case "command_failure":
+    case "session_error":
+    case "stop_failure":
+      return "danger";
+    default:
+      return "info";
+  }
+}
+
+export function formatWatchedEvent(event: AgentSmithEvent, theme: TerminalTheme = createTerminalTheme()): string {
   const project = projectFromEvent(event) ?? "-";
   const snippet = eventSnippet(event);
-  const time = event.ts.slice(11, 19);
-  const session = event.session_id.slice(0, 8);
+  const time = theme.muted(event.ts.slice(11, 19));
+  const session = theme.muted(event.session_id.slice(0, 8));
   const suffix = snippet.length > 0 ? ` ${snippet}` : "";
 
-  return `${time} ${event.tool.padEnd(8)} ${project.padEnd(18)} ${event.event_type.padEnd(20)} ${session}${suffix}`;
+  return `${time} ${theme.accent(event.tool.padEnd(8))} ${project.padEnd(18)} ${theme.tone(event.event_type.padEnd(20), eventTone(event.event_type))} ${session}${suffix}`;
 }
 
 function createInitialSessionState(event: AgentSmithEvent): SessionWatchState {
@@ -430,7 +449,9 @@ export function snapshotWatchDashboard(
   };
 }
 
-export function createSessionWatchFormatter(): (event: AgentSmithEvent) => string {
+export function createSessionWatchFormatter(
+  theme: TerminalTheme = createTerminalTheme(),
+): (event: AgentSmithEvent) => string {
   const state = createWatchDashboardState();
 
   return (event) => {
@@ -493,14 +514,22 @@ export function createSessionWatchFormatter(): (event: AgentSmithEvent) => strin
     const time = event.ts.slice(11, 19);
     const project = session.project ?? "-";
     const active = countActiveSessions(state.sessions);
+    const tone =
+      level === "FAIL"
+        ? "danger"
+        : level === "DENY" || level === "LOOP" || level === "COMPRESS"
+          ? "warning"
+          : level === "START"
+            ? "success"
+            : "info";
 
     return [
-      time,
-      level.padEnd(8),
-      session.tool.padEnd(8),
+      theme.muted(time),
+      theme.tone(level.padEnd(8), tone),
+      theme.accent(session.tool.padEnd(8)),
       project.padEnd(18),
-      event.session_id.slice(0, 8),
-      `active=${active}`,
+      theme.muted(event.session_id.slice(0, 8)),
+      theme.dim(`active=${active}`),
       truncate(detail),
     ].join(" ");
   };

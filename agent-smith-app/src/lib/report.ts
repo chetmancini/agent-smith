@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 
 import { resolvePaths, type AgentSmithPaths } from "./paths";
 import { rollupEvents } from "./rollup";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export interface ReportFilters {
   tool?: string;
@@ -520,49 +521,61 @@ function truncateSnippet(snippet: string | null, limit = 72): string | null {
   return snippet.length <= limit ? snippet : `${snippet.slice(0, limit - 1)}…`;
 }
 
-function renderSessionSummary(session: SessionSummary): string {
+function statusTone(status: SessionSummary["status"]): "success" | "warning" | "info" {
+  switch (status) {
+    case "active":
+      return "success";
+    case "active-attention":
+    case "attention":
+      return "warning";
+    case "completed":
+      return "info";
+  }
+}
+
+function renderSessionSummary(session: SessionSummary, theme: TerminalTheme = createTerminalTheme()): string {
   const parts = [
-    session.status.padEnd(16),
-    session.tool.padEnd(8),
+    theme.tone(session.status.padEnd(16), statusTone(session.status)),
+    theme.accent(session.tool.padEnd(8)),
     (session.project ?? "-").padEnd(18),
-    session.sessionId.slice(0, 8),
+    theme.muted(session.sessionId.slice(0, 8)),
   ];
 
   if (session.endedAt) {
-    parts.push(`ended=${compactTimestamp(session.endedAt)}`);
+    parts.push(`${theme.dim("ended=")}${compactTimestamp(session.endedAt)}`);
   } else if (session.startedAt) {
-    parts.push(`started=${compactTimestamp(session.startedAt)}`);
+    parts.push(`${theme.dim("started=")}${compactTimestamp(session.startedAt)}`);
   }
 
   if (session.stopReason) {
-    parts.push(`reason=${session.stopReason}`);
+    parts.push(`${theme.dim("reason=")}${session.stopReason}`);
   }
 
   if (session.durationSeconds !== null) {
-    parts.push(`duration=${formatDuration(session.durationSeconds)}`);
+    parts.push(`${theme.dim("duration=")}${formatDuration(session.durationSeconds)}`);
   }
 
-  parts.push(`events=${session.eventCount}`);
+  parts.push(`${theme.dim("events=")}${session.eventCount}`);
 
   if (session.failureCount > 0) {
-    parts.push(`fail=${session.failureCount}`);
+    parts.push(theme.danger(`fail=${session.failureCount}`));
   }
   if (session.denialCount > 0) {
-    parts.push(`deny=${session.denialCount}`);
+    parts.push(theme.warning(`deny=${session.denialCount}`));
   }
   if (session.clarificationCount > 0) {
-    parts.push(`ask=${session.clarificationCount}`);
+    parts.push(theme.info(`ask=${session.clarificationCount}`));
   }
   if (session.testLoopCount > 0) {
-    parts.push(`loop=${session.testLoopCount}`);
+    parts.push(theme.warning(`loop=${session.testLoopCount}`));
   }
   if (session.compressionCount > 0) {
-    parts.push(`compress=${session.compressionCount}`);
+    parts.push(theme.warning(`compress=${session.compressionCount}`));
   }
 
   const snippet = truncateSnippet(session.lastSnippet);
   if (snippet) {
-    parts.push(`last=${snippet}`);
+    parts.push(`${theme.dim("last=")}${snippet}`);
   }
 
   return `  ${parts.join(" ")}`;
@@ -730,102 +743,112 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
   }
 }
 
-export function renderTextReport(report: AgentSmithReport): string {
+export function renderTextReport(report: AgentSmithReport, theme: TerminalTheme = createTerminalTheme()): string {
   const lines: string[] = [];
-  lines.push("Agent Smith Report");
-  lines.push(`Metrics dir: ${report.metricsDir}`);
-  lines.push(`Events: ${report.totalEvents}`);
-  lines.push(`Sessions: ${report.totalSessions}`);
-  lines.push(`Active sessions: ${report.health.activeSessions}`);
-  lines.push(`Sessions needing attention: ${report.health.attentionSessions}`);
+  lines.push(theme.bold(theme.accent("Agent Smith Report")));
+  lines.push(`${theme.dim("Metrics dir:")} ${report.metricsDir}`);
+  lines.push(`${theme.dim("Events:")} ${report.totalEvents}`);
+  lines.push(`${theme.dim("Sessions:")} ${report.totalSessions}`);
+  lines.push(`${theme.dim("Active sessions:")} ${theme.success(String(report.health.activeSessions))}`);
+  lines.push(
+    `${theme.dim("Sessions needing attention:")} ${
+      report.health.attentionSessions > 0
+        ? theme.warning(String(report.health.attentionSessions))
+        : String(report.health.attentionSessions)
+    }`,
+  );
 
   lines.push("");
-  lines.push("Health:");
-  lines.push(`  failures: ${report.health.failures.sessions} sessions / ${report.health.failures.events} events`);
+  lines.push(theme.bold(theme.info("Health")));
   lines.push(
-    `  permission denials: ${report.health.permissionDenials.sessions} sessions / ${report.health.permissionDenials.events} events`,
+    `  ${theme.danger("failures:")} ${report.health.failures.sessions} sessions / ${report.health.failures.events} events`,
   );
   lines.push(
-    `  clarifying questions: ${report.health.clarifications.sessions} sessions / ${report.health.clarifications.events} events`,
+    `  ${theme.warning("permission denials:")} ${report.health.permissionDenials.sessions} sessions / ${report.health.permissionDenials.events} events`,
   );
   lines.push(
-    `  test failure loops: ${report.health.testFailureLoops.sessions} sessions / ${report.health.testFailureLoops.events} events`,
+    `  ${theme.info("clarifying questions:")} ${report.health.clarifications.sessions} sessions / ${report.health.clarifications.events} events`,
   );
   lines.push(
-    `  context compressions: ${report.health.contextCompressions.sessions} sessions / ${report.health.contextCompressions.events} events`,
+    `  ${theme.warning("test failure loops:")} ${report.health.testFailureLoops.sessions} sessions / ${report.health.testFailureLoops.events} events`,
+  );
+  lines.push(
+    `  ${theme.warning("context compressions:")} ${report.health.contextCompressions.sessions} sessions / ${report.health.contextCompressions.events} events`,
   );
 
   if (report.activeSessions.length > 0) {
     lines.push("");
-    lines.push("Active sessions:");
+    lines.push(theme.bold(theme.success("Active sessions")));
     for (const row of report.activeSessions) {
-      lines.push(renderSessionSummary(row));
+      lines.push(renderSessionSummary(row, theme));
     }
   }
 
   if (report.attentionSessions.length > 0) {
     lines.push("");
-    lines.push("Needs attention:");
+    lines.push(theme.bold(theme.warning("Needs attention")));
     for (const row of report.attentionSessions) {
-      lines.push(renderSessionSummary(row));
+      lines.push(renderSessionSummary(row, theme));
     }
   }
 
   if (report.recentSessions.length > 0) {
     lines.push("");
-    lines.push("Recent sessions:");
+    lines.push(theme.bold(theme.info("Recent sessions")));
     for (const row of report.recentSessions) {
-      lines.push(renderSessionSummary(row));
+      lines.push(renderSessionSummary(row, theme));
     }
   }
 
   if (report.stopReasons.length > 0) {
     lines.push("");
-    lines.push("Stop reasons:");
+    lines.push(theme.bold(theme.info("Stop reasons")));
     for (const row of report.stopReasons) {
-      lines.push(`  ${row.stopReason}: ${row.sessions} sessions`);
+      lines.push(`  ${theme.dim(`${row.stopReason}:`)} ${row.sessions} sessions`);
     }
   }
 
   if (report.failureHotspots.length > 0) {
     lines.push("");
-    lines.push("Failure hotspots:");
+    lines.push(theme.bold(theme.danger("Failure hotspots")));
     for (const row of report.failureHotspots) {
-      lines.push(`  ${row.snippet}: ${row.count} failures / ${row.sessions} sessions`);
+      lines.push(`  ${theme.danger(`${row.snippet}:`)} ${row.count} failures / ${row.sessions} sessions`);
     }
   }
 
   if (report.tools.length > 0) {
     lines.push("");
-    lines.push("By tool:");
+    lines.push(theme.bold(theme.accent("By tool")));
     for (const row of report.tools) {
-      lines.push(`  ${row.tool}: ${row.events} events / ${row.sessions} sessions`);
+      lines.push(`  ${theme.accent(`${row.tool}:`)} ${row.events} events / ${row.sessions} sessions`);
     }
   }
 
   if (report.eventTypes.length > 0) {
     lines.push("");
-    lines.push("Top event types:");
+    lines.push(theme.bold(theme.info("Top event types")));
     for (const row of report.eventTypes) {
-      lines.push(`  ${row.eventType}: ${row.count} events / ${row.sessions} sessions`);
+      lines.push(`  ${theme.info(`${row.eventType}:`)} ${row.count} events / ${row.sessions} sessions`);
     }
   }
 
   if (report.projects.length > 0) {
     lines.push("");
-    lines.push("Projects:");
+    lines.push(theme.bold(theme.accent("Projects")));
     for (const row of report.projects) {
-      lines.push(`  ${row.project}: ${row.events} events / ${row.sessions} sessions`);
+      lines.push(`  ${theme.accent(`${row.project}:`)} ${row.events} events / ${row.sessions} sessions`);
     }
   }
 
   if (report.recentFailures.length > 0) {
     lines.push("");
-    lines.push("Recent failures:");
+    lines.push(theme.bold(theme.danger("Recent failures")));
     for (const row of report.recentFailures) {
       const suffix = row.snippet ? ` - ${row.snippet}` : "";
       const project = row.project ? ` ${row.project}` : "";
-      lines.push(`  ${row.ts} ${row.tool}${project} ${row.eventType}${suffix}`);
+      lines.push(
+        `  ${theme.muted(row.ts)} ${theme.accent(row.tool)}${project} ${theme.danger(row.eventType)}${suffix}`,
+      );
     }
   }
 

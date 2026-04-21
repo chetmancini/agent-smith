@@ -13,6 +13,7 @@ import {
   type SupportedAgentTool,
   toolLabel,
 } from "./agent-hosts";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export type SchemaConfigParseMode = "json" | "toml";
 export type SchemaValidationStatus = "valid" | "invalid" | "skipped";
@@ -498,8 +499,11 @@ export async function generateUpgradeSettingsReport(
   };
 }
 
-export function renderRefreshSchemaResult(result: SchemaRefreshResult): string {
-  return `Refreshed ${result.toolLabel} schema: ${result.schemaPath}\n`;
+export function renderRefreshSchemaResult(
+  result: SchemaRefreshResult,
+  theme: TerminalTheme = createTerminalTheme(),
+): string {
+  return `${theme.success("Refreshed")} ${theme.accent(result.toolLabel)} ${theme.dim("schema:")} ${result.schemaPath}\n`;
 }
 
 function renderKeyList(label: string, keys: string[]): string {
@@ -512,36 +516,55 @@ function renderKeyList(label: string, keys: string[]): string {
   return `${label}: ${preview}${suffix}`;
 }
 
-export function renderValidationReport(report: SchemaValidationReport): string {
+function validationTone(
+  status: ValidationReportStatus | SchemaValidationStatus,
+): "success" | "warning" | "danger" | "muted" {
+  switch (status) {
+    case "valid":
+      return "success";
+    case "skipped":
+    case "no-configs":
+      return "warning";
+    case "invalid":
+      return "danger";
+  }
+}
+
+export function renderValidationReport(
+  report: SchemaValidationReport,
+  theme: TerminalTheme = createTerminalTheme(),
+): string {
   const lines: string[] = [];
-  lines.push("Schema Validation Summary");
-  lines.push(`Tool: ${report.toolLabel}`);
-  lines.push(`Schema: ${report.schemaPath}`);
+  lines.push(theme.bold(theme.accent("Schema Validation Summary")));
+  lines.push(`${theme.dim("Tool:")} ${theme.accent(report.toolLabel)}`);
+  lines.push(`${theme.dim("Schema:")} ${report.schemaPath}`);
   if (report.metadata?.fetched_at) {
-    lines.push(`Fetched: ${report.metadata.fetched_at}`);
+    lines.push(`${theme.dim("Fetched:")} ${report.metadata.fetched_at}`);
   }
 
   if (report.status === "no-configs") {
-    lines.push(`Status: no installed ${report.toolLabel} config files found`);
+    lines.push(
+      `${theme.dim("Status:")} ${theme.tone(`no installed ${report.toolLabel} config files found`, validationTone(report.status))}`,
+    );
     return `${lines.join("\n")}\n`;
   }
 
   for (const config of report.configs) {
     lines.push("");
-    lines.push(`Config: ${config.configPath}`);
+    lines.push(`${theme.bold(theme.info("Config"))}: ${config.configPath}`);
 
     if (config.parseStatus === "invalid") {
-      lines.push(`Parse: invalid ${config.parseMode ?? "config"}`);
+      lines.push(`Parse: ${theme.danger(`invalid ${config.parseMode ?? "config"}`)}`);
       if (config.parseError) {
         lines.push(`  ${config.parseError}`);
       }
       continue;
     }
 
-    lines.push(`Parse: valid ${config.parseMode}`);
+    lines.push(`Parse: ${theme.success(`valid ${config.parseMode}`)}`);
     for (const detail of config.schemaCheckDetails) {
       if (detail.startsWith("Schema check:")) {
-        lines.push(detail);
+        lines.push(theme.info(detail));
       } else {
         lines.push(`  ${detail}`);
       }
@@ -575,23 +598,26 @@ function renderIssue(issue: UpgradeIssue): string[] {
   return lines;
 }
 
-export function renderUpgradeSettingsReport(report: UpgradeSettingsReport): string {
+export function renderUpgradeSettingsReport(
+  report: UpgradeSettingsReport,
+  theme: TerminalTheme = createTerminalTheme(),
+): string {
   const lines: string[] = [];
-  lines.push("Settings Upgrade Plan");
-  lines.push(`Tool: ${report.toolLabel}`);
-  lines.push(`Schema: ${report.schemaPath}`);
+  lines.push(theme.bold(theme.accent("Settings Upgrade Plan")));
+  lines.push(`${theme.dim("Tool:")} ${theme.accent(report.toolLabel)}`);
+  lines.push(`${theme.dim("Schema:")} ${report.schemaPath}`);
   if (report.metadata?.fetched_at) {
-    lines.push(`Fetched: ${report.metadata.fetched_at}`);
+    lines.push(`${theme.dim("Fetched:")} ${report.metadata.fetched_at}`);
   }
 
   lines.push("");
-  lines.push("Summary:");
+  lines.push(theme.bold(theme.info("Summary")));
   lines.push(`  ${report.summary}`);
 
   lines.push("");
-  lines.push("New Features Worth Adopting:");
+  lines.push(theme.bold(theme.success("New Features Worth Adopting")));
   if (report.newFeatures.length === 0) {
-    lines.push("  None identified automatically");
+    lines.push(`  ${theme.muted("None identified automatically")}`);
   } else {
     for (const feature of report.newFeatures) {
       lines.push(...renderFeature(feature));
@@ -599,9 +625,9 @@ export function renderUpgradeSettingsReport(report: UpgradeSettingsReport): stri
   }
 
   lines.push("");
-  lines.push("Deprecations and Removals:");
+  lines.push(theme.bold(theme.warning("Deprecations and Removals")));
   if (report.issues.length === 0) {
-    lines.push("  None");
+    lines.push(`  ${theme.muted("None")}`);
   } else {
     for (const issue of report.issues) {
       lines.push(...renderIssue(issue));
@@ -609,9 +635,9 @@ export function renderUpgradeSettingsReport(report: UpgradeSettingsReport): stri
   }
 
   lines.push("");
-  lines.push("Investigate Later:");
+  lines.push(theme.bold(theme.info("Investigate Later")));
   if (report.investigateLater.length === 0) {
-    lines.push("  None");
+    lines.push(`  ${theme.muted("None")}`);
   } else {
     for (const feature of report.investigateLater) {
       lines.push(...renderFeature(feature));
@@ -619,7 +645,7 @@ export function renderUpgradeSettingsReport(report: UpgradeSettingsReport): stri
   }
 
   lines.push("");
-  lines.push("Implementation Plan:");
+  lines.push(theme.bold(theme.accent("Implementation Plan")));
   for (const [index, step] of report.implementationPlan.entries()) {
     lines.push(`${index + 1}. ${step}`);
   }
