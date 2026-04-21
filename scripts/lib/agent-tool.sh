@@ -7,6 +7,10 @@ agent_smith_validate_tool_name() {
 	esac
 }
 
+agent_smith_supported_tools() {
+	printf '%s\n' claude gemini codex opencode
+}
+
 agent_smith_claude_config_candidates() {
 	cat <<EOF
 ${HOME}/.claude/settings.json

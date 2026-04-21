@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/agent-tool.sh"
 
 TOOL=""
+TMP_SCHEMA=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -18,7 +19,8 @@ while [ $# -gt 0 ]; do
 		cat <<'EOF'
 Usage: refresh-schemas.sh [--tool claude|gemini|codex|opencode]
 
-Refresh the cached JSON schema for the active agent only.
+Refresh cached JSON schemas for all supported agents by default.
+Use --tool to refresh only one schema.
 EOF
 		exit 0
 		;;
@@ -29,25 +31,24 @@ EOF
 	esac
 done
 
-TOOL="$(agent_smith_detect_tool "$TOOL")"
-SCHEMA_URL="$(agent_smith_schema_url "$TOOL")"
-SCHEMA_PATH="$(agent_smith_schema_cache_path "$TOOL")"
-METADATA_PATH="$(agent_smith_schema_metadata_path "$TOOL")"
-SCHEMA_DIR="$(dirname "$SCHEMA_PATH")"
-TMP_SCHEMA="$(mktemp "${TMPDIR:-/tmp}/agent-smith-schema.XXXXXX")"
+refresh_schema() {
+	local tool="$1"
+	local schema_url schema_path metadata_path schema_dir
 
-cleanup() {
-	rm -f "$TMP_SCHEMA"
-}
-trap cleanup EXIT
+	schema_url="$(agent_smith_schema_url "$tool")"
+	schema_path="$(agent_smith_schema_cache_path "$tool")"
+	metadata_path="$(agent_smith_schema_metadata_path "$tool")"
+	schema_dir="$(dirname "$schema_path")"
+	TMP_SCHEMA="$(mktemp "${TMPDIR:-/tmp}/agent-smith-schema.XXXXXX")"
 
-mkdir -p "$SCHEMA_DIR"
+	mkdir -p "$schema_dir"
 
-curl -fsSL "$SCHEMA_URL" -o "$TMP_SCHEMA"
-mv "$TMP_SCHEMA" "$SCHEMA_PATH"
-chmod 600 "$SCHEMA_PATH" 2>/dev/null || true
+	curl -fsSL "$schema_url" -o "$TMP_SCHEMA"
+	mv "$TMP_SCHEMA" "$schema_path"
+	TMP_SCHEMA=""
+	chmod 600 "$schema_path" 2>/dev/null || true
 
-python3 - "$TOOL" "$SCHEMA_URL" "$SCHEMA_PATH" "$METADATA_PATH" <<'PY'
+	python3 - "$tool" "$schema_url" "$schema_path" "$metadata_path" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -65,6 +66,28 @@ with open(metadata_path, "w", encoding="utf-8") as fh:
     json.dump(metadata, fh, indent=2)
     fh.write("\n")
 PY
-chmod 600 "$METADATA_PATH" 2>/dev/null || true
+	chmod 600 "$metadata_path" 2>/dev/null || true
 
-printf 'Refreshed %s schema: %s\n' "$(agent_smith_tool_label "$TOOL")" "$SCHEMA_PATH"
+	printf 'Refreshed %s schema: %s\n' "$(agent_smith_tool_label "$tool")" "$schema_path"
+}
+
+cleanup() {
+	rm -f "${TMP_SCHEMA:-}"
+}
+trap cleanup EXIT
+
+if [ -n "$TOOL" ]; then
+	refresh_schema "$(agent_smith_detect_tool "$TOOL")"
+	exit 0
+fi
+
+if [ -n "${AGENT_SMITH_TOOL:-}" ]; then
+	refresh_schema "$(agent_smith_detect_tool)"
+	exit 0
+fi
+
+while IFS= read -r tool; do
+	refresh_schema "$tool"
+done <<EOF
+$(agent_smith_supported_tools)
+EOF
