@@ -81,6 +81,7 @@ git add \
 	VERSION \
 	.claude-plugin/plugin.json \
 	.claude-plugin/marketplace.json \
+	.agents/plugins/marketplace.json \
 	.codex-plugin/plugin.json \
 	gemini-extension/gemini-extension.json \
 	agent-smith-app/package.json \

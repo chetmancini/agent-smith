@@ -67,12 +67,17 @@ update_json "${REPO_ROOT}/.claude-plugin/marketplace.json" '
   .metadata.version = $version
   | .plugins |= map(if .name == "agent-smith" then .version = $version else . end)
 '
+# shellcheck disable=SC2016
+update_json "${REPO_ROOT}/.agents/plugins/marketplace.json" '
+  .plugins |= map(if .name == "agent-smith" then .version = $version else . end)
+'
 
 echo "Synced Agent Smith version to ${version}"
 echo "Updated:"
 echo "  VERSION"
 echo "  .claude-plugin/plugin.json"
 echo "  .claude-plugin/marketplace.json"
+echo "  .agents/plugins/marketplace.json"
 echo "  .codex-plugin/plugin.json"
 echo "  gemini-extension/gemini-extension.json"
 echo "  agent-smith-app/package.json"
