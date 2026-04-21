@@ -77,10 +77,25 @@ describe("rollup and report", () => {
     const report = generateReport(paths, { limit: 10 });
     expect(report.totalEvents).toBe(4);
     expect(report.totalSessions).toBe(2);
+    expect(report.health.activeSessions).toBe(1);
+    expect(report.health.attentionSessions).toBe(1);
+    expect(report.health.failures).toEqual({ sessions: 1, events: 1 });
     expect(report.tools).toEqual([
       { tool: "codex", events: 3, sessions: 1 },
       { tool: "claude", events: 1, sessions: 1 },
     ]);
+    expect(report.attentionSessions[0]).toMatchObject({
+      sessionId: "session-a",
+      status: "attention",
+      failureCount: 1,
+      lastSnippet: "npm test",
+    });
+    expect(report.activeSessions[0]).toMatchObject({
+      sessionId: "session-b",
+      status: "active",
+    });
+    expect(report.stopReasons).toEqual([{ stopReason: "end_turn", sessions: 1 }]);
+    expect(report.failureHotspots).toEqual([{ snippet: "npm test", count: 1, sessions: 1 }]);
     expect(report.projects[0]).toEqual({
       project: "agent-smith",
       events: 3,
