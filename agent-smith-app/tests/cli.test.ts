@@ -263,7 +263,21 @@ describe("cli", () => {
     expect(existsSync(payload.artifacts.finalReport)).toBe(true);
     expect(existsSync(payload.artifacts.workingLog)).toBe(true);
     expect(existsSync(payload.artifacts.summary)).toBe(true);
-    expect(readFileSync(payload.artifacts.workingLog, "utf8")).toContain("Claude is running bun test");
+    const workingLog = readFileSync(payload.artifacts.workingLog, "utf8");
+    expect(workingLog).toContain("Claude is running bun test");
+    expect(workingLog).toContain("Claude is rolling the captured JSONL events into SQLite");
+    expect(workingLog).toContain("Claude is emitting the initial operator report from the rolled-up telemetry store");
+    expect(workingLog).toContain("Claude printed the initial operator report:");
+    expect(workingLog).toContain("Agent Smith Report");
+    expect(workingLog).toContain("Claude is running agentic analysis over telemetry, instructions, and repo context");
+    expect(workingLog).toContain("Claude printed the improvement report for operator review:");
+    expect(workingLog).toContain("Agent Smith Improve");
+    expect(workingLog).toContain(
+      "Claude emitted the improvement report with 2 safe recommendations and is offering to apply them",
+    );
+    expect(workingLog).toContain("Operator accepted the safe recommendations; Claude is applying them now");
+    expect(workingLog).toContain("Claude is emitting the refreshed final report after the applied changes");
+    expect(workingLog).toContain("Claude printed the refreshed final report:");
   });
 
   test("watch rejects json output with tui view", async () => {

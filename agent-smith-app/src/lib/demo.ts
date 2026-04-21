@@ -274,8 +274,23 @@ function demoWorkingLogPath(paths: AgentSmithPaths): string {
   return join(paths.reportsDir, "demo-claude-working.log");
 }
 
+function initializeDemoWorkingLog(paths: AgentSmithPaths): void {
+  writeFileSync(demoWorkingLogPath(paths), "Claude Working\n");
+}
+
 function appendWorkingLog(paths: AgentSmithPaths, message: string): void {
   appendFileSync(demoWorkingLogPath(paths), `${new Date().toISOString().slice(11, 19)} ${message}\n`);
+}
+
+function appendWorkingLogBlock(paths: AgentSmithPaths, title: string, content: string): void {
+  appendWorkingLog(paths, title);
+  for (const line of content.trimEnd().split("\n")) {
+    appendWorkingLog(paths, line.length > 0 ? line : " ");
+  }
+}
+
+function describeDemoCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function shellQuote(value: string): string {
@@ -335,7 +350,10 @@ function closeDemoTmuxSplitPane(splitPane: DemoTmuxSplitPane | null): void {
 function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
   return ({ prompt, repoRoot }) => {
     if (prompt.includes("You are Agent Smith's reasoning engine.")) {
-      appendWorkingLog(sandbox.paths, "Claude is reviewing the telemetry summary");
+      appendWorkingLog(
+        sandbox.paths,
+        "Claude is reviewing the telemetry summary and repo context for agentic analysis",
+      );
       appendDemoEvent(
         sandbox.paths,
         {
@@ -567,7 +585,6 @@ function writeReportArtifacts(
 
 async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<FullLoopDemoResult> {
   const demoTool = "claude";
-  writeFileSync(demoWorkingLogPath(sandbox.paths), "Claude Working\n");
   const emit = async (
     eventType: string,
     sessionId: string,
@@ -712,22 +729,44 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
   await working("Claude finished the first documentation pass");
   await emit("session_stop", "demo-charlie", { stop_reason: "end_turn", duration_seconds: 18 });
 
+  await working(
+    "Claude is rolling the captured JSONL events into SQLite so the reports can query sessions and failures",
+  );
   const rollup = rollupEvents(sandbox.paths);
   await note(`rollup -> ${rollup.ingestedEvents} events landed in SQLite`);
 
+  await working("Claude is emitting the initial operator report from the rolled-up telemetry store");
   const initialReport = generateReport(sandbox.paths, { tool: demoTool, limit: 5 });
+  appendWorkingLogBlock(
+    sandbox.paths,
+    "Claude printed the initial operator report:",
+    renderTextReport(initialReport, theme),
+  );
   await note(
     `report -> ${initialReport.totalSessions} sessions, ${initialReport.health.attentionSessions} attention, ${initialReport.health.failures.events} failures`,
   );
 
+  await working("Claude is running agentic analysis over telemetry, instructions, and repo context");
   const improvementReport = await generateImprovementReport(
     sandbox.paths,
     { tool: demoTool, limit: 5 },
     { env: sandbox.env, repoRoot: sandbox.repoRoot, runAgent: runner },
   );
   await note(`improve -> ${improvementReport.recommendations.length} safe recommendations`);
+  appendWorkingLogBlock(
+    sandbox.paths,
+    "Claude printed the improvement report for operator review:",
+    renderImprovementReport(improvementReport, theme),
+  );
+  await working(
+    `Claude emitted the improvement report with ${describeDemoCount(
+      improvementReport.recommendations.length,
+      "safe recommendation",
+      "safe recommendations",
+    )} and is offering to apply them`,
+  );
 
-  await working("Claude is auto-applying the safe recommendations");
+  await working("Operator accepted the safe recommendations; Claude is applying them now");
   const loopReport = await runImprovementLoop(
     { tool: demoTool, iterations: 2 },
     { env: sandbox.env, repoRoot: sandbox.repoRoot, runAgent: runner },
@@ -746,9 +785,16 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
   await emit("session_stop", "demo-delta", { stop_reason: "end_turn", duration_seconds: 14 });
 
   rollupEvents(sandbox.paths);
+  await working("Claude is emitting the refreshed final report after the applied changes");
   const finalReport = generateReport(sandbox.paths, { tool: demoTool, limit: 5 });
+  appendWorkingLogBlock(
+    sandbox.paths,
+    "Claude printed the refreshed final report:",
+    renderTextReport(finalReport, theme),
+  );
   await note(`final -> clean session added; latest run has ${finalReport.health.activeSessions} active sessions`);
 
+  await working("Claude is writing the demo report artifacts so the operator can inspect the full loop");
   const artifacts = writeReportArtifacts(sandbox, {
     initialReport,
     improvementReport,
@@ -777,6 +823,7 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
 export async function runFullLoopDemo(options: FullLoopDemoOptions = {}): Promise<FullLoopDemoResult> {
   const sandbox = createDemoSandbox(options.demoDir);
   const delayMs = options.delayMs ?? 700;
+  initializeDemoWorkingLog(sandbox.paths);
 
   if (!options.watch) {
     return await runDemoScenario(sandbox, delayMs);
