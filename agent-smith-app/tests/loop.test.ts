@@ -64,7 +64,11 @@ function seedSession(sessionId: string): void {
 }
 
 function runGit(repoRoot: string, args: string[]): void {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  ) as NodeJS.ProcessEnv;
   const proc = Bun.spawnSync(["git", "-C", repoRoot, ...args], {
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
