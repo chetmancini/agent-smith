@@ -2,7 +2,7 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "*",
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "name": "agent-smith-session-start",
@@ -124,7 +124,7 @@
     ],
     "SessionEnd": [
       {
-        "matcher": "*",
+        "matcher": "exit|clear|logout",
         "hooks": [
           {
             "name": "agent-smith-session-end",
@@ -136,7 +136,7 @@
         ]
       },
       {
-        "matcher": "*",
+        "matcher": "exit|clear|logout",
         "hooks": [
           {
             "name": "agent-smith-auto-analysis",

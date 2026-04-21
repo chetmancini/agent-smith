@@ -364,3 +364,36 @@ EOF
 	[[ "$output" == *"Config: $project_dir/.gemini/settings.json"* ]]
 	[[ "$output" == *"Parse: valid json"* ]]
 }
+
+@test "validate-agent-config uses draft2020 for Gemini schemas" {
+	local home_dir schema_dir fakebin project_dir
+	home_dir="$TEST_TMPDIR/home"
+	schema_dir="$home_dir/.config/agent-smith/schemas"
+	fakebin="$TEST_TMPDIR/fakebin"
+	project_dir="$TEST_TMPDIR/project"
+
+	mkdir -p "$home_dir/.gemini" "$schema_dir" "$fakebin" "$project_dir/.gemini"
+	printf '{"model":"gemini-3-pro"}\n' >"$project_dir/.gemini/settings.json"
+	cat >"$schema_dir/gemini-cli-settings.schema.json" <<'EOF'
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "model": { "type": "string" }
+  }
+}
+EOF
+	cat >"$fakebin/ajv" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$@" > "${TMPDIR:-/tmp}/agent-smith-ajv-args.txt"
+exit 0
+EOF
+	chmod 700 "$fakebin/ajv"
+
+	run env HOME="$home_dir" PATH="$fakebin:$PATH" TMPDIR="$TEST_TMPDIR" bash -lc "cd '$project_dir' && bash '$PROJECT_ROOT/scripts/validate-agent-config.sh' --tool gemini"
+
+	[ "$status" -eq 0 ]
+	grep -F -- "--spec=draft2020" "$TEST_TMPDIR/agent-smith-ajv-args.txt"
+	[[ "$output" == *"Schema check: valid (ajv)"* ]]
+}
