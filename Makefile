@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := quick-help
 
 BATS ?= bats
 AGENT_CLI ?=
@@ -18,109 +18,119 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
-	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
+	@$(MAKE) --no-print-directory _help HELP_MODE=full
+
+quick-help:
+	@$(MAKE) --no-print-directory _help HELP_MODE=quick
+
+_help:
+	@use_color=0; \
+	if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
 	   { [ -z "$(NO_COLOR)" ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; }; then \
-		if [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
+		use_color=1; \
+	fi; \
+	title_on=''; \
+	title_off=''; \
+	section_on=''; \
+	row_on=''; \
+	var_on=''; \
+	note_on=''; \
+	if [ "$$use_color" = "1" ]; then \
+		title_on='\033[1m'; \
+		title_off='\033[0m'; \
+		section_on='\033[36m'; \
+		row_on='\033[32m'; \
+		var_on='\033[2m'; \
+		note_on='\033[33m'; \
+	fi; \
+	print_title() { printf '%b%s%b\n' "$$title_on" "$$1" "$$title_off"; }; \
+	print_section() { printf '\n%b%s%b\n' "$$section_on" "$$1" "$$title_off"; }; \
+	print_row() { printf '  %b%-30s%b %s\n' "$$row_on" "$$1" "$$title_off" "$$2"; }; \
+	print_var() { printf '  %b%s%b=%s %s\n' "$$var_on" "$$1" "$$title_off" "$$2" "$$3"; }; \
+	if [ "$(HELP_MODE)" = "full" ] && [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
+		if [ "$$use_color" = "1" ]; then \
 			printf '\033[36m'; \
 			cat "$(HELP_HEADER)"; \
 			printf '\033[0m\n'; \
-		fi; \
-		printf '\033[1mAgent Smith Make Targets\033[0m\n\n'; \
-		printf '\033[36mCore\033[0m\n'; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make deps" "Install Bun dependencies for the TypeScript packages"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make build" "Build the standalone app and the OpenCode plugin"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-compile" "Build a standalone executable for the current host"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make format-check" "Run formatter checks for the standalone app"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make typecheck" "Run TypeScript type checks for the app and OpenCode plugin"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make pre-push" "Run the full local validation gate before pushing"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make codex-install" "Link Agent Smith into Codex, write the personal marketplace, and update Codex config"; \
-		printf '\n\033[36mAgent Helpers\033[0m\n'; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Codex, or OpenCode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Codex, or OpenCode"; \
-		printf '\n\033[36mAliases\033[0m\n'; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make claude-analyze" "Alias for make agent-analyze TOOL=claude"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make claude-validate-schemas" "Alias for make agent-validate-schemas TOOL=claude"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make claude-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=claude"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make claude-loop" "Alias for make agent-loop TOOL=claude"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make codex-analyze" "Alias for make agent-analyze TOOL=codex"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make codex-validate-schemas" "Alias for make agent-validate-schemas TOOL=codex"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make codex-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=codex"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make codex-loop" "Alias for make agent-loop TOOL=codex"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make opencode-analyze" "Alias for make agent-analyze TOOL=opencode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make opencode-validate-schemas" "Alias for make agent-validate-schemas TOOL=opencode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make opencode-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=opencode"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make opencode-loop" "Alias for make agent-loop TOOL=opencode"; \
-		printf '\n\033[33mVariables\033[0m\n'; \
-		printf '  \033[2mTOOL\033[0m=%s %s\n' "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex|opencode)"; \
-		printf '  \033[2mSESSIONS\033[0m=%s %s\n' "$(SESSIONS)" "(used by analyze and loop helpers)"; \
-		printf '  \033[2mHELP_ASCII\033[0m=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
-		printf '  \033[2mAGENT_CLI\033[0m=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
-		printf '  \033[2mHELP_HEADER\033[0m=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
-	else \
-		if [ "$(HELP_ASCII)" != "0" ] && [ -f "$(HELP_HEADER)" ]; then \
+		else \
 			cat "$(HELP_HEADER)"; \
 			printf '\n'; \
 		fi; \
-		printf 'Agent Smith Make Targets\n\n'; \
-		printf 'Core\n'; \
-		printf '  %-30s %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
-		printf '  %-30s %s\n' "make deps" "Install Bun dependencies for the TypeScript packages"; \
-		printf '  %-30s %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
-		printf '  %-30s %s\n' "make build" "Build the standalone app and the OpenCode plugin"; \
-		printf '  %-30s %s\n' "make app-compile" "Build a standalone executable for the current host"; \
-		printf '  %-30s %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
-		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
-		printf '  %-30s %s\n' "make format-check" "Run formatter checks for the standalone app"; \
-		printf '  %-30s %s\n' "make typecheck" "Run TypeScript type checks for the app and OpenCode plugin"; \
-		printf '  %-30s %s\n' "make pre-push" "Run the full local validation gate before pushing"; \
-		printf '  %-30s %s\n' "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
-		printf '  %-30s %s\n' "make version" "Print the current release version"; \
-		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
-		printf '  %-30s %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
-		printf '  %-30s %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
-		printf '  %-30s %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
-		printf '  %-30s %s\n' "make codex-install" "Link Agent Smith into Codex, write the personal marketplace, and update Codex config"; \
-		printf '\nAgent Helpers\n'; \
-		printf '  %-30s %s\n' "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
-		printf '  %-30s %s\n' "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
-		printf '  %-30s %s\n' "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Codex, or OpenCode"; \
-		printf '  %-30s %s\n' "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Codex, or OpenCode"; \
-		printf '\nAliases\n'; \
-		printf '  %-30s %s\n' "make claude-analyze" "Alias for make agent-analyze TOOL=claude"; \
-		printf '  %-30s %s\n' "make claude-validate-schemas" "Alias for make agent-validate-schemas TOOL=claude"; \
-		printf '  %-30s %s\n' "make claude-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=claude"; \
-		printf '  %-30s %s\n' "make claude-loop" "Alias for make agent-loop TOOL=claude"; \
-		printf '  %-30s %s\n' "make codex-analyze" "Alias for make agent-analyze TOOL=codex"; \
-		printf '  %-30s %s\n' "make codex-validate-schemas" "Alias for make agent-validate-schemas TOOL=codex"; \
-		printf '  %-30s %s\n' "make codex-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=codex"; \
-		printf '  %-30s %s\n' "make codex-loop" "Alias for make agent-loop TOOL=codex"; \
-		printf '  %-30s %s\n' "make opencode-analyze" "Alias for make agent-analyze TOOL=opencode"; \
-		printf '  %-30s %s\n' "make opencode-validate-schemas" "Alias for make agent-validate-schemas TOOL=opencode"; \
-		printf '  %-30s %s\n' "make opencode-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=opencode"; \
-		printf '  %-30s %s\n' "make opencode-loop" "Alias for make agent-loop TOOL=opencode"; \
-		printf '\nVariables\n'; \
-		printf '  TOOL=%s %s\n' "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex|opencode)"; \
-		printf '  SESSIONS=%s %s\n' "$(SESSIONS)" "(used by analyze and loop helpers)"; \
-		printf '  HELP_ASCII=%s %s\n' "$(HELP_ASCII)" "(set to 0 to hide the header image)"; \
-		printf '  AGENT_CLI=%s %s\n' "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
-		printf '  HELP_HEADER=%s %s\n' "$(HELP_HEADER)" "(path to the ASCII header art)"; \
+	fi; \
+	print_title "Agent Smith Make Targets"; \
+	printf '\n'; \
+	if [ "$(HELP_MODE)" = "quick" ]; then \
+		print_section "Quick Start"; \
+		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
+		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make refresh-schemas" "Refresh the installed agent schema cache"; \
+		print_row "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
+		print_row "make codex-upgrade-settings" "Apply the Codex settings upgrade flow"; \
+		print_row "make codex-analyze" "Run the Codex-backed analyze-config flow"; \
+		printf '\n%b%s%b\n' "$$note_on" "Run \`make help\` for the full maintainer target list." "$$title_off"; \
+	else \
+		print_section "Help"; \
+		print_row "make quick-help" "Show the compact quickstart surfaced by plain \`make\`"; \
+		print_row "make help" "Show every maintained make target"; \
+		print_section "End Users"; \
+		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
+		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make refresh-schemas" "Refresh the installed agent schema cache"; \
+		print_row "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
+		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
+		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Codex, or OpenCode"; \
+		print_row "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
+		print_row "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Codex, or OpenCode"; \
+		print_section "Agent Aliases"; \
+		print_row "make claude-analyze" "Alias for make agent-analyze TOOL=claude"; \
+		print_row "make claude-validate-schemas" "Alias for make agent-validate-schemas TOOL=claude"; \
+		print_row "make claude-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=claude"; \
+		print_row "make claude-loop" "Alias for make agent-loop TOOL=claude"; \
+		print_row "make codex-analyze" "Alias for make agent-analyze TOOL=codex"; \
+		print_row "make codex-validate-schemas" "Alias for make agent-validate-schemas TOOL=codex"; \
+		print_row "make codex-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=codex"; \
+		print_row "make codex-loop" "Alias for make agent-loop TOOL=codex"; \
+		print_row "make opencode-analyze" "Alias for make agent-analyze TOOL=opencode"; \
+		print_row "make opencode-validate-schemas" "Alias for make agent-validate-schemas TOOL=opencode"; \
+		print_row "make opencode-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=opencode"; \
+		print_row "make opencode-loop" "Alias for make agent-loop TOOL=opencode"; \
+		print_section "Validation"; \
+		print_row "make shell-test" "Run the Bats suites for hooks, scripts, and metrics"; \
+		print_row "make test" "Run all tests (Bats + TypeScript packages)"; \
+		print_row "make app-test" "Run the standalone Agent Smith app test suite"; \
+		print_row "make opencode-test" "Run the OpenCode plugin test suite"; \
+		print_row "make lint" "Run the local lint suite used in CI"; \
+		print_row "make format-check" "Run formatter checks for the standalone app"; \
+		print_row "make app-format" "Apply the standalone app formatter"; \
+		print_row "make app-lint" "Run the standalone app linter"; \
+		print_row "make typecheck" "Run TypeScript checks for the app and OpenCode plugin"; \
+		print_row "make app-typecheck" "Run TypeScript checks for the standalone app"; \
+		print_row "make opencode-typecheck" "Run TypeScript checks for the OpenCode plugin"; \
+		print_row "make pre-push" "Run the full local validation gate before pushing"; \
+		print_section "Build And Package"; \
+		print_row "make build" "Build the standalone app and the OpenCode plugin"; \
+		print_row "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		print_row "make opencode-build" "Build the OpenCode plugin bundle"; \
+		print_row "make app-compile" "Build a standalone executable for the current host"; \
+		print_row "make app-pack-check" "Verify the npm package contents with a dry run"; \
+		print_section "Version And Release"; \
+		print_row "make version" "Print the current release version"; \
+		print_row "make sync-version" "Sync package metadata to the checked-in VERSION"; \
+		print_row "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
+		print_row "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
+		print_section "Contributor Maintenance"; \
+		print_row "make app-install" "Install Bun dependencies for the standalone app"; \
+		print_row "make opencode-install" "Install Bun dependencies for the OpenCode plugin"; \
+		print_row "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
+		print_section "Variables"; \
+		print_var "TOOL" "$(if $(TOOL),$(TOOL),<auto>)" "(accepted: claude|codex|opencode)"; \
+		print_var "SESSIONS" "$(SESSIONS)" "(used by analyze and loop helpers)"; \
+		print_var "HELP_ASCII" "$(HELP_ASCII)" "(set to 0 to hide the full help header image)"; \
+		print_var "AGENT_CLI" "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
+		print_var "HELP_HEADER" "$(HELP_HEADER)" "(path to the ASCII header art)"; \
 	fi
 
 deps:
