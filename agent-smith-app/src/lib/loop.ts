@@ -11,6 +11,7 @@ import {
   generateImprovementReport,
 } from "./recommendations";
 import { resolvePaths } from "./paths";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export interface LoopFilters extends ImprovementFilters {
   iterations?: number;
@@ -519,36 +520,40 @@ export async function runImprovementLoop(
   };
 }
 
-export function renderLoopReport(report: ImprovementLoopReport): string {
+export function renderLoopReport(report: ImprovementLoopReport, theme: TerminalTheme = createTerminalTheme()): string {
   const lines: string[] = [];
-  lines.push("Agent Smith Loop");
-  lines.push(`Metrics dir: ${report.metricsDir}`);
-  lines.push(`Tool: ${report.tool}`);
+  lines.push(theme.bold(theme.accent("Agent Smith Loop")));
+  lines.push(`${theme.dim("Metrics dir:")} ${report.metricsDir}`);
+  lines.push(`${theme.dim("Tool:")} ${theme.accent(report.tool)}`);
   if (report.project) {
-    lines.push(`Project: ${report.project}`);
+    lines.push(`${theme.dim("Project:")} ${report.project}`);
   }
-  lines.push(`Stop reason: ${report.stopReason}`);
-  lines.push(`Summary: ${report.finalSummary}`);
+  lines.push(`${theme.dim("Stop reason:")} ${theme.warning(report.stopReason)}`);
+  lines.push(`${theme.dim("Summary:")} ${report.finalSummary}`);
 
   if (report.iterations.length === 0) {
     return `${lines.join("\n")}\n`;
   }
 
   lines.push("");
-  lines.push("Iterations:");
+  lines.push(theme.bold(theme.info("Iterations")));
   for (const iteration of report.iterations) {
     lines.push(
-      `  ${iteration.index}. [${iteration.recommendationPriority}] ${iteration.recommendationTitle} (${iteration.recommendationCategory})`,
+      `  ${theme.bold(`${iteration.index}.`)} ${theme.warning(`[${iteration.recommendationPriority}]`)} ${iteration.recommendationTitle} ${theme.dim(`(${iteration.recommendationCategory})`)}`,
     );
-    lines.push(`     Analysis: ${iteration.analysisSummary}`);
-    lines.push(`     Apply: ${iteration.apply.summary}`);
-    lines.push(`     Evaluate: ${iteration.evaluation.summary} (${iteration.evaluation.outcome})`);
+    lines.push(`     ${theme.dim("Analysis:")} ${iteration.analysisSummary}`);
+    lines.push(`     ${theme.dim("Apply:")} ${iteration.apply.summary}`);
+    lines.push(
+      `     ${theme.dim("Evaluate:")} ${iteration.evaluation.summary} ${theme.dim(`(${iteration.evaluation.outcome})`)}`,
+    );
     if (iteration.apply.changedFiles.length > 0) {
-      lines.push(`     Files: ${iteration.apply.changedFiles.map((file) => basename(file)).join(", ")}`);
+      lines.push(
+        `     ${theme.dim("Files:")} ${iteration.apply.changedFiles.map((file) => basename(file)).join(", ")}`,
+      );
     }
     if (iteration.apply.validation.length > 0) {
       lines.push(
-        `     Validation: ${iteration.apply.validation
+        `     ${theme.dim("Validation:")} ${iteration.apply.validation
           .map((entry) => `${entry.outcome} ${entry.command}`)
           .join(" | ")}`,
       );

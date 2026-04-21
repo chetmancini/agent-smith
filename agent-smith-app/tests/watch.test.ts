@@ -6,7 +6,14 @@ import { join } from "node:path";
 import { createEvent } from "../src/lib/events";
 import { resolvePaths } from "../src/lib/paths";
 import { appendEvent } from "../src/lib/store";
-import { formatWatchedEvent, watchEvents } from "../src/lib/watch";
+import {
+  buildWatchDashboardSeed,
+  buildWatchDashboardState,
+  createSessionWatchFormatter,
+  formatWatchedEvent,
+  snapshotWatchDashboard,
+  watchEvents,
+} from "../src/lib/watch";
 
 describe("watch", () => {
   let metricsDir: string;
@@ -64,5 +71,173 @@ describe("watch", () => {
     expect(formatWatchedEvent(second.value)).toContain("npm test");
 
     controller.abort();
+  });
+
+  test("watch can resume from a seed snapshot offset without dropping handoff events", async () => {
+    const paths = resolvePaths(process.env);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "watch-seed",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+
+    const seed = buildWatchDashboardSeed(paths);
+    expect(seed.state.totalEvents).toBe(1);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "command_failure",
+        tool: "codex",
+        sessionId: "watch-seed",
+        metadata: { cwd: "/tmp/project-a", command: "npm test" },
+      }),
+    );
+
+    const controller = new AbortController();
+    const iterator = watchEvents(paths, {
+      startOffset: seed.nextOffset,
+      pollMs: 10,
+      signal: controller.signal,
+    });
+
+    const next = await iterator.next();
+    expect(next.done).toBe(false);
+    expect(next.value?.event_type).toBe("command_failure");
+    expect(next.value?.session_id).toBe("watch-seed");
+
+    controller.abort();
+  });
+
+  test("session watch formatter summarizes state transitions", () => {
+    const formatSessionEvent = createSessionWatchFormatter();
+
+    const startLine = formatSessionEvent(
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "watch-session",
+        timestamp: "2026-04-20T12:00:00.000Z",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+    expect(startLine).toContain("START");
+    expect(startLine).toContain("active=1");
+
+    const failureLine = formatSessionEvent(
+      createEvent({
+        eventType: "command_failure",
+        tool: "codex",
+        sessionId: "watch-session",
+        timestamp: "2026-04-20T12:00:05.000Z",
+        metadata: { cwd: "/tmp/project-a", command: "npm test", error: "exit 1" },
+      }),
+    );
+    expect(failureLine).toContain("FAIL");
+    expect(failureLine).toContain("npm test");
+    expect(failureLine).toContain("fail=1");
+
+    const stopLine = formatSessionEvent(
+      createEvent({
+        eventType: "session_stop",
+        tool: "codex",
+        sessionId: "watch-session",
+        timestamp: "2026-04-20T12:00:09.000Z",
+        metadata: { stop_reason: "end_turn", duration_seconds: 9 },
+      }),
+    );
+    expect(stopLine).toContain("STOP");
+    expect(stopLine).toContain("end_turn");
+    expect(stopLine).toContain("events=3");
+    expect(stopLine).toContain("active=0");
+  });
+
+  test("watch dashboard snapshot separates active and historic sessions with aggregations", () => {
+    const paths = resolvePaths(process.env);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "dashboard-a",
+        timestamp: "2026-04-20T12:00:00.000Z",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "permission_denied",
+        tool: "codex",
+        sessionId: "dashboard-a",
+        timestamp: "2026-04-20T12:00:03.000Z",
+        metadata: { cwd: "/tmp/project-a", tool_name: "Bash" },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "claude",
+        sessionId: "dashboard-b",
+        timestamp: "2026-04-20T12:00:04.000Z",
+        metadata: { cwd: "/tmp/project-b" },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "command_failure",
+        tool: "claude",
+        sessionId: "dashboard-b",
+        timestamp: "2026-04-20T12:00:05.000Z",
+        metadata: { cwd: "/tmp/project-b", command: "npm test", error: "exit 1" },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_stop",
+        tool: "claude",
+        sessionId: "dashboard-b",
+        timestamp: "2026-04-20T12:00:09.000Z",
+        metadata: { cwd: "/tmp/project-b", stop_reason: "end_turn", duration_seconds: 9 },
+      }),
+    );
+
+    const snapshot = snapshotWatchDashboard(buildWatchDashboardState(paths), {
+      activeLimit: 5,
+      historyLimit: 5,
+      groupLimit: 5,
+    });
+
+    expect(snapshot.totalEvents).toBe(5);
+    expect(snapshot.totalSessions).toBe(2);
+    expect(snapshot.activeSessions).toBe(1);
+    expect(snapshot.completedSessions).toBe(1);
+    expect(snapshot.attentionSessions).toBe(2);
+    expect(snapshot.activeSessionRows[0]).toMatchObject({
+      sessionId: "dashboard-a",
+      status: "active-attention",
+      denialCount: 1,
+    });
+    expect(snapshot.historicalSessionRows[0]).toMatchObject({
+      sessionId: "dashboard-b",
+      status: "attention",
+      failureCount: 1,
+      lastSnippet: "npm test",
+    });
+    expect(snapshot.toolSummary).toEqual([
+      { name: "claude", events: 3, sessions: 1, activeSessions: 0, attentionSessions: 1 },
+      { name: "codex", events: 2, sessions: 1, activeSessions: 1, attentionSessions: 1 },
+    ]);
+    expect(snapshot.recentEvents[0]).toContain("session_stop");
+    expect(snapshot.recentEvents[1]).toContain("npm test");
   });
 });

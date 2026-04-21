@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import process from "node:process";
 
 import { type SupportedAgentTool, validateToolName } from "./lib/agent-hosts";
+import { installCodexPlugin } from "./lib/codex-install";
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { type LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
@@ -22,12 +23,15 @@ import {
   validateAgentConfig,
 } from "./lib/schema-tools";
 import { appendEvent } from "./lib/store";
-import { formatWatchedEvent, watchEvents } from "./lib/watch";
+import { createTerminalTheme, shouldUseColor, type TerminalTheme } from "./lib/terminal-theme";
+import { runWatchTui } from "./lib/watch-tui";
+import { createSessionWatchFormatter, formatWatchedEvent, watchEvents } from "./lib/watch";
 
 export interface CliIO {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   readStdin: () => Promise<string>;
+  isTTY?: boolean;
 }
 
 export interface CliRuntimeOverrides {
@@ -43,22 +47,24 @@ function defaultIo(): CliIO {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
     readStdin: async () => await new Response(Bun.stdin.stream()).text(),
+    isTTY: Boolean(process.stdout.isTTY),
   };
 }
 
-function usage(): string {
-  return `Usage:
+function usage(theme: TerminalTheme = createTerminalTheme()): string {
+  return `${theme.bold(theme.accent("Usage:"))}
   agent-smith emit <event_type> [--tool TOOL] [--session-id ID] [--session-hint TEXT] [--metadata JSON|--metadata-file FILE|--metadata-stdin]
   agent-smith rollup [--json]
   agent-smith report [--tool TOOL] [--project NAME] [--limit N] [--format text|json]
   agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
   agent-smith loop [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--iterations N] [--include-unsafe] [--format text|json]
-  agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--json]
+  agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--view tui|sessions|events] [--json]
   agent-smith refresh-schemas [--tool TOOL] [--json]
   agent-smith validate-agent-config [--tool TOOL] [--refresh] [--json]
   agent-smith validate-schemas [--tool TOOL] [--refresh] [--json]
   agent-smith upgrade-settings [--tool TOOL] [--refresh] [--format text|json]
   agent-smith update-settings [--tool TOOL] [--refresh] [--format text|json]
+  agent-smith install-codex [--repo-root PATH] [--json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
 `;
@@ -211,7 +217,7 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
   return 0;
 }
 
-function handleRollup(args: string[], io: CliIO): number {
+function handleRollup(args: string[], io: CliIO, theme: TerminalTheme): number {
   let json = false;
   while (args.length > 0) {
     const flag = args.shift();
@@ -227,13 +233,13 @@ function handleRollup(args: string[], io: CliIO): number {
     writeJson(io, result);
   } else {
     io.stdout(
-      `Rolled up ${result.ingestedEvents} events, skipped ${result.skippedLines} malformed lines, next offset ${result.nextOffset}\n`,
+      `${theme.success("Rolled up")} ${result.ingestedEvents} events, ${theme.warning(`skipped ${result.skippedLines}`)} malformed lines, ${theme.dim("next offset")} ${result.nextOffset}\n`,
     );
   }
   return 0;
 }
 
-function handleReport(args: string[], io: CliIO): number {
+function handleReport(args: string[], io: CliIO, theme: TerminalTheme): number {
   let tool: string | undefined;
   let project: string | undefined;
   let limit = 5;
@@ -268,12 +274,17 @@ function handleReport(args: string[], io: CliIO): number {
   if (format === "json") {
     writeJson(io, report);
   } else {
-    io.stdout(renderTextReport(report));
+    io.stdout(renderTextReport(report, theme));
   }
   return 0;
 }
 
-async function handleImprove(args: string[], io: CliIO, runtime: ImproveRuntime = {}): Promise<number> {
+async function handleImprove(
+  args: string[],
+  io: CliIO,
+  theme: TerminalTheme,
+  runtime: ImproveRuntime = {},
+): Promise<number> {
   let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let limit = 5;
@@ -321,12 +332,12 @@ async function handleImprove(args: string[], io: CliIO, runtime: ImproveRuntime 
   if (format === "json") {
     writeJson(io, report);
   } else {
-    io.stdout(renderImprovementReport(report));
+    io.stdout(renderImprovementReport(report, theme));
   }
   return 0;
 }
 
-async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}): Promise<number> {
+async function handleLoop(args: string[], io: CliIO, theme: TerminalTheme, runtime: LoopRuntime = {}): Promise<number> {
   let tool: SupportedAgentTool | undefined;
   let project: string | undefined;
   let limit = 5;
@@ -387,18 +398,19 @@ async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}):
   if (format === "json") {
     writeJson(io, report);
   } else {
-    io.stdout(renderLoopReport(report));
+    io.stdout(renderLoopReport(report, theme));
   }
 
   return 0;
 }
 
-async function handleWatch(args: string[], io: CliIO): Promise<number> {
+async function handleWatch(args: string[], io: CliIO, theme: TerminalTheme): Promise<number> {
   let tool: string | undefined;
   let project: string | undefined;
   let tail = 0;
   let pollMs = 1000;
   let json = false;
+  let view: "tui" | "sessions" | "events" | null = null;
 
   while (args.length > 0) {
     const flag = args.shift();
@@ -415,6 +427,14 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
       case "--poll-ms":
         pollMs = parseInteger(shiftValue(args, "--poll-ms"), "--poll-ms");
         break;
+      case "--view": {
+        const value = shiftValue(args, "--view");
+        if (value !== "tui" && value !== "sessions" && value !== "events") {
+          throw new CliUsageError(`Unsupported watch view: ${value}`);
+        }
+        view = value;
+        break;
+      }
       case "--json":
         json = true;
         break;
@@ -423,9 +443,19 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     }
   }
 
+  const resolvedView = view ?? (json ? "events" : process.stdout.isTTY && process.stdin.isTTY ? "tui" : "sessions");
+  if (json && resolvedView === "tui") {
+    throw new CliUsageError("--json cannot be combined with --view tui");
+  }
+
+  if (resolvedView === "tui") {
+    return await runWatchTui(resolvePaths(), { tool, project, tail, pollMs });
+  }
+
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort());
   process.once("SIGTERM", () => controller.abort());
+  const sessionFormatter = createSessionWatchFormatter(theme);
 
   for await (const event of watchEvents(resolvePaths(), {
     tool,
@@ -437,14 +467,19 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     if (json) {
       io.stdout(`${JSON.stringify(event)}\n`);
     } else {
-      io.stdout(`${formatWatchedEvent(event)}\n`);
+      io.stdout(`${resolvedView === "events" ? formatWatchedEvent(event, theme) : sessionFormatter(event)}\n`);
     }
   }
 
   return 0;
 }
 
-async function handleRefreshSchemas(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+async function handleRefreshSchemas(
+  args: string[],
+  io: CliIO,
+  theme: TerminalTheme,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
   let tool: SupportedAgentTool | undefined;
   let json = false;
 
@@ -466,12 +501,17 @@ async function handleRefreshSchemas(args: string[], io: CliIO, runtime: SchemaTo
   if (json) {
     writeJson(io, result);
   } else {
-    io.stdout(renderRefreshSchemaResult(result));
+    io.stdout(renderRefreshSchemaResult(result, theme));
   }
   return 0;
 }
 
-async function handleValidateAgentConfig(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+async function handleValidateAgentConfig(
+  args: string[],
+  io: CliIO,
+  theme: TerminalTheme,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
   let tool: SupportedAgentTool | undefined;
   let refresh = false;
   let json = false;
@@ -497,12 +537,17 @@ async function handleValidateAgentConfig(args: string[], io: CliIO, runtime: Sch
   if (json) {
     writeJson(io, report);
   } else {
-    io.stdout(renderValidationReport(report));
+    io.stdout(renderValidationReport(report, theme));
   }
   return report.status === "invalid" ? 1 : 0;
 }
 
-async function handleUpgradeSettings(args: string[], io: CliIO, runtime: SchemaToolRuntime = {}): Promise<number> {
+async function handleUpgradeSettings(
+  args: string[],
+  io: CliIO,
+  theme: TerminalTheme,
+  runtime: SchemaToolRuntime = {},
+): Promise<number> {
   let tool: SupportedAgentTool | undefined;
   let refresh = true;
   let format: "text" | "json" = "text";
@@ -539,12 +584,56 @@ async function handleUpgradeSettings(args: string[], io: CliIO, runtime: SchemaT
   if (format === "json") {
     writeJson(io, report);
   } else {
-    io.stdout(renderUpgradeSettingsReport(report));
+    io.stdout(renderUpgradeSettingsReport(report, theme));
   }
   return 0;
 }
 
-function handleDoctor(args: string[], io: CliIO): number {
+function handleInstallCodex(args: string[], io: CliIO, theme: TerminalTheme): number {
+  let json = false;
+  let repoRoot: string | undefined;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--json":
+        json = true;
+        break;
+      case "--repo-root":
+        repoRoot = shiftValue(args, "--repo-root");
+        break;
+      default:
+        throw new CliUsageError(`Unknown install-codex argument: ${flag}`);
+    }
+  }
+
+  const result = installCodexPlugin({ repoRoot });
+  if (json) {
+    writeJson(io, result);
+    return 0;
+  }
+
+  io.stdout(`${theme.bold(theme.accent("Codex install scaffold is ready."))}\n`);
+  io.stdout(`${theme.dim("Repo root:")} ${result.paths.repoRoot}\n`);
+  io.stdout(`${theme.dim("Linked plugin source:")} ${result.paths.personalPluginPath}\n`);
+  io.stdout(`${theme.dim("Updated marketplace:")} ${result.paths.personalMarketplacePath}\n`);
+  io.stdout(`${theme.dim("Updated config:")} ${result.paths.codexConfigPath}\n`);
+  io.stdout(`\n${theme.bold(theme.info("Changes"))}\n`);
+  io.stdout(
+    `- plugin link: ${result.changed.pluginLink ? theme.success("updated") : theme.muted("already current")}\n`,
+  );
+  io.stdout(
+    `- personal marketplace: ${result.changed.marketplace ? theme.success("updated") : theme.muted("already current")}\n`,
+  );
+  io.stdout(`- codex config: ${result.changed.config ? theme.success("updated") : theme.muted("already current")}\n`);
+  io.stdout(`\n${theme.bold(theme.info("Next"))}\n`);
+  for (const step of result.manualSteps) {
+    io.stdout(`- ${step}\n`);
+  }
+  return 0;
+}
+
+function handleDoctor(args: string[], io: CliIO, theme: TerminalTheme): number {
   let json = false;
   while (args.length > 0) {
     const flag = args.shift();
@@ -559,13 +648,13 @@ function handleDoctor(args: string[], io: CliIO): number {
   if (json) {
     writeJson(io, report);
   } else {
-    io.stdout(renderDoctorReport(report));
+    io.stdout(renderDoctorReport(report, theme));
   }
 
   return report.overallStatus === "fail" ? 1 : 0;
 }
 
-function handlePaths(args: string[], io: CliIO): number {
+function handlePaths(args: string[], io: CliIO, theme: TerminalTheme): number {
   let json = false;
   while (args.length > 0) {
     const flag = args.shift();
@@ -580,10 +669,10 @@ function handlePaths(args: string[], io: CliIO): number {
   if (json) {
     writeJson(io, paths);
   } else {
-    io.stdout(`metricsDir: ${paths.metricsDir}\n`);
-    io.stdout(`eventsFile: ${paths.eventsFile}\n`);
-    io.stdout(`dbFile: ${paths.dbFile}\n`);
-    io.stdout(`reportsDir: ${paths.reportsDir}\n`);
+    io.stdout(`${theme.dim("metricsDir:")} ${paths.metricsDir}\n`);
+    io.stdout(`${theme.dim("eventsFile:")} ${paths.eventsFile}\n`);
+    io.stdout(`${theme.dim("dbFile:")} ${paths.dbFile}\n`);
+    io.stdout(`${theme.dim("reportsDir:")} ${paths.reportsDir}\n`);
   }
   return 0;
 }
@@ -593,11 +682,16 @@ export async function runCli(
   io: CliIO = defaultIo(),
   runtime: CliRuntimeOverrides = {},
 ): Promise<number> {
+  const theme = createTerminalTheme({
+    color: shouldUseColor({
+      isTTY: io.isTTY ?? process.stdout.isTTY,
+    }),
+  });
   const args = [...argv];
   const command = args.shift();
 
   if (!command || command === "-h" || command === "--help") {
-    io.stdout(usage());
+    io.stdout(usage(theme));
     return 0;
   }
 
@@ -605,27 +699,29 @@ export async function runCli(
     case "emit":
       return await handleEmit(args, io);
     case "rollup":
-      return handleRollup(args, io);
+      return handleRollup(args, io, theme);
     case "report":
-      return handleReport(args, io);
+      return handleReport(args, io, theme);
     case "improve":
-      return await handleImprove(args, io, runtime.improve);
+      return await handleImprove(args, io, theme, runtime.improve);
     case "loop":
-      return await handleLoop(args, io, runtime.loop);
+      return await handleLoop(args, io, theme, runtime.loop);
     case "watch":
-      return await handleWatch(args, io);
+      return await handleWatch(args, io, theme);
     case "refresh-schemas":
-      return await handleRefreshSchemas(args, io, runtime.schema);
+      return await handleRefreshSchemas(args, io, theme, runtime.schema);
     case "validate-agent-config":
     case "validate-schemas":
-      return await handleValidateAgentConfig(args, io, runtime.schema);
+      return await handleValidateAgentConfig(args, io, theme, runtime.schema);
     case "upgrade-settings":
     case "update-settings":
-      return await handleUpgradeSettings(args, io, runtime.schema);
+      return await handleUpgradeSettings(args, io, theme, runtime.schema);
+    case "install-codex":
+      return handleInstallCodex(args, io, theme);
     case "doctor":
-      return handleDoctor(args, io);
+      return handleDoctor(args, io, theme);
     case "paths":
-      return handlePaths(args, io);
+      return handlePaths(args, io, theme);
     default:
       throw new CliUsageError(`Unknown command: ${command}`);
   }
@@ -636,7 +732,10 @@ async function main(): Promise<void> {
     process.exitCode = await runCli(process.argv.slice(2));
   } catch (error) {
     if (error instanceof CliUsageError) {
-      process.stderr.write(`${error.message}\n\n${usage()}`);
+      const theme = createTerminalTheme({
+        color: shouldUseColor({ isTTY: process.stderr.isTTY }),
+      });
+      process.stderr.write(`${theme.danger(error.message)}\n\n${usage(theme)}`);
       process.exitCode = 1;
       return;
     }

@@ -3,6 +3,9 @@ import { constants } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { codexPluginInstalledInCache, personalMarketplaceHasAgentSmith } from "./codex-install";
+import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
+
 export type DoctorStatus = "pass" | "warn" | "fail" | "skip";
 
 export interface DoctorCheck {
@@ -319,6 +322,12 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
   const configText = readText(configPath) ?? "";
   const repoManifest = join(repoRoot, ".codex-plugin", "plugin.json");
   const repoHooks = join(repoRoot, ".codex", "hooks.json");
+  const repoMarketplace = join(repoRoot, ".agents", "plugins", "marketplace.json");
+  const personalPluginPath = join(home, ".codex", "plugins", "agent-smith");
+  const personalMarketplacePath = join(home, ".agents", "plugins", "marketplace.json");
+  const installSurfaceReady =
+    existsSync(repoMarketplace) ||
+    (existsSync(personalPluginPath) && personalMarketplaceHasAgentSmith(personalMarketplacePath));
 
   const checks: DoctorCheck[] = [
     makeCheck(
@@ -334,6 +343,22 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
       existsSync(repoHooks),
       `${repoHooks} exists`,
       `${repoHooks} is missing`,
+    ),
+    makeCheck(
+      "codex_plugin_install_surface",
+      "Codex plugin marketplace",
+      installSurfaceReady,
+      existsSync(repoMarketplace)
+        ? `${repoMarketplace} is available for repo-scoped install`
+        : `${personalMarketplacePath} points to ${personalPluginPath}`,
+      `Add a repo marketplace at ${repoMarketplace} or run agent-smith install-codex`,
+    ),
+    makeCheck(
+      "codex_plugin_installed",
+      "Installed Codex plugin",
+      codexPluginInstalledInCache(env),
+      "Agent Smith is installed in the Codex plugin cache",
+      "Agent Smith is not installed yet; open the Plugin Directory and install it from the marketplace",
     ),
     makeCheck(
       "codex_config_present",
@@ -367,8 +392,8 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
     status,
     summary:
       status === "pass"
-        ? "Codex binary found and repo-local Agent Smith integration is ready"
-        : "Codex binary found, but repo-local Agent Smith integration is incomplete",
+        ? "Codex binary found and Agent Smith is installed and ready"
+        : "Codex binary found, but Agent Smith still needs Codex setup or install steps",
     checks,
   };
 }
@@ -446,18 +471,35 @@ export function runDoctor(options?: { repoRoot?: string; env?: NodeJS.ProcessEnv
   };
 }
 
-export function renderDoctorReport(report: DoctorReport): string {
+function doctorStatusTone(status: DoctorStatus): "success" | "warning" | "danger" | "muted" {
+  switch (status) {
+    case "pass":
+      return "success";
+    case "warn":
+      return "warning";
+    case "fail":
+      return "danger";
+    case "skip":
+      return "muted";
+  }
+}
+
+export function renderDoctorReport(report: DoctorReport, theme: TerminalTheme = createTerminalTheme()): string {
   const lines: string[] = [];
-  lines.push(`Agent Smith Doctor (${report.overallStatus})`);
-  lines.push(`Repo root: ${report.repoRoot}`);
+  lines.push(
+    `${theme.bold(theme.accent("Agent Smith Doctor"))} ${theme.tone(`(${report.overallStatus})`, doctorStatusTone(report.overallStatus))}`,
+  );
+  lines.push(`${theme.dim("Repo root:")} ${report.repoRoot}`);
 
   for (const host of report.hosts) {
     lines.push("");
-    lines.push(`${host.host}: ${host.status}`);
-    lines.push(`  binary: ${host.binaryPath ?? "not installed"}`);
-    lines.push(`  summary: ${host.summary}`);
+    lines.push(`${theme.accent(host.host)}: ${theme.tone(host.status, doctorStatusTone(host.status))}`);
+    lines.push(`  ${theme.dim("binary:")} ${host.binaryPath ?? "not installed"}`);
+    lines.push(`  ${theme.dim("summary:")} ${host.summary}`);
     for (const check of host.checks) {
-      lines.push(`  - [${check.status}] ${check.label}: ${check.detail}`);
+      lines.push(
+        `  - ${theme.tone(`[${check.status}]`, doctorStatusTone(check.status))} ${check.label}: ${check.detail}`,
+      );
     }
   }
 

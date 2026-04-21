@@ -18,7 +18,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help test app-test app-build lint version sync-version set-version release refresh-schemas validate-agent-config agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help test app-test app-build app-compile app-pack-check lint version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
@@ -32,13 +32,16 @@ help:
 		printf '\033[36mCore\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-compile" "Build a standalone executable for the current host"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make codex-install" "Link Agent Smith into Codex, write the personal marketplace, and update Codex config"; \
 		printf '\n\033[36mAgent Helpers\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
@@ -72,13 +75,16 @@ help:
 		printf 'Core\n'; \
 		printf '  %-30s %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
 		printf '  %-30s %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
+		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  %-30s %s\n' "make app-compile" "Build a standalone executable for the current host"; \
+		printf '  %-30s %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
 		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
 		printf '  %-30s %s\n' "make release VERSION=1.0.1" "Bump, tag, push, and create a GitHub release"; \
 		printf '  %-30s %s\n' "make refresh-schemas" "Refresh the installed agent schema cache"; \
 		printf '  %-30s %s\n' "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
+		printf '  %-30s %s\n' "make codex-install" "Link Agent Smith into Codex, write the personal marketplace, and update Codex config"; \
 		printf '\nAgent Helpers\n'; \
 		printf '  %-30s %s\n' "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
 		printf '  %-30s %s\n' "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
@@ -106,7 +112,7 @@ help:
 	fi
 
 test:
-	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/codex_hook_layout.bats
+	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/release.bats tests/scripts/codex_hook_layout.bats
 	cd agent-smith-app && $(APP_BUN) test
 	cd opencode-plugin && bun test
 
@@ -115,6 +121,12 @@ app-test:
 
 app-build:
 	cd agent-smith-app && $(APP_BUN) run build
+
+app-compile:
+	cd agent-smith-app && $(APP_BUN) run build:compile
+
+app-pack-check:
+	cd agent-smith-app && $(APP_BUN) run pack:check
 
 lint:
 	find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
@@ -160,6 +172,9 @@ refresh-schemas:
 
 validate-agent-config:
 	"$(SHELL)" scripts/validate-agent-config.sh $(TOOL_ARG) --refresh
+
+codex-install:
+	$(APP_BUN) run ./agent-smith-app/src/cli.ts install-codex
 
 agent-analyze:
 	AGENT_CLI="$(AGENT_CLI)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh analyze-config $(TOOL_ARG)

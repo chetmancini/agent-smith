@@ -77,10 +77,25 @@ describe("rollup and report", () => {
     const report = generateReport(paths, { limit: 10 });
     expect(report.totalEvents).toBe(4);
     expect(report.totalSessions).toBe(2);
+    expect(report.health.activeSessions).toBe(1);
+    expect(report.health.attentionSessions).toBe(1);
+    expect(report.health.failures).toEqual({ sessions: 1, events: 1 });
     expect(report.tools).toEqual([
       { tool: "codex", events: 3, sessions: 1 },
       { tool: "claude", events: 1, sessions: 1 },
     ]);
+    expect(report.attentionSessions[0]).toMatchObject({
+      sessionId: "session-a",
+      status: "attention",
+      failureCount: 1,
+      lastSnippet: "npm test",
+    });
+    expect(report.activeSessions[0]).toMatchObject({
+      sessionId: "session-b",
+      status: "active",
+    });
+    expect(report.stopReasons).toEqual([{ stopReason: "end_turn", sessions: 1 }]);
+    expect(report.failureHotspots).toEqual([{ snippet: "npm test", count: 1, sessions: 1 }]);
     expect(report.projects[0]).toEqual({
       project: "agent-smith",
       events: 3,
@@ -108,5 +123,65 @@ describe("rollup and report", () => {
     const result = rollupEvents(paths);
     expect(result.ingestedEvents).toBe(1);
     expect(result.skippedLines).toBe(0);
+  });
+
+  test("project-filtered reports derive session coverage from matching events", () => {
+    const paths = resolvePaths(process.env);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "session-multi",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "command_failure",
+        tool: "codex",
+        sessionId: "session-multi",
+        metadata: {
+          cwd: "/tmp/project-b",
+          command: "npm test",
+          error: "exit 1",
+        },
+      }),
+    );
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_stop",
+        tool: "codex",
+        sessionId: "session-multi",
+        metadata: {
+          cwd: "/tmp/project-b",
+          stop_reason: "end_turn",
+          duration_seconds: 18,
+        },
+      }),
+    );
+
+    rollupEvents(paths);
+
+    const report = generateReport(paths, { project: "project-b", limit: 10 });
+    expect(report.totalEvents).toBe(2);
+    expect(report.totalSessions).toBe(1);
+    expect(report.health.activeSessions).toBe(0);
+    expect(report.health.attentionSessions).toBe(1);
+    expect(report.health.failures).toEqual({ sessions: 1, events: 1 });
+    expect(report.attentionSessions).toHaveLength(1);
+    expect(report.attentionSessions[0]).toMatchObject({
+      sessionId: "session-multi",
+      project: "project-b",
+      status: "attention",
+      eventCount: 2,
+      failureCount: 1,
+      lastSnippet: "npm test",
+    });
+    expect(report.recentSessions).toHaveLength(1);
+    expect(report.stopReasons).toEqual([{ stopReason: "end_turn", sessions: 1 }]);
   });
 });
