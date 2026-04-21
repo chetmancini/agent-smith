@@ -88,6 +88,32 @@ describe("cli", () => {
     expect(JSON.parse(getStdout())).toMatchObject({ ok: true });
   });
 
+  test("emit accepts custom telemetry tool names", async () => {
+    const { io } = createIo();
+    const exitCode = await runCli(
+      [
+        "emit",
+        "session_start",
+        "--tool",
+        "wrapper-bot",
+        "--session-id",
+        "custom-1",
+        "--metadata",
+        '{"cwd":"/tmp/test-project"}',
+      ],
+      io,
+    );
+
+    expect(exitCode).toBe(0);
+    const paths = resolvePaths(process.env);
+    const lines = readFileSync(paths.eventsFile, "utf8").trim().split("\n");
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      tool: "wrapper-bot",
+      session_id: "custom-1",
+      event_type: "session_start",
+    });
+  });
+
   test("report prints text output", async () => {
     const emitIo = createIo();
     await runCli(
@@ -112,13 +138,100 @@ describe("cli", () => {
     expect(reportIo.getStdout()).toContain("npm test");
   });
 
+  test("report filters by custom telemetry tool names", async () => {
+    const emitIo = createIo();
+    await runCli(
+      [
+        "emit",
+        "command_failure",
+        "--tool",
+        "wrapper-bot",
+        "--session-id",
+        "report-custom",
+        "--metadata",
+        '{"cwd":"/tmp/agent-smith","command":"npm test"}',
+      ],
+      emitIo.io,
+    );
+    await runCli(
+      [
+        "emit",
+        "command_failure",
+        "--tool",
+        "codex",
+        "--session-id",
+        "report-core",
+        "--metadata",
+        '{"cwd":"/tmp/agent-smith","command":"pnpm test"}',
+      ],
+      emitIo.io,
+    );
+
+    const reportIo = createIo();
+    const exitCode = await runCli(["report", "--tool", "wrapper-bot", "--format", "json"], reportIo.io);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(reportIo.getStdout())).toMatchObject({
+      totalEvents: 1,
+      totalSessions: 1,
+      tools: [{ tool: "wrapper-bot", events: 1, sessions: 1 }],
+    });
+  });
+
+  test("watch accepts custom telemetry tool filters", async () => {
+    const emitIo = createIo();
+    await runCli(
+      [
+        "emit",
+        "command_failure",
+        "--tool",
+        "wrapper-bot",
+        "--session-id",
+        "watch-custom",
+        "--metadata",
+        '{"cwd":"/tmp/agent-smith","command":"npm test"}',
+      ],
+      emitIo.io,
+    );
+
+    const { io, getStdout } = createIo();
+    const listeners = new Map<string, () => void>();
+    const originalOnce = process.once;
+
+    Object.defineProperty(process, "once", {
+      configurable: true,
+      value: ((event: string | symbol, listener: () => void) => {
+        listeners.set(String(event), listener);
+        return process;
+      }) as typeof process.once,
+    });
+
+    try {
+      const originalStdout = io.stdout;
+      io.stdout = (text: string) => {
+        originalStdout(text);
+        listeners.get("SIGINT")?.();
+      };
+
+      const exitCode = await runCli(["watch", "--tool", "wrapper-bot", "--tail", "1", "--poll-ms", "10", "--json"], io);
+
+      expect(exitCode).toBe(0);
+      expect(getStdout()).toContain('"tool":"wrapper-bot"');
+      expect(getStdout()).toContain('"event_type":"command_failure"');
+    } finally {
+      Object.defineProperty(process, "once", {
+        configurable: true,
+        value: originalOnce,
+      });
+    }
+  });
+
   test("watch rejects json output with tui view", async () => {
     const { io } = createIo();
     await expect(runCli(["watch", "--view", "tui", "--json"], io)).rejects.toThrow(
       "--json cannot be combined with --view tui",
     );
   });
-
   test("improve prints structured recommendations as json", async () => {
     const home = join(metricsDir, "home");
     const binDir = join(metricsDir, "bin");
