@@ -271,6 +271,11 @@ export function personalMarketplaceHasAgentSmith(
 
 export function codexPluginInstalledInCache(env: NodeJS.ProcessEnv = process.env): boolean {
   const home = homeDir(env);
+  const personalPluginManifestPath = join(home, ".codex", "plugins", PLUGIN_NAME, ".codex-plugin", "plugin.json");
+  if (existsSync(personalPluginManifestPath)) {
+    return true;
+  }
+
   const cacheRoot = join(home, ".codex", "plugins", "cache");
   if (!existsSync(cacheRoot)) {
     return false;
@@ -278,9 +283,21 @@ export function codexPluginInstalledInCache(env: NodeJS.ProcessEnv = process.env
 
   try {
     for (const marketplaceName of readdirSync(cacheRoot)) {
-      const manifestPath = join(cacheRoot, marketplaceName, PLUGIN_NAME, "local", ".codex-plugin", "plugin.json");
-      if (existsSync(manifestPath)) {
+      const pluginRoot = join(cacheRoot, marketplaceName, PLUGIN_NAME);
+      const legacyManifestPath = join(pluginRoot, "local", ".codex-plugin", "plugin.json");
+      if (existsSync(legacyManifestPath)) {
         return true;
+      }
+
+      if (!existsSync(pluginRoot)) {
+        continue;
+      }
+
+      for (const versionName of readdirSync(pluginRoot)) {
+        const manifestPath = join(pluginRoot, versionName, ".codex-plugin", "plugin.json");
+        if (existsSync(manifestPath)) {
+          return true;
+        }
       }
     }
   } catch {

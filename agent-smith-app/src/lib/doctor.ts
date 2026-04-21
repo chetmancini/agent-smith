@@ -352,7 +352,7 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
       "codex_plugin_installed",
       "Installed Codex plugin",
       codexPluginInstalledInCache(env),
-      "Agent Smith is installed in the Codex plugin cache",
+      "Agent Smith is installed for Codex",
       "Agent Smith is not installed yet; open the Plugin Directory and install it from the marketplace",
     ),
     makeCheck(
