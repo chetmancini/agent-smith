@@ -226,6 +226,37 @@ describe("cli", () => {
     }
   });
 
+  test("demo runs headless and emits artifact paths plus applied changes", async () => {
+    const { io, getStdout, getStderr } = createIo();
+    const demoDir = join(metricsDir, "demo-run");
+
+    const exitCode = await runCli(["demo", "--demo-dir", demoDir, "--delay-ms", "0", "--no-watch", "--json"], io);
+
+    expect(exitCode).toBe(0);
+    expect(getStderr()).toBe("");
+
+    const payload = JSON.parse(getStdout()) as {
+      repoRoot: string;
+      loopReport: { stopReason: string; completedRecommendationIds: string[] };
+      changedFiles: string[];
+      artifacts: Record<string, string>;
+    };
+
+    expect(payload.loopReport.stopReason).toBe("completed");
+    expect(payload.loopReport.completedRecommendationIds).toEqual([
+      "tighten-request-contract",
+      "document-full-loop-demo",
+    ]);
+    expect(payload.changedFiles).toEqual(["AGENTS.md", "README.md"]);
+    expect(readFileSync(join(payload.repoRoot, "AGENTS.md"), "utf8")).toContain("scope, target command");
+    expect(readFileSync(join(payload.repoRoot, "README.md"), "utf8")).toContain("make demo");
+    expect(existsSync(payload.artifacts.initialReport)).toBe(true);
+    expect(existsSync(payload.artifacts.improveReport)).toBe(true);
+    expect(existsSync(payload.artifacts.loopReport)).toBe(true);
+    expect(existsSync(payload.artifacts.finalReport)).toBe(true);
+    expect(existsSync(payload.artifacts.summary)).toBe(true);
+  });
+
   test("watch rejects json output with tui view", async () => {
     const { io } = createIo();
     await expect(runCli(["watch", "--view", "tui", "--json"], io)).rejects.toThrow(

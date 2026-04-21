@@ -120,6 +120,7 @@ bash scripts/validate-agent-config.sh --tool gemini --refresh
 **Standalone TypeScript app** (new migration path):
 ```bash
 make app-doctor
+make demo
 make app-cli APP_CMD=watch APP_ARGS='--tail 10'
 bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-id demo --metadata '{"cwd":"/tmp/project"}'
 bun run ./agent-smith-app/src/cli.ts rollup
@@ -127,6 +128,7 @@ bun run ./agent-smith-app/src/cli.ts report
 bun run ./agent-smith-app/src/cli.ts improve --tool codex
 bun run ./agent-smith-app/src/cli.ts loop --tool codex
 bun run ./agent-smith-app/src/cli.ts watch --tail 10
+bun run ./agent-smith-app/src/cli.ts demo
 bun run ./agent-smith-app/src/cli.ts install-codex
 bun run ./agent-smith-app/src/cli.ts doctor
 bun run ./agent-smith-app/src/cli.ts refresh-schemas --tool codex
@@ -219,6 +221,8 @@ Schema validation and upgrade planning are available for all four agents. As of 
 ```
 
 Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
+
+`make demo` now runs an isolated sandbox under `.context/full-loop-demo/`, emits synthetic Codex telemetry, rolls it into SQLite, generates report and improve artifacts, applies safe loop recommendations inside the sandbox repo, and shows the live watch TUI while the scenario progresses.
 
 When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to the active agent.
 

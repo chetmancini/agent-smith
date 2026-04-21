@@ -21,7 +21,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -69,6 +69,7 @@ _help:
 		print_section "Quick Start"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop demo"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
 		print_row "make codex-refresh-schemas" "Alias example; use the same <tool>-refresh-schemas pattern for claude|codex|gemini|opencode"; \
@@ -83,6 +84,7 @@ _help:
 		print_section "End Users"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop sandbox demo"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
 		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
@@ -194,6 +196,9 @@ build:
 
 app-compile:
 	cd agent-smith-app && $(APP_BUN) run build:compile
+
+demo:
+	cd agent-smith-app && $(APP_BUN) run src/cli.ts demo $(APP_ARGS)
 
 app-pack-check:
 	cd agent-smith-app && $(APP_BUN) run pack:check
