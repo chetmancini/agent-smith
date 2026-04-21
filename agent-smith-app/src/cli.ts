@@ -80,7 +80,11 @@ function parseInteger(value: string, flag: string): number {
   return parsed;
 }
 
-function shiftToolValue(args: string[], flag: string): SupportedAgentTool {
+function shiftTelemetryToolValue(args: string[], flag: string): string {
+  return shiftValue(args, flag);
+}
+
+function shiftSupportedToolValue(args: string[], flag: string): SupportedAgentTool {
   const value = shiftValue(args, flag);
   if (!validateToolName(value)) {
     throw new CliUsageError(`Unsupported tool for ${flag}: ${value}`);
@@ -131,7 +135,7 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
     throw new CliUsageError("emit requires an event type");
   }
 
-  let tool: SupportedAgentTool | undefined;
+  let tool: string | undefined;
   let sessionId: string | undefined;
   let sessionHint: string | undefined;
   let timestamp: string | undefined;
@@ -144,7 +148,7 @@ async function handleEmit(args: string[], io: CliIO): Promise<number> {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftTelemetryToolValue(args, "--tool");
         break;
       case "--session-id":
         sessionId = shiftValue(args, "--session-id");
@@ -230,7 +234,7 @@ function handleRollup(args: string[], io: CliIO): number {
 }
 
 function handleReport(args: string[], io: CliIO): number {
-  let tool: SupportedAgentTool | undefined;
+  let tool: string | undefined;
   let project: string | undefined;
   let limit = 5;
   let format: "text" | "json" = "text";
@@ -239,7 +243,7 @@ function handleReport(args: string[], io: CliIO): number {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftTelemetryToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -280,7 +284,7 @@ async function handleImprove(args: string[], io: CliIO, runtime: ImproveRuntime 
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftSupportedToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -335,7 +339,7 @@ async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}):
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftSupportedToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -390,7 +394,7 @@ async function handleLoop(args: string[], io: CliIO, runtime: LoopRuntime = {}):
 }
 
 async function handleWatch(args: string[], io: CliIO): Promise<number> {
-  let tool: SupportedAgentTool | undefined;
+  let tool: string | undefined;
   let project: string | undefined;
   let tail = 0;
   let pollMs = 1000;
@@ -400,7 +404,7 @@ async function handleWatch(args: string[], io: CliIO): Promise<number> {
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftTelemetryToolValue(args, "--tool");
         break;
       case "--project":
         project = shiftValue(args, "--project");
@@ -448,7 +452,7 @@ async function handleRefreshSchemas(args: string[], io: CliIO, runtime: SchemaTo
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftSupportedToolValue(args, "--tool");
         break;
       case "--json":
         json = true;
@@ -476,7 +480,7 @@ async function handleValidateAgentConfig(args: string[], io: CliIO, runtime: Sch
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftSupportedToolValue(args, "--tool");
         break;
       case "--refresh":
         refresh = true;
@@ -507,7 +511,7 @@ async function handleUpgradeSettings(args: string[], io: CliIO, runtime: SchemaT
     const flag = args.shift();
     switch (flag) {
       case "--tool":
-        tool = shiftToolValue(args, "--tool");
+        tool = shiftSupportedToolValue(args, "--tool");
         break;
       case "--refresh":
         refresh = true;
