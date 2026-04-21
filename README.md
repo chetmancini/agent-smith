@@ -232,7 +232,7 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 | `permission_granted` | OpenCode plugin: `permission.replied` | Permission grants |
 | `file_edited` | OpenCode plugin: `file.edited` | File edit telemetry for compaction/test context |
 | `clarifying_question` | Claude: UserPromptSubmit; Gemini: BeforeAgent | Vague/ambiguous prompts detected |
-| `test_failure_loop` | Claude: PostToolUse; Gemini: AfterTool `write_file|replace`; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
+| `test_failure_loop` | Claude: PostToolUse; Gemini: AfterTool `write_file` or `replace`; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
 | `context_compression` | Claude: PostCompact; Gemini: PreCompress; OpenCode plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
 
 Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Gemini CLI now covers session lifecycle, shell failures, permission prompts, edit-triggered test loops, vague prompt guidance, and compaction through the hook-based extension. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin.
