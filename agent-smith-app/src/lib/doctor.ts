@@ -16,7 +16,7 @@ export interface DoctorCheck {
 }
 
 export interface DoctorHostResult {
-  host: "claude" | "codex" | "opencode";
+  host: "claude" | "gemini" | "codex" | "opencode";
   binary: string;
   installed: boolean;
   binaryPath: string | null;
@@ -393,6 +393,97 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
   };
 }
 
+function geminiExtensionConfigured(
+  installPath: string,
+  installPayload: unknown,
+  repoRoot: string,
+): { status: DoctorStatus; detail: string } {
+  if (!installPayload || typeof installPayload !== "object" || Array.isArray(installPayload)) {
+    return {
+      status: "fail",
+      detail: `${installPath} is missing or invalid JSON`,
+    };
+  }
+
+  const source = (installPayload as { source?: unknown }).source;
+  if (typeof source !== "string" || source.trim().length === 0) {
+    return {
+      status: "fail",
+      detail: `${installPath} does not record an extension source path`,
+    };
+  }
+
+  const repoExtensionDir = resolve(repoRoot, "gemini-extension");
+  const configuredSource = resolve(source);
+  if (configuredSource !== repoExtensionDir) {
+    return {
+      status: "fail",
+      detail: `Gemini points at ${configuredSource}, not ${repoExtensionDir}`,
+    };
+  }
+
+  const installType = (installPayload as { type?: unknown }).type;
+  const installMode = typeof installType === "string" && installType.trim().length > 0 ? installType : "install";
+  return {
+    status: "pass",
+    detail: `Gemini ${installMode} source points at ${repoExtensionDir}`,
+  };
+}
+
+function detectGemini(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
+  const binary = "gemini";
+  const binaryPath = findBinary(binary, env);
+  if (!binaryPath) {
+    return makeSkipHost("gemini", binary);
+  }
+
+  const home = homeDir(env);
+  const repoManifest = join(repoRoot, "gemini-extension", "gemini-extension.json");
+  const repoHooks = join(repoRoot, "gemini-extension", "hooks", "hooks.json");
+  const installPath = join(home, ".gemini", "extensions", "agent-smith", ".gemini-extension-install.json");
+  const installCheck = geminiExtensionConfigured(installPath, readJson(installPath), repoRoot);
+
+  const checks: DoctorCheck[] = [
+    makeCheck(
+      "gemini_repo_manifest",
+      "Repo Gemini extension manifest",
+      existsSync(repoManifest),
+      `${repoManifest} exists`,
+      `${repoManifest} is missing`,
+    ),
+    makeCheck(
+      "gemini_repo_hooks",
+      "Repo Gemini hooks file",
+      existsSync(repoHooks),
+      `${repoHooks} exists`,
+      `${repoHooks} is missing`,
+    ),
+    {
+      id: "gemini_extension_installed",
+      label: "Gemini extension link",
+      status: installCheck.status,
+      detail:
+        installCheck.status === "pass"
+          ? installCheck.detail
+          : `${installCheck.detail}; run \`gemini extensions link ./gemini-extension\` from the repo root`,
+    },
+  ];
+
+  const status = combineStatuses(checks.map((check) => check.status));
+  return {
+    host: "gemini",
+    binary,
+    installed: true,
+    binaryPath,
+    status,
+    summary:
+      status === "pass"
+        ? "Gemini binary found and Agent Smith extension is linked to this checkout"
+        : "Gemini binary found, but Agent Smith still needs the Gemini extension linked from this checkout",
+    checks,
+  };
+}
+
 function detectOpenCode(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
   const binary = "opencode";
   const binaryPath = findBinary(binary, env);
@@ -453,7 +544,12 @@ function detectOpenCode(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostRes
 export function runDoctor(options?: { repoRoot?: string; env?: NodeJS.ProcessEnv }): DoctorReport {
   const env = options?.env ?? process.env;
   const repoRoot = options?.repoRoot ?? repoRootFromHere();
-  const hosts = [detectClaude(repoRoot, env), detectCodex(repoRoot, env), detectOpenCode(repoRoot, env)];
+  const hosts = [
+    detectClaude(repoRoot, env),
+    detectGemini(repoRoot, env),
+    detectCodex(repoRoot, env),
+    detectOpenCode(repoRoot, env),
+  ];
 
   const activeStatuses = hosts.filter((host) => host.installed).map((host) => host.status);
 
