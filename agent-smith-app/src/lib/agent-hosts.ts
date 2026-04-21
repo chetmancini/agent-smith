@@ -1,12 +1,4 @@
-import {
-  accessSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -19,6 +11,8 @@ export interface SchemaMetadata {
   schema_path: string;
   fetched_at: string;
 }
+
+type FetchLike = (input: string) => Promise<Response>;
 
 export function repoRootFromHere(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.AGENT_SMITH_REPO_ROOT;
@@ -169,10 +163,7 @@ export function schemaCachePath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv
   }
 }
 
-export function schemaMetadataPath(
-  tool: SupportedAgentTool,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function schemaMetadataPath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv = process.env): string {
   const base = join(homeDir(env), ".config", "agent-smith", "schemas");
   switch (tool) {
     case "claude":
@@ -223,7 +214,7 @@ export async function ensureSchemaCached(
   options: {
     env?: NodeJS.ProcessEnv;
     refresh?: boolean;
-    fetchImpl?: typeof fetch;
+    fetchImpl?: FetchLike;
     now?: () => Date;
   } = {},
 ): Promise<{ schemaPath: string; metadataPath: string }> {

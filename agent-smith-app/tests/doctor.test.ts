@@ -54,8 +54,12 @@ describe("doctor", () => {
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
 
-    writeJson(join(repoRoot, ".claude-plugin", "plugin.json"), { name: "agent-smith" });
-    writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), { name: "agent-smith" });
+    writeJson(join(repoRoot, ".claude-plugin", "plugin.json"), {
+      name: "agent-smith",
+    });
+    writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), {
+      name: "agent-smith",
+    });
     writeJson(join(repoRoot, ".codex", "hooks.json"), { hooks: {} });
     writeJson(join(repoRoot, "opencode-plugin", "package.json"), {
       name: "agent-smith-opencode",
@@ -140,9 +144,7 @@ trust_level = "trusted"
     const report = runDoctor({ repoRoot: resolve(repoRoot), env });
     const codex = report.hosts.find((host) => host.host === "codex");
     expect(codex?.status).toBe("fail");
-    expect(codex?.checks.find((check) => check.id === "codex_hooks_enabled")?.status).toBe(
-      "fail",
-    );
+    expect(codex?.checks.find((check) => check.id === "codex_hooks_enabled")?.status).toBe("fail");
   });
 
   test("detects OpenCode plugin from a configured plugin root directory", () => {
@@ -150,7 +152,9 @@ trust_level = "trusted"
     const pluginRoot = join(home, ".config", "opencode", "plugins");
     const pluginDir = join(pluginRoot, "agent-smith-opencode");
     mkdirSync(pluginDir, { recursive: true });
-    writeJson(join(pluginDir, "package.json"), { name: "agent-smith-opencode" });
+    writeJson(join(pluginDir, "package.json"), {
+      name: "agent-smith-opencode",
+    });
     mkdirSync(join(home, ".config", "opencode"), { recursive: true });
     writeJson(join(home, ".config", "opencode", "opencode.json"), {
       plugin: [`file:${pluginRoot}`],

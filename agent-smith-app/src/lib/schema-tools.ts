@@ -10,7 +10,7 @@ import {
   findBinary,
   readJsonFile,
   readSchemaMetadata,
-  SupportedAgentTool,
+  type SupportedAgentTool,
   toolLabel,
 } from "./agent-hosts";
 
@@ -37,7 +37,7 @@ export interface AjvRunResult {
 export interface SchemaToolRuntime {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: (input: string) => Promise<Response>;
   now?: () => Date;
   runAjv?: (args: string[], env: NodeJS.ProcessEnv) => AjvRunResult;
 }
@@ -108,9 +108,10 @@ function schemaProperties(schema: SchemaDocument): Record<string, SchemaProperty
   return schema.properties as Record<string, SchemaProperty>;
 }
 
-function parseConfigFile(
-  path: string,
-): { parseMode: SchemaConfigParseMode; value: Record<string, unknown> } {
+function parseConfigFile(path: string): {
+  parseMode: SchemaConfigParseMode;
+  value: Record<string, unknown>;
+} {
   const text = readFileSync(path, "utf8");
   if (path.endsWith(".toml")) {
     const parsed = Bun.TOML.parse(text) as unknown;
@@ -174,7 +175,14 @@ function validateWithAjv(
 ): { status: SchemaValidationStatus; details: string[] } {
   const runner = runtime.runAjv ?? defaultRunAjv;
   const env = runtime.env ?? process.env;
-  const args = ["validate", "-s", schemaPath, "-d", configPath, `--spec=${parseMode === "toml" ? "draft2020" : "draft7"}`];
+  const args = [
+    "validate",
+    "-s",
+    schemaPath,
+    "-d",
+    configPath,
+    `--spec=${parseMode === "toml" ? "draft2020" : "draft7"}`,
+  ];
   const result = runner(args, env);
 
   if (result.exitCode === -1) {
@@ -342,9 +350,7 @@ export async function validateAgentConfig(
     }
   }
 
-  const status = results.some(
-    (result) => result.parseStatus === "invalid" || result.schemaCheckStatus === "invalid",
-  )
+  const status = results.some((result) => result.parseStatus === "invalid" || result.schemaCheckStatus === "invalid")
     ? "invalid"
     : "valid";
 
@@ -464,16 +470,15 @@ export async function generateUpgradeSettingsReport(
     ...options,
     refresh: options.refresh ?? true,
   });
-  const { newFeatures, investigateLater } = summarizeAvailableFeatures(
-    validation.schemaPath,
-    validation.configs,
-  );
+  const { newFeatures, investigateLater } = summarizeAvailableFeatures(validation.schemaPath, validation.configs);
   const issues = summarizeIssues(validation.schemaPath, validation.configs);
   const implementationPlan = buildImplementationPlan(validation, investigateLater, issues);
 
   const summaryParts = [
     `${validation.configs.length} config file${validation.configs.length === 1 ? "" : "s"} checked`,
-    issues.length > 0 ? `${issues.length} drift item${issues.length === 1 ? "" : "s"} found` : "no deprecated or unknown keys",
+    issues.length > 0
+      ? `${issues.length} drift item${issues.length === 1 ? "" : "s"} found`
+      : "no deprecated or unknown keys",
     investigateLater.length > 0
       ? `${investigateLater.length} unset schema key${investigateLater.length === 1 ? "" : "s"} to review`
       : "no unset top-level schema keys",

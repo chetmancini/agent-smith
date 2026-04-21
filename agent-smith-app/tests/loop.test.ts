@@ -53,7 +53,11 @@ function seedSession(sessionId: string): void {
       eventType: "session_stop",
       tool: "codex",
       sessionId,
-      metadata: { cwd: "/tmp/agent-smith", stop_reason: "end_turn", duration_seconds: 9 },
+      metadata: {
+        cwd: "/tmp/agent-smith",
+        stop_reason: "end_turn",
+        duration_seconds: 9,
+      },
     }),
   );
 }
@@ -136,90 +140,60 @@ describe("loop", () => {
     let analysisCalls = 0;
     const { io, getStdout } = createIo();
 
-    const exitCode = await runCli(
-      ["loop", "--tool", "codex", "--iterations", "3", "--format", "json"],
-      io,
-      {
-        loop: {
-          env: process.env,
-          repoRoot,
-          runAgent: ({ prompt }) => {
-            if (prompt.includes("You are Agent Smith's reasoning engine.")) {
-              analysisCalls += 1;
-              if (analysisCalls === 1) {
-                return {
-                  exitCode: 0,
-                  stdout: JSON.stringify({
-                    summary: "Prompt wording should be tightened before structural changes.",
-                    recommendations: [
-                      {
-                        id: "tighten-request-contract",
-                        title: "Tighten the request contract",
-                        priority: "high",
-                        category: "prompt",
-                        rationale: "Permission denials suggest requests are underspecified.",
-                        evidence: ["permission denials are present"],
-                        actions: [
-                          {
-                            type: "prompt_change",
-                            description: "Clarify the opening operator guidance.",
-                            targetFiles: [join(repoRoot, "AGENTS.md")],
-                            safeToAutoApply: true,
-                          },
-                        ],
-                      },
-                    ],
-                  }),
-                  stderr: "",
-                };
-              }
-
-              expect(prompt).toContain("tighten-request-contract");
-              expect(prompt).toContain("updated AGENTS guidance");
-              if (analysisCalls === 2) {
-                return {
-                  exitCode: 0,
-                  stdout: JSON.stringify({
-                    summary: "The next safe improvement is to refresh the README workflow copy.",
-                    recommendations: [
-                      {
-                        id: "refresh-readme-workflow",
-                        title: "Refresh README workflow copy",
-                        priority: "medium",
-                        category: "workflow",
-                        rationale: "The guidance should reflect the tighter operator contract.",
-                        evidence: ["the prompt contract was already tightened"],
-                        actions: [
-                          {
-                            type: "workflow_change",
-                            description: "Document the loop command in README.",
-                            targetFiles: [join(repoRoot, "README.md")],
-                            safeToAutoApply: true,
-                          },
-                        ],
-                      },
-                    ],
-                  }),
-                  stderr: "",
-                };
-              }
-
+    const exitCode = await runCli(["loop", "--tool", "codex", "--iterations", "3", "--format", "json"], io, {
+      loop: {
+        env: process.env,
+        repoRoot,
+        runAgent: ({ prompt }) => {
+          if (prompt.includes("You are Agent Smith's reasoning engine.")) {
+            analysisCalls += 1;
+            if (analysisCalls === 1) {
               return {
                 exitCode: 0,
                 stdout: JSON.stringify({
-                  summary: "Only completed recommendations remain.",
+                  summary: "Prompt wording should be tightened before structural changes.",
+                  recommendations: [
+                    {
+                      id: "tighten-request-contract",
+                      title: "Tighten the request contract",
+                      priority: "high",
+                      category: "prompt",
+                      rationale: "Permission denials suggest requests are underspecified.",
+                      evidence: ["permission denials are present"],
+                      actions: [
+                        {
+                          type: "prompt_change",
+                          description: "Clarify the opening operator guidance.",
+                          targetFiles: [join(repoRoot, "AGENTS.md")],
+                          safeToAutoApply: true,
+                        },
+                      ],
+                    },
+                  ],
+                }),
+                stderr: "",
+              };
+            }
+
+            expect(prompt).toContain("tighten-request-contract");
+            expect(prompt).toContain("updated AGENTS guidance");
+            if (analysisCalls === 2) {
+              return {
+                exitCode: 0,
+                stdout: JSON.stringify({
+                  summary: "The next safe improvement is to refresh the README workflow copy.",
                   recommendations: [
                     {
                       id: "refresh-readme-workflow",
                       title: "Refresh README workflow copy",
                       priority: "medium",
                       category: "workflow",
-                      rationale: "This was already resolved and should be filtered.",
-                      evidence: ["already applied"],
+                      rationale: "The guidance should reflect the tighter operator contract.",
+                      evidence: ["the prompt contract was already tightened"],
                       actions: [
                         {
                           type: "workflow_change",
-                          description: "No-op",
+                          description: "Document the loop command in README.",
                           targetFiles: [join(repoRoot, "README.md")],
                           safeToAutoApply: true,
                         },
@@ -231,65 +205,100 @@ describe("loop", () => {
               };
             }
 
-            if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
-              if (prompt.includes("tighten-request-contract")) {
-                writeFileSync(
-                  join(repoRoot, "AGENTS.md"),
-                  "# Agent instructions\n\nStart with scope, target command, and validation.\n",
-                );
-                return {
-                  exitCode: 0,
-                  stdout: JSON.stringify({
-                    summary: "updated AGENTS guidance",
-                    changedFiles: ["AGENTS.md"],
-                    validation: [
-                      { command: "rg -n \"target command\" AGENTS.md", outcome: "passed", details: "found" },
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "Only completed recommendations remain.",
+                recommendations: [
+                  {
+                    id: "refresh-readme-workflow",
+                    title: "Refresh README workflow copy",
+                    priority: "medium",
+                    category: "workflow",
+                    rationale: "This was already resolved and should be filtered.",
+                    evidence: ["already applied"],
+                    actions: [
+                      {
+                        type: "workflow_change",
+                        description: "No-op",
+                        targetFiles: [join(repoRoot, "README.md")],
+                        safeToAutoApply: true,
+                      },
                     ],
-                    followUps: [],
-                  }),
-                  stderr: "",
-                };
-              }
+                  },
+                ],
+              }),
+              stderr: "",
+            };
+          }
 
+          if (prompt.includes("You are applying one Agent Smith improvement recommendation")) {
+            if (prompt.includes("tighten-request-contract")) {
               writeFileSync(
-                join(repoRoot, "README.md"),
-                "# Agent Smith\n\nUse `agent-smith loop --tool codex` for iterative tuning.\n",
+                join(repoRoot, "AGENTS.md"),
+                "# Agent instructions\n\nStart with scope, target command, and validation.\n",
               );
               return {
                 exitCode: 0,
                 stdout: JSON.stringify({
-                  summary: "updated README workflow copy",
-                  changedFiles: ["README.md"],
-                  validation: [{ command: "rg -n \"agent-smith loop\" README.md", outcome: "passed" }],
+                  summary: "updated AGENTS guidance",
+                  changedFiles: ["AGENTS.md"],
+                  validation: [
+                    {
+                      command: 'rg -n "target command" AGENTS.md',
+                      outcome: "passed",
+                      details: "found",
+                    },
+                  ],
                   followUps: [],
                 }),
                 stderr: "",
               };
             }
 
-            if (prompt.includes("You are evaluating whether a just-applied Agent Smith improvement")) {
-              return {
-                exitCode: 0,
-                stdout: JSON.stringify({
-                  summary: "The targeted file change matches the recommendation.",
-                  outcome: "resolved",
-                  rationale: "The requested wording was applied in the intended file.",
-                  continueLoop: true,
-                  nextFocus: "Move to the next safe recommendation.",
-                }),
-                stderr: "",
-              };
-            }
-
+            writeFileSync(
+              join(repoRoot, "README.md"),
+              "# Agent Smith\n\nUse `agent-smith loop --tool codex` for iterative tuning.\n",
+            );
             return {
-              exitCode: 1,
-              stdout: "",
-              stderr: "unexpected prompt",
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "updated README workflow copy",
+                changedFiles: ["README.md"],
+                validation: [
+                  {
+                    command: 'rg -n "agent-smith loop" README.md',
+                    outcome: "passed",
+                  },
+                ],
+                followUps: [],
+              }),
+              stderr: "",
             };
-          },
+          }
+
+          if (prompt.includes("You are evaluating whether a just-applied Agent Smith improvement")) {
+            return {
+              exitCode: 0,
+              stdout: JSON.stringify({
+                summary: "The targeted file change matches the recommendation.",
+                outcome: "resolved",
+                rationale: "The requested wording was applied in the intended file.",
+                continueLoop: true,
+                nextFocus: "Move to the next safe recommendation.",
+              }),
+              stderr: "",
+            };
+          }
+
+          return {
+            exitCode: 1,
+            stdout: "",
+            stderr: "unexpected prompt",
+          };
         },
       },
-    );
+    });
 
     expect(exitCode).toBe(0);
 

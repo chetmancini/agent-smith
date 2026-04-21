@@ -24,7 +24,10 @@ export function deriveSessionId(seed?: string): string {
     return createHash("sha256").update(seed).digest("hex").slice(0, 12);
   }
 
-  const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:.TZ]/g, "")
+    .slice(0, 14);
   return `${timestamp}-${process.pid}`;
 }
 

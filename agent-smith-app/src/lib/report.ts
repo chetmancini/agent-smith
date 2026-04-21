@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 
-import { resolvePaths, AgentSmithPaths } from "./paths";
+import { resolvePaths, type AgentSmithPaths } from "./paths";
 import { rollupEvents } from "./rollup";
 
 export interface ReportFilters {
@@ -50,7 +50,10 @@ function openDatabase(paths: AgentSmithPaths): Database {
   return new Database(paths.dbFile, { create: true, readonly: true });
 }
 
-function buildWhere(filters: ReportFilters): { where: string; params: string[] } {
+function buildWhere(filters: ReportFilters): {
+  where: string;
+  params: string[];
+} {
   const clauses: string[] = [];
   const params: string[] = [];
 
@@ -78,15 +81,16 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
     const { where, params } = buildWhere(filters);
     const limit = filters.limit ?? 5;
 
-    const totalEvents = (db.query(`SELECT COUNT(*) AS count FROM events ${where}`).get(
-      ...params,
-    ) as { count: number } | null)?.count ?? 0;
+    const totalEvents =
+      (db.query(`SELECT COUNT(*) AS count FROM events ${where}`).get(...params) as { count: number } | null)?.count ??
+      0;
 
-    const totalSessions = (
-      db.query(`SELECT COUNT(DISTINCT session_id) AS count FROM events ${where}`).get(
-        ...params,
-      ) as { count: number } | null
-    )?.count ?? 0;
+    const totalSessions =
+      (
+        db.query(`SELECT COUNT(DISTINCT session_id) AS count FROM events ${where}`).get(...params) as {
+          count: number;
+        } | null
+      )?.count ?? 0;
 
     const tools = db
       .query(`
@@ -129,8 +133,7 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
       "event_type IN ('tool_failure', 'command_failure', 'session_error', 'stop_failure')",
     ].filter(Boolean);
 
-    const failureWhere =
-      failureWhereClauses.length > 0 ? `WHERE ${failureWhereClauses.join(" AND ")}` : "";
+    const failureWhere = failureWhereClauses.length > 0 ? `WHERE ${failureWhereClauses.join(" AND ")}` : "";
 
     const recentFailures = db
       .query(`

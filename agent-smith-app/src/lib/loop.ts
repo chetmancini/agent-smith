@@ -1,13 +1,13 @@
 import { basename, relative, resolve } from "node:path";
 
-import { AgentRunner, defaultRunAgent } from "./agent-runner";
-import { repoRootFromHere, SupportedAgentTool } from "./agent-hosts";
+import { type AgentRunner, defaultRunAgent } from "./agent-runner";
+import { repoRootFromHere, type SupportedAgentTool } from "./agent-hosts";
 import {
-  ImproveRuntime,
-  ImprovementAction,
-  ImprovementFilters,
-  ImprovementRecommendation,
-  ImprovementReport,
+  type ImproveRuntime,
+  type ImprovementAction,
+  type ImprovementFilters,
+  type ImprovementRecommendation,
+  type ImprovementReport,
   generateImprovementReport,
 } from "./recommendations";
 import { resolvePaths } from "./paths";
@@ -147,9 +147,7 @@ function parseEvaluationResponse(text: string): LoopEvaluationResult {
   const payload = extractJsonObject(text);
   if (
     typeof payload.summary !== "string" ||
-    (payload.outcome !== "resolved" &&
-      payload.outcome !== "partial" &&
-      payload.outcome !== "blocked") ||
+    (payload.outcome !== "resolved" && payload.outcome !== "partial" && payload.outcome !== "blocked") ||
     typeof payload.rationale !== "string" ||
     typeof payload.continueLoop !== "boolean"
   ) {
@@ -182,7 +180,10 @@ function snapshotGitStatus(repoRoot: string): Map<string, string> {
     return new Map();
   }
 
-  const entries = proc.stdout.toString().split("\0").filter((entry) => entry.length > 0);
+  const entries = proc.stdout
+    .toString()
+    .split("\0")
+    .filter((entry) => entry.length > 0);
   const snapshot = new Map<string, string>();
 
   for (const entry of entries) {
@@ -211,10 +212,7 @@ function diffGitStatus(before: Map<string, string>, after: Map<string, string>):
   return changed.sort();
 }
 
-function allowedActions(
-  recommendation: ImprovementRecommendation,
-  includeUnsafe: boolean,
-): ImprovementAction[] {
+function allowedActions(recommendation: ImprovementRecommendation, includeUnsafe: boolean): ImprovementAction[] {
   return recommendation.actions.filter((action) => includeUnsafe || action.safeToAutoApply);
 }
 
@@ -312,7 +310,12 @@ function buildEvaluationPrompt(input: {
 
 function runAgentJson(
   runAgent: AgentRunner,
-  input: { tool: SupportedAgentTool; prompt: string; repoRoot: string; env: NodeJS.ProcessEnv },
+  input: {
+    tool: SupportedAgentTool;
+    prompt: string;
+    repoRoot: string;
+    env: NodeJS.ProcessEnv;
+  },
   label: string,
 ): string {
   const result = runAgent(input);
@@ -428,13 +431,7 @@ export async function runImprovementLoop(
     );
     lastTool = report.tool;
 
-    const recommendation = chooseRecommendation(
-      report,
-      attemptedIds,
-      completedIds,
-      blockedIds,
-      includeUnsafe,
-    );
+    const recommendation = chooseRecommendation(report, attemptedIds, completedIds, blockedIds, includeUnsafe);
     if (!recommendation) {
       stopReason = "no_auto_applicable_recommendations";
       break;
@@ -496,7 +493,7 @@ export async function runImprovementLoop(
     }
 
     if (!evaluation.continueLoop) {
-      stopReason = evaluation.outcome === "blocked" ? "blocked" : "completed";
+      stopReason = "completed";
       break;
     }
 

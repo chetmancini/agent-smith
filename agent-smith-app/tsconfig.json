@@ -5,9 +5,11 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "skipLibCheck": true,
     "allowJs": false,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "types": ["bun", "node"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

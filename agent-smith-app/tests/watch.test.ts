@@ -58,7 +58,10 @@ describe("watch", () => {
     const second = await iterator.next();
     expect(second.done).toBe(false);
     expect(second.value?.event_type).toBe("command_failure");
-    expect(formatWatchedEvent(second.value!)).toContain("npm test");
+    if (!second.value) {
+      throw new Error("expected watch iterator to yield an event");
+    }
+    expect(formatWatchedEvent(second.value)).toContain("npm test");
 
     controller.abort();
   });

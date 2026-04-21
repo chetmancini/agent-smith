@@ -51,23 +51,13 @@ function combineStatuses(statuses: DoctorStatus[]): DoctorStatus {
   return winner;
 }
 
-function makeCheck(
-  id: string,
-  label: string,
-  ok: boolean,
-  passDetail: string,
-  failDetail: string,
-): DoctorCheck {
+function makeCheck(id: string, label: string, ok: boolean, passDetail: string, failDetail: string): DoctorCheck {
   return {
     id,
     label,
     status: ok ? "pass" : "fail",
     detail: ok ? passDetail : failDetail,
   };
-}
-
-function makeWarn(id: string, label: string, detail: string): DoctorCheck {
-  return { id, label, status: "warn", detail };
 }
 
 function makeSkipHost(host: DoctorHostResult["host"], binary: string): DoctorHostResult {
@@ -175,7 +165,10 @@ function opencodePluginConfigured(
   repoRoot: string,
 ): { status: DoctorStatus; detail: string } {
   if (!Array.isArray(pluginEntries)) {
-    return { status: "fail", detail: "plugin must be an array in opencode.json" };
+    return {
+      status: "fail",
+      detail: "plugin must be an array in opencode.json",
+    };
   }
 
   const configDir = dirname(configPath);
@@ -208,9 +201,9 @@ function opencodePluginConfigured(
       };
     }
 
-    const directPackage = readJson(join(resolvedPath, "package.json")) as
-      | { name?: unknown }
-      | null;
+    const directPackage = readJson(join(resolvedPath, "package.json")) as {
+      name?: unknown;
+    } | null;
     if (directPackage?.name === "agent-smith-opencode") {
       return {
         status: "pass",
@@ -219,8 +212,12 @@ function opencodePluginConfigured(
     }
 
     try {
-      for (const child of new Bun.Glob("*/package.json").scanSync({ cwd: resolvedPath })) {
-        const pkg = readJson(join(resolvedPath, child)) as { name?: unknown } | null;
+      for (const child of new Bun.Glob("*/package.json").scanSync({
+        cwd: resolvedPath,
+      })) {
+        const pkg = readJson(join(resolvedPath, child)) as {
+          name?: unknown;
+        } | null;
         if (pkg?.name === "agent-smith-opencode") {
           return {
             status: "pass",
@@ -235,8 +232,7 @@ function opencodePluginConfigured(
 
   return {
     status: "fail",
-    detail:
-      'opencode.json does not point to "agent-smith-opencode" or a plugin source containing it',
+    detail: 'opencode.json does not point to "agent-smith-opencode" or a plugin source containing it',
   };
 }
 
@@ -253,15 +249,15 @@ function detectClaude(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResul
   const settingsPath = join(home, ".claude", "settings.json");
   const repoManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 
-  const installedPlugins = readJson(installedPluginsPath) as
-    | { plugins?: Record<string, unknown> }
-    | null;
-  const knownMarketplaces = readJson(knownMarketplacesPath) as
-    | { [key: string]: { source?: { repo?: unknown } } }
-    | null;
-  const settings = readJson(settingsPath) as
-    | { enabledPlugins?: Record<string, unknown> }
-    | null;
+  const installedPlugins = readJson(installedPluginsPath) as {
+    plugins?: Record<string, unknown>;
+  } | null;
+  const knownMarketplaces = readJson(knownMarketplacesPath) as {
+    [key: string]: { source?: { repo?: unknown } };
+  } | null;
+  const settings = readJson(settingsPath) as {
+    enabledPlugins?: Record<string, unknown>;
+  } | null;
 
   const pluginKey = "agent-smith@agent-smith";
 
@@ -391,7 +387,10 @@ function detectOpenCode(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostRes
   const repoPackage = readJson(repoPackagePath) as { name?: unknown } | null;
   const pluginCheck = config
     ? opencodePluginConfigured(configPath, config.plugin, env, repoRoot)
-    : { status: "fail" as const, detail: `${configPath} is missing or invalid JSON` };
+    : {
+        status: "fail" as const,
+        detail: `${configPath} is missing or invalid JSON`,
+      };
 
   const checks: DoctorCheck[] = [
     makeCheck(
@@ -431,20 +430,14 @@ function detectOpenCode(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostRes
   };
 }
 
-export function runDoctor(options?: {
-  repoRoot?: string;
-  env?: NodeJS.ProcessEnv;
-}): DoctorReport {
+export function runDoctor(options?: { repoRoot?: string; env?: NodeJS.ProcessEnv }): DoctorReport {
   const env = options?.env ?? process.env;
   const repoRoot = options?.repoRoot ?? repoRootFromHere();
   const hosts = [detectClaude(repoRoot, env), detectCodex(repoRoot, env), detectOpenCode(repoRoot, env)];
 
-  const activeStatuses = hosts
-    .filter((host) => host.installed)
-    .map((host) => host.status);
+  const activeStatuses = hosts.filter((host) => host.installed).map((host) => host.status);
 
-  const overallStatus =
-    activeStatuses.length === 0 ? "skip" : combineStatuses(activeStatuses);
+  const overallStatus = activeStatuses.length === 0 ? "skip" : combineStatuses(activeStatuses);
 
   return {
     repoRoot,

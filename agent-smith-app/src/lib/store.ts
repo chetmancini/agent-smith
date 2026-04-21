@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 
-import { AgentSmithEvent, parseEventLine, projectFromEvent } from "./events";
-import { AgentSmithPaths, ensureMetricsLayout, hardenPrivateFile } from "./paths";
+import { type AgentSmithEvent, parseEventLine, projectFromEvent } from "./events";
+import { type AgentSmithPaths, ensureMetricsLayout, hardenPrivateFile } from "./paths";
 
 export interface EventFilters {
   tool?: string;
@@ -17,7 +17,9 @@ export interface EventChunk {
 
 export function appendEvent(paths: AgentSmithPaths, event: AgentSmithEvent): void {
   ensureMetricsLayout(paths);
-  appendFileSync(paths.eventsFile, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+  appendFileSync(paths.eventsFile, `${JSON.stringify(event)}\n`, {
+    mode: 0o600,
+  });
   hardenPrivateFile(paths.eventsFile);
 }
 
