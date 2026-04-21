@@ -149,6 +149,48 @@ trust_level = "trusted"
     expect(report.hosts.every((host) => host.status === "pass")).toBe(true);
   });
 
+  test("passes when Codex uses a versioned plugin cache layout", () => {
+    writeExecutable(join(binDir, "codex"));
+
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      `
+[features]
+codex_hooks = true
+
+[projects."${resolve(repoRoot)}"]
+trust_level = "trusted"
+`,
+    );
+    mkdirSync(join(home, ".codex", "plugins", "agent-smith"), { recursive: true });
+    mkdirSync(
+      join(home, ".codex", "plugins", "cache", "local-personal-plugins", "agent-smith", "0.4.4", ".codex-plugin"),
+      {
+        recursive: true,
+      },
+    );
+    writeJson(
+      join(
+        home,
+        ".codex",
+        "plugins",
+        "cache",
+        "local-personal-plugins",
+        "agent-smith",
+        "0.4.4",
+        ".codex-plugin",
+        "plugin.json",
+      ),
+      { name: "agent-smith" },
+    );
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const codex = report.hosts.find((host) => host.host === "codex");
+    expect(codex?.status).toBe("pass");
+    expect(codex?.checks.find((check) => check.id === "codex_plugin_installed")?.status).toBe("pass");
+  });
+
   test("fails Codex when hooks are not enabled", () => {
     writeExecutable(join(binDir, "codex"));
     mkdirSync(join(home, ".codex"), { recursive: true });
