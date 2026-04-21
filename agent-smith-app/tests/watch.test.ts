@@ -7,8 +7,10 @@ import { createEvent } from "../src/lib/events";
 import { resolvePaths } from "../src/lib/paths";
 import { appendEvent } from "../src/lib/store";
 import {
+  applyEventToWatchDashboardState,
   buildWatchDashboardSeed,
   buildWatchDashboardState,
+  createWatchDashboardState,
   createSessionWatchFormatter,
   formatWatchedEvent,
   snapshotWatchDashboard,
@@ -239,5 +241,81 @@ describe("watch", () => {
     ]);
     expect(snapshot.recentEvents[0]).toContain("session_stop");
     expect(snapshot.recentEvents[1]).toContain("npm test");
+  });
+
+  test("watch dashboard prunes and compacts event-rate timestamps incrementally", () => {
+    const state = createWatchDashboardState();
+    const originalNow = Date.now;
+    let now = Date.parse("2026-04-20T12:20:00.000Z");
+    Date.now = () => now;
+
+    try {
+      for (let index = 0; index < 300; index += 1) {
+        applyEventToWatchDashboardState(
+          state,
+          createEvent({
+            eventType: "session_start",
+            tool: "codex",
+            sessionId: `rate-${index}`,
+            timestamp: new Date(Date.parse("2026-04-20T12:00:00.000Z") + index * 1000).toISOString(),
+            metadata: { cwd: `/tmp/project-${index}` },
+          }),
+        );
+      }
+
+      expect(state.eventTimestamps).toHaveLength(300);
+      expect(state.eventTimestampStart).toBe(0);
+
+      now = Date.parse("2026-04-20T12:41:00.000Z");
+      applyEventToWatchDashboardState(
+        state,
+        createEvent({
+          eventType: "command_failure",
+          tool: "codex",
+          sessionId: "rate-live",
+          timestamp: "2026-04-20T12:40:30.000Z",
+          metadata: { cwd: "/tmp/project-live", command: "bun test" },
+        }),
+      );
+
+      expect(state.eventTimestampStart).toBe(0);
+      expect(state.eventTimestamps).toEqual([Date.parse("2026-04-20T12:40:30.000Z")]);
+
+      const snapshot = snapshotWatchDashboard(state);
+      expect(snapshot.eventRateBuckets.reduce((total, bucket) => total + bucket, 0)).toBe(1);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test("watch dashboard snapshot prunes stale rate timestamps during idle ticks", () => {
+    const state = createWatchDashboardState();
+    const originalNow = Date.now;
+    let now = Date.parse("2026-04-20T12:05:00.000Z");
+    Date.now = () => now;
+
+    try {
+      applyEventToWatchDashboardState(
+        state,
+        createEvent({
+          eventType: "session_start",
+          tool: "codex",
+          sessionId: "idle-rate",
+          timestamp: "2026-04-20T12:00:00.000Z",
+          metadata: { cwd: "/tmp/project-idle" },
+        }),
+      );
+
+      expect(state.eventTimestamps).toEqual([Date.parse("2026-04-20T12:00:00.000Z")]);
+
+      now = Date.parse("2026-04-20T12:25:01.000Z");
+      const snapshot = snapshotWatchDashboard(state);
+
+      expect(snapshot.eventRateBuckets.reduce((total, bucket) => total + bucket, 0)).toBe(0);
+      expect(state.eventTimestamps).toEqual([]);
+      expect(state.eventTimestampStart).toBe(0);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 });
