@@ -166,6 +166,11 @@ function recommendationShape(
     safeToAutoApply: action.safeToAutoApply,
     targetFiles: [...new Set(action.targetFiles.map((filePath) => normalizeTargetFile(repoRoot, filePath)))].sort(),
   }));
+  actionSignature.sort((left, right) => {
+    const leftKey = `${left.type}:${left.safeToAutoApply ? "1" : "0"}:${left.targetFiles.join("\0")}`;
+    const rightKey = `${right.type}:${right.safeToAutoApply ? "1" : "0"}:${right.targetFiles.join("\0")}`;
+    return leftKey.localeCompare(rightKey);
+  });
 
   const fingerprint = createHash("sha256")
     .update(
@@ -310,34 +315,60 @@ export function recommendationFingerprint(repoRoot: string, recommendation: Impr
 
 export function loadRecommendationHistory(
   paths: AgentSmithPaths,
-  input: { repoRoot: string; tool: string; limit?: number },
+  input: { repoRoot: string; tool: string; limit?: number | null },
 ): RecommendationHistoryMemory {
   const db = openHistoryDatabase(paths);
   try {
-    const rows = db
-      .query(
-        `
-          SELECT
-            fingerprint,
-            recommendation_id,
-            title,
-            priority,
-            category,
-            total_attempts,
-            resolved_count,
-            blocked_count,
-            stalled_count,
-            regression_count,
-            last_state,
-            last_summary,
-            last_seen_at
-          FROM recommendation_history
-          WHERE repo_root = ? AND tool = ?
-          ORDER BY COALESCE(last_attempted_at, last_seen_at) DESC
-          LIMIT ?
-        `,
-      )
-      .all(input.repoRoot, input.tool, input.limit ?? 20) as RecommendationHistoryDbRow[];
+    const defaultLimit = 20;
+    const rows =
+      input.limit === null
+        ? (db
+            .query(
+              `
+                SELECT
+                  fingerprint,
+                  recommendation_id,
+                  title,
+                  priority,
+                  category,
+                  total_attempts,
+                  resolved_count,
+                  blocked_count,
+                  stalled_count,
+                  regression_count,
+                  last_state,
+                  last_summary,
+                  last_seen_at
+                FROM recommendation_history
+                WHERE repo_root = ? AND tool = ?
+                ORDER BY COALESCE(last_attempted_at, last_seen_at) DESC
+              `,
+            )
+            .all(input.repoRoot, input.tool) as RecommendationHistoryDbRow[])
+        : (db
+            .query(
+              `
+                SELECT
+                  fingerprint,
+                  recommendation_id,
+                  title,
+                  priority,
+                  category,
+                  total_attempts,
+                  resolved_count,
+                  blocked_count,
+                  stalled_count,
+                  regression_count,
+                  last_state,
+                  last_summary,
+                  last_seen_at
+                FROM recommendation_history
+                WHERE repo_root = ? AND tool = ?
+                ORDER BY COALESCE(last_attempted_at, last_seen_at) DESC
+                LIMIT ?
+              `,
+            )
+            .all(input.repoRoot, input.tool, input.limit ?? defaultLimit) as RecommendationHistoryDbRow[]);
 
     const byFingerprint = new Map<string, RecommendationHistoryRow>();
     const attemptedCounts = new Map<string, number>();

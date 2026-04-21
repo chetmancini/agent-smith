@@ -230,6 +230,8 @@ function chooseRecommendation(
   report: ImprovementReport,
   repoRoot: string,
   history: RecommendationHistoryMemory,
+  completedIds: Set<string>,
+  blockedIds: Set<string>,
   completedFingerprints: Set<string>,
   blockedFingerprints: Set<string>,
   includeUnsafe: boolean,
@@ -239,7 +241,15 @@ function chooseRecommendation(
     const historicalState = history.byFingerprint.get(fingerprint)?.lastState;
     const historicalAttempts = history.attemptedCounts.get(fingerprint) ?? 0;
 
+    if (completedIds.has(recommendation.id)) {
+      continue;
+    }
+
     if (completedFingerprints.has(fingerprint) || history.completedFingerprints.has(fingerprint)) {
+      continue;
+    }
+
+    if (blockedIds.has(recommendation.id)) {
       continue;
     }
 
@@ -462,12 +472,15 @@ export async function runImprovementLoop(
     const selectionHistory = loadRecommendationHistory(paths, {
       repoRoot,
       tool: report.tool,
+      limit: null,
     });
 
     const recommendation = chooseRecommendation(
       report,
       repoRoot,
       selectionHistory,
+      completedIds,
+      blockedIds,
       completedFingerprints,
       blockedFingerprints,
       includeUnsafe,
