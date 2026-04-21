@@ -1,0 +1,42 @@
+{
+  "name": "agent-smith-local",
+  "interface": {
+    "displayName": "Agent Smith Local"
+  },
+  "plugins": [
+    {
+      "name": "agent-smith",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coding",
+      "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
+      "version": "0.4.0",
+      "author": {
+        "name": "Chet Mancini",
+        "url": "https://github.com/chetmancini"
+      },
+      "homepage": "https://github.com/chetmancini/agent-smith",
+      "repository": "https://github.com/chetmancini/agent-smith",
+      "license": "MIT",
+      "keywords": [
+        "agent-smith",
+        "metrics",
+        "telemetry",
+        "tuning",
+        "self-improvement",
+        "analysis",
+        "schema-validation",
+        "feedback-loop",
+        "codex",
+        "claude-code",
+        "plugin-marketplace"
+      ]
+    }
+  ]
+}
