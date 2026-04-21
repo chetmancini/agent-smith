@@ -95,11 +95,7 @@ function findPluginRoot(startDir: string): string | null {
 }
 
 export function resolveCodexInstallPaths(
-  options: {
-    env?: NodeJS.ProcessEnv;
-    cwd?: string;
-    repoRoot?: string;
-  } = {},
+  options: { env?: NodeJS.ProcessEnv; cwd?: string; repoRoot?: string } = {},
 ): CodexInstallPaths {
   const env = options.env ?? process.env;
   const cwd = resolve(options.cwd ?? process.cwd());
@@ -166,7 +162,7 @@ function ensurePluginLink(paths: CodexInstallPaths): boolean {
 }
 
 function serializeTomlString(value: string): string {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
 function upsertTomlValue(text: string, header: string, key: string, value: string): string {
@@ -207,12 +203,7 @@ function ensureCodexConfig(paths: CodexInstallPaths): boolean {
   ensureDirectory(dirname(paths.codexConfigPath));
   const original = existsSync(paths.codexConfigPath) ? readFileSync(paths.codexConfigPath, "utf8") : "";
   let next = upsertTomlValue(original, "[features]", "codex_hooks", "true");
-  next = upsertTomlValue(
-    next,
-    `[projects.${serializeTomlString(paths.repoRoot)}]`,
-    "trust_level",
-    "\"trusted\"",
-  );
+  next = upsertTomlValue(next, `[projects.${serializeTomlString(paths.repoRoot)}]`, "trust_level", '"trusted"');
 
   if (next === original) {
     return false;
@@ -302,7 +293,9 @@ export function codexPluginInstalledInCache(env: NodeJS.ProcessEnv = process.env
 function ensurePersonalMarketplace(paths: CodexInstallPaths, manifest: CodexManifest): boolean {
   ensureDirectory(dirname(paths.personalMarketplacePath));
 
-  const existingRaw = existsSync(paths.personalMarketplacePath) ? readFileSync(paths.personalMarketplacePath, "utf8") : "";
+  const existingRaw = existsSync(paths.personalMarketplacePath)
+    ? readFileSync(paths.personalMarketplacePath, "utf8")
+    : "";
   const existing = existingRaw.length > 0 ? readJsonFile(paths.personalMarketplacePath) : null;
   if (existingRaw.length > 0 && existing === null) {
     throw new Error(`invalid personal marketplace JSON: ${paths.personalMarketplacePath}`);
@@ -349,11 +342,7 @@ function ensurePersonalMarketplace(paths: CodexInstallPaths, manifest: CodexMani
 }
 
 export function installCodexPlugin(
-  options: {
-    env?: NodeJS.ProcessEnv;
-    cwd?: string;
-    repoRoot?: string;
-  } = {},
+  options: { env?: NodeJS.ProcessEnv; cwd?: string; repoRoot?: string } = {},
 ): CodexInstallResult {
   const paths = resolveCodexInstallPaths(options);
   if (!existsSync(paths.repoManifestPath)) {
@@ -371,7 +360,10 @@ export function installCodexPlugin(
   };
 
   const manualSteps = codexPluginInstalledInCache(options.env)
-    ? ["Restart Codex so the updated marketplace and config are reloaded.", "Run `agent-smith doctor` to verify the Codex checks."]
+    ? [
+        "Restart Codex so the updated marketplace and config are reloaded.",
+        "Run `agent-smith doctor` to verify the Codex checks.",
+      ]
     : [
         "Restart Codex so the new marketplace is discovered.",
         "Open the Plugin Directory, choose your personal marketplace, and install Agent Smith.",

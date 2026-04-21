@@ -325,7 +325,8 @@ function detectCodex(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult
   const personalPluginPath = join(home, ".codex", "plugins", "agent-smith");
   const personalMarketplacePath = join(home, ".agents", "plugins", "marketplace.json");
   const installSurfaceReady =
-    existsSync(repoMarketplace) || (existsSync(personalPluginPath) && personalMarketplaceHasAgentSmith(personalMarketplacePath));
+    existsSync(repoMarketplace) ||
+    (existsSync(personalPluginPath) && personalMarketplaceHasAgentSmith(personalMarketplacePath));
 
   const checks: DoctorCheck[] = [
     makeCheck(

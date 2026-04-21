@@ -125,7 +125,17 @@ trust_level = "trusted"
       recursive: true,
     });
     writeJson(
-      join(home, ".codex", "plugins", "cache", "agent-smith-local", "agent-smith", "local", ".codex-plugin", "plugin.json"),
+      join(
+        home,
+        ".codex",
+        "plugins",
+        "cache",
+        "agent-smith-local",
+        "agent-smith",
+        "local",
+        ".codex-plugin",
+        "plugin.json",
+      ),
       { name: "agent-smith" },
     );
 
