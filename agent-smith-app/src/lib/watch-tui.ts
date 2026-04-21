@@ -19,6 +19,10 @@ interface TableWidget {
   setData: (data: { headers: string[]; data: string[][] }) => void;
 }
 
+interface SparklineWidget {
+  setData: (titles: string[], datasets: number[][]) => void;
+}
+
 interface DonutWidget {
   setData: (
     data: Array<{
@@ -32,6 +36,7 @@ interface DonutWidget {
 
 interface BlessedContribModule {
   table: (options: Record<string, unknown>) => TableWidget;
+  sparkline: (options: Record<string, unknown>) => SparklineWidget;
   donut: (options: Record<string, unknown>) => DonutWidget;
 }
 
@@ -97,12 +102,29 @@ function tableRowsForSessions(sessions: WatchSessionSummary[]): string[][] {
   ]);
 }
 
-function renderStats(snapshot: WatchDashboardSnapshot, seedNote: string): string {
+function formatElapsed(lastUpdatedAt: string | null): string {
+  if (!lastUpdatedAt) {
+    return "";
+  }
+
+  const agoSeconds = Math.max(0, Math.floor((Date.now() - new Date(lastUpdatedAt).getTime()) / 1000));
+  if (agoSeconds < 60) {
+    return ` (${agoSeconds}s ago)`;
+  }
+
+  const mins = Math.floor(agoSeconds / 60);
+  const secs = agoSeconds % 60;
+  return ` (${mins}m${secs}s ago)`;
+}
+
+function renderStats(snapshot: WatchDashboardSnapshot, seedNote: string, tickCount: number): string {
   const attention = snapshot.attentionSessions > 0 ? `{yellow-fg}${snapshot.attentionSessions}{/yellow-fg}` : "0";
   const failures = snapshot.failureEvents > 0 ? `{red-fg}${snapshot.failureEvents}{/red-fg}` : "0";
   const denials = snapshot.denialEvents > 0 ? `{yellow-fg}${snapshot.denialEvents}{/yellow-fg}` : "0";
   const loops = snapshot.testLoopEvents > 0 ? `{yellow-fg}${snapshot.testLoopEvents}{/yellow-fg}` : "0";
   const compressions = snapshot.compressionEvents > 0 ? `{yellow-fg}${snapshot.compressionEvents}{/yellow-fg}` : "0";
+  const pulse = tickCount % 2 === 0 ? "{green-fg}●{/green-fg}" : "{green-fg}○{/green-fg}";
+  const elapsed = formatElapsed(snapshot.lastUpdatedAt);
 
   return [
     "{bold}{cyan-fg}Totals{/cyan-fg}{/bold}",
@@ -119,7 +141,7 @@ function renderStats(snapshot: WatchDashboardSnapshot, seedNote: string): string
     `test loops: ${loops}`,
     `compressions: ${compressions}`,
     "",
-    `{bold}{green-fg}Updated{/green-fg}{/bold} ${snapshot.lastUpdatedAt ? compactTimestamp(snapshot.lastUpdatedAt) : "-"}`,
+    `${pulse} {bold}{green-fg}Updated{/green-fg}{/bold} ${snapshot.lastUpdatedAt ? compactTimestamp(snapshot.lastUpdatedAt) : "-"}{gray-fg}${elapsed}{/gray-fg}`,
     `{gray-fg}${seedNote}{/gray-fg}`,
     "",
     "{bold}{yellow-fg}Keys{/yellow-fg}{/bold}",
@@ -315,7 +337,7 @@ export async function runWatchTui(
     width: "32%",
     height: "20%",
     label: " Session Mix ",
-    radius: 8,
+    radius: 7,
     arcWidth: 3,
     remainColor: "black",
     yPadding: 1,
@@ -326,11 +348,25 @@ export async function runWatchTui(
     },
   });
 
-  const aggregationBox = blessed.box({
+  const activitySparkline = contrib.sparkline({
     top: "40%",
     left: "68%",
     width: "32%",
-    height: "38%",
+    height: "12%",
+    label: " Event Rate (15m) ",
+    tags: true,
+    border: { type: "line", fg: "cyan" },
+    style: {
+      fg: "cyan",
+      border: { fg: "cyan" },
+    },
+  });
+
+  const aggregationBox = blessed.box({
+    top: "52%",
+    left: "68%",
+    width: "32%",
+    height: "26%",
     label: " Aggregations ",
     tags: true,
     padding: { left: 1, right: 1 },
@@ -361,6 +397,7 @@ export async function runWatchTui(
     historyTable as unknown as BlessedNode,
     statsBox,
     statusDonut as unknown as BlessedNode,
+    activitySparkline as unknown as BlessedNode,
     aggregationBox,
     feedBox,
   ]);
@@ -368,6 +405,8 @@ export async function runWatchTui(
   let { state, nextOffset } = buildWatchDashboardSeed(paths, options);
   const seedNote = options.tail && options.tail > 0 ? `seed: last ${options.tail} events` : "seed: full history";
   let closed = false;
+  let tickCount = 0;
+  let errored = false;
   const controller = new AbortController();
   const externalAbort = () => {
     close();
@@ -388,12 +427,20 @@ export async function runWatchTui(
       headers: ["tool", "project", "session", "status", "time", "detail"],
       data: tableRowsForSessions(snapshot.historicalSessionRows),
     });
-    statsBox.setContent(renderStats(snapshot, seedNote));
-    aggregationBox.setContent(renderAggregations(snapshot));
+    statsBox.setContent(renderStats(snapshot, seedNote, tickCount));
     statusDonut.setData(donutData(snapshot));
+    activitySparkline.setData(["events/min"], [snapshot.eventRateBuckets]);
+    aggregationBox.setContent(renderAggregations(snapshot));
     feedBox.setContent(renderRecentEvents(snapshot.recentEvents, screen.cols));
     screen.render();
   };
+
+  const tickInterval = setInterval(() => {
+    tickCount += 1;
+    if (!closed && !errored) {
+      render();
+    }
+  }, 2000);
 
   const close = () => {
     if (closed) {
@@ -401,6 +448,7 @@ export async function runWatchTui(
     }
 
     closed = true;
+    clearInterval(tickInterval);
     controller.abort();
     screen.destroy();
   };
@@ -439,6 +487,7 @@ export async function runWatchTui(
     }
   })().catch((error: unknown) => {
     if (!closed) {
+      errored = true;
       statsBox.setContent(`{bold}Watch error{/bold}\n${String(error)}`);
       screen.render();
     }

@@ -89,6 +89,7 @@ export interface WatchDashboardSnapshot {
   toolSummary: WatchGroupSummary[];
   projectSummary: WatchGroupSummary[];
   recentEvents: string[];
+  eventRateBuckets: number[];
 }
 
 export interface WatchDashboardState {
@@ -96,6 +97,7 @@ export interface WatchDashboardState {
   totalEvents: number;
   lastUpdatedAt: string | null;
   recentEvents: string[];
+  eventTimestamps: number[];
 }
 
 export interface WatchDashboardSeed {
@@ -286,6 +288,7 @@ export function createWatchDashboardState(): WatchDashboardState {
     totalEvents: 0,
     lastUpdatedAt: null,
     recentEvents: [],
+    eventTimestamps: [],
   };
 }
 
@@ -337,6 +340,11 @@ export function applyEventToWatchDashboardState(state: WatchDashboardState, even
   state.sessions.set(event.session_id, session);
   state.recentEvents.unshift(formatDashboardRecentEvent(event, session));
   state.recentEvents = state.recentEvents.slice(0, 24);
+
+  const eventEpoch = new Date(event.ts).getTime();
+  state.eventTimestamps.push(eventEpoch);
+  const cutoff = Date.now() - 20 * 60 * 1000;
+  state.eventTimestamps = state.eventTimestamps.filter((ts) => ts >= cutoff);
 }
 
 export function buildWatchDashboardState(
@@ -424,6 +432,17 @@ export function snapshotWatchDashboard(
   ).length;
   const completedSessions = sessionRows.length - activeSessions;
 
+  const now = Date.now();
+  const bucketCount = 15;
+  const bucketDurationMs = 60_000;
+  const eventRateBuckets: number[] = new Array(bucketCount).fill(0);
+  for (const ts of state.eventTimestamps) {
+    const bucketsAgo = Math.floor((now - ts) / bucketDurationMs);
+    if (bucketsAgo >= 0 && bucketsAgo < bucketCount) {
+      eventRateBuckets[bucketCount - 1 - bucketsAgo] += 1;
+    }
+  }
+
   return {
     totalEvents: state.totalEvents,
     totalSessions: sessionRows.length,
@@ -446,6 +465,7 @@ export function snapshotWatchDashboard(
     toolSummary: summarizeGroups(sessions, (session) => session.tool).slice(0, options.groupLimit ?? 6),
     projectSummary: summarizeGroups(sessions, (session) => session.project ?? "-").slice(0, options.groupLimit ?? 6),
     recentEvents: [...state.recentEvents],
+    eventRateBuckets,
   };
 }
 
