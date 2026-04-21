@@ -6,6 +6,27 @@ This package is intentionally separate from the OpenCode plugin so the core
 telemetry, rollup, report, and watch surfaces can evolve without dragging the
 plugin packaging model or shell hook contracts along with them.
 
+## Distribution
+
+Install the published CLI with Bun or npm:
+
+```bash
+bun add --global agent-smith-app
+# or
+npm install --global agent-smith-app
+
+agent-smith doctor
+```
+
+The published package runs through Bun, so Bun `>=1.3.0` must be installed on
+the target machine. If you want a self-contained executable that does not
+require Bun, build one locally:
+
+```bash
+bun run build:compile
+./dist/agent-smith doctor
+```
+
 ## Commands
 
 ```bash
@@ -19,6 +40,13 @@ bun run src/cli.ts watch --tail 500
 bun run src/cli.ts watch --view events --tail 20
 bun run src/cli.ts doctor
 bun run src/cli.ts paths
+```
+
+For package validation before publishing:
+
+```bash
+bun run build
+bun run pack:check
 ```
 
 ## Current Scope

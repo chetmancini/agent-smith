@@ -55,6 +55,7 @@ git add \
 	.claude-plugin/plugin.json \
 	.claude-plugin/marketplace.json \
 	.codex-plugin/plugin.json \
+	agent-smith-app/package.json \
 	opencode-plugin/package.json
 
 git commit -m "Release ${tag}"

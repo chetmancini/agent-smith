@@ -1,19 +1,47 @@
 {
   "name": "agent-smith-app",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.4.0",
   "description": "Standalone TypeScript CLI for Agent Smith telemetry, rollups, reports, and live watch flows",
   "type": "module",
   "bin": {
     "agent-smith": "dist/cli.js"
   },
+  "files": [
+    "dist/cli.js"
+  ],
   "scripts": {
     "build": "bun build ./src/cli.ts --outfile ./dist/cli.js --target bun",
+    "build:compile": "bun build ./src/cli.ts --compile --outfile ./dist/agent-smith",
+    "clean": "rm -rf dist",
     "format": "biome format src tests",
     "lint": "biome lint src tests --error-on-warnings",
+    "pack:check": "npm pack --dry-run --json >/dev/null",
+    "prepack": "bun run build",
     "test": "bun test --coverage",
     "test:watch": "bun test --watch",
     "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent-smith",
+    "cli",
+    "bun",
+    "telemetry",
+    "metrics",
+    "ai-coding"
+  ],
+  "author": {
+    "name": "Chet Mancini",
+    "url": "https://github.com/chetmancini"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chetmancini/agent-smith.git",
+    "directory": "agent-smith-app"
+  },
+  "homepage": "https://github.com/chetmancini/agent-smith/tree/main/agent-smith-app#readme",
+  "bugs": {
+    "url": "https://github.com/chetmancini/agent-smith/issues"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.6",

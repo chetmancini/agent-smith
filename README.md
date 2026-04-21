@@ -116,6 +116,13 @@ bun run ./agent-smith-app/src/cli.ts validate-agent-config --tool codex --refres
 bun run ./agent-smith-app/src/cli.ts upgrade-settings --tool codex
 ```
 
+**Standalone app distribution checks:**
+```bash
+make app-build
+make app-compile
+make app-pack-check
+```
+
 **Schema validation** (scoped to the calling agent):
 ```bash
 bash scripts/refresh-schemas.sh
@@ -323,9 +330,16 @@ Agent Smith now uses [`VERSION`](VERSION) as the single release source of truth.
 make release VERSION=1.0.1
 ```
 
-If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude and Codex manifests plus [`opencode-plugin/package.json`](opencode-plugin/package.json).
+If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude and Codex manifests plus [`agent-smith-app/package.json`](agent-smith-app/package.json) and [`opencode-plugin/package.json`](opencode-plugin/package.json).
 
 `make release` requires a clean git worktree and an authenticated `gh` session. If you only want to bump versioned release files without publishing yet, use `make set-version VERSION=1.0.1`.
+
+The GitHub release flow does not publish the standalone CLI package to npm for you. After cutting the repo release, publish it separately from `agent-smith-app/` when you are ready:
+
+```bash
+cd agent-smith-app
+npm publish
+```
 
 ### Makefile Helpers
 

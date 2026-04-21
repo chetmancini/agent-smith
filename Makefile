@@ -18,7 +18,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help test app-test app-build lint version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help test app-test app-build app-compile app-pack-check lint version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@if [ "$(CLICOLOR_FORCE)" = "1" ] || [ "$(FORCE_COLOR)" = "1" ] || \
@@ -32,7 +32,9 @@ help:
 		printf '\033[36mCore\033[0m\n'; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-compile" "Build a standalone executable for the current host"; \
+		printf '  \033[32m%-30s\033[0m %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make version" "Print the current release version"; \
 		printf '  \033[32m%-30s\033[0m %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
@@ -73,7 +75,9 @@ help:
 		printf 'Core\n'; \
 		printf '  %-30s %s\n' "make test" "Run all tests (Bats + TypeScript packages)"; \
 		printf '  %-30s %s\n' "make app-test" "Run the standalone Agent Smith app test suite"; \
-		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith app CLI"; \
+		printf '  %-30s %s\n' "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
+		printf '  %-30s %s\n' "make app-compile" "Build a standalone executable for the current host"; \
+		printf '  %-30s %s\n' "make app-pack-check" "Verify the npm package contents with a dry run"; \
 		printf '  %-30s %s\n' "make lint" "Run the local lint suite used in CI"; \
 		printf '  %-30s %s\n' "make version" "Print the current release version"; \
 		printf '  %-30s %s\n' "make set-version VERSION=1.0.1" "Update VERSION and sync release metadata"; \
@@ -117,6 +121,12 @@ app-test:
 
 app-build:
 	cd agent-smith-app && $(APP_BUN) run build
+
+app-compile:
+	cd agent-smith-app && $(APP_BUN) run build:compile
+
+app-pack-check:
+	cd agent-smith-app && $(APP_BUN) run pack:check
 
 lint:
 	find . -name '*.json' -not -path './.git/*' -print0 | xargs -0 -n1 jq empty
