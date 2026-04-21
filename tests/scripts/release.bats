@@ -90,6 +90,18 @@ EOF
 	chmod 700 "${fakebin}/gh"
 }
 
+create_fake_make() {
+	local fakebin="$1"
+	mkdir -p "$fakebin"
+	cat >"${fakebin}/make" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_MAKE_LOG}"
+exit "${FAKE_MAKE_EXIT_CODE:-0}"
+EOF
+	chmod 700 "${fakebin}/make"
+}
+
 create_release_repo() {
 	local repo="$1"
 	mkdir -p "${repo}/scripts"
@@ -107,19 +119,22 @@ EOF
 	local repo fakebin
 	repo="${TEST_TMPDIR}/repo"
 	fakebin="${TEST_TMPDIR}/fakebin"
-	local git_log gh_log set_version_log
+	local git_log gh_log make_log set_version_log
 	git_log="${TEST_TMPDIR}/git.log"
 	gh_log="${TEST_TMPDIR}/gh.log"
+	make_log="${TEST_TMPDIR}/make.log"
 	set_version_log="${TEST_TMPDIR}/set-version.log"
 
 	create_release_repo "$repo"
 	create_fake_git "$fakebin"
 	create_fake_gh "$fakebin"
+	create_fake_make "$fakebin"
 
 	run env \
 		PATH="${fakebin}:$PATH" \
 		FAKE_GIT_LOG="${git_log}" \
 		FAKE_GH_LOG="${gh_log}" \
+		FAKE_MAKE_LOG="${make_log}" \
 		FAKE_SET_VERSION_LOG="${set_version_log}" \
 		FAKE_GIT_LOCAL_MAIN=abc123 \
 		FAKE_GIT_REMOTE_MAIN=def456 \
@@ -137,19 +152,22 @@ EOF
 	local repo fakebin
 	repo="${TEST_TMPDIR}/repo"
 	fakebin="${TEST_TMPDIR}/fakebin"
-	local git_log gh_log set_version_log
+	local git_log gh_log make_log set_version_log
 	git_log="${TEST_TMPDIR}/git.log"
 	gh_log="${TEST_TMPDIR}/gh.log"
+	make_log="${TEST_TMPDIR}/make.log"
 	set_version_log="${TEST_TMPDIR}/set-version.log"
 
 	create_release_repo "$repo"
 	create_fake_git "$fakebin"
 	create_fake_gh "$fakebin"
+	create_fake_make "$fakebin"
 
 	run env \
 		PATH="${fakebin}:$PATH" \
 		FAKE_GIT_LOG="${git_log}" \
 		FAKE_GH_LOG="${gh_log}" \
+		FAKE_MAKE_LOG="${make_log}" \
 		FAKE_SET_VERSION_LOG="${set_version_log}" \
 		FAKE_GIT_LOCAL_MAIN=abc123 \
 		FAKE_GIT_REMOTE_MAIN=abc123 \
@@ -160,26 +178,64 @@ EOF
 	[[ "$output" == *"Release must run from the up-to-date main branch."* ]]
 	[[ "$(cat "${git_log}")" == *"fetch --quiet origin main"* ]]
 	[ ! -e "${gh_log}" ]
+	[ ! -e "${make_log}" ]
 	[ ! -e "${set_version_log}" ]
 }
 
-@test "release stages the Codex marketplace manifest" {
+@test "release aborts before mutations when release tests fail" {
 	local repo fakebin
 	repo="${TEST_TMPDIR}/repo"
 	fakebin="${TEST_TMPDIR}/fakebin"
-	local git_log gh_log set_version_log
+	local git_log gh_log make_log set_version_log
 	git_log="${TEST_TMPDIR}/git.log"
 	gh_log="${TEST_TMPDIR}/gh.log"
+	make_log="${TEST_TMPDIR}/make.log"
 	set_version_log="${TEST_TMPDIR}/set-version.log"
 
 	create_release_repo "$repo"
 	create_fake_git "$fakebin"
 	create_fake_gh "$fakebin"
+	create_fake_make "$fakebin"
 
 	run env \
 		PATH="${fakebin}:$PATH" \
 		FAKE_GIT_LOG="${git_log}" \
 		FAKE_GH_LOG="${gh_log}" \
+		FAKE_MAKE_LOG="${make_log}" \
+		FAKE_MAKE_EXIT_CODE=1 \
+		FAKE_SET_VERSION_LOG="${set_version_log}" \
+		FAKE_GIT_LOCAL_MAIN=abc123 \
+		FAKE_GIT_REMOTE_MAIN=abc123 \
+		FAKE_GIT_HEAD=abc123 \
+		bash "${repo}/scripts/release.sh" 1.2.3
+
+	[ "$status" -eq 1 ]
+	[[ "$(cat "${make_log}")" == *"release-test"* ]]
+	[[ "$(cat "${make_log}")" != *"pre-push"* ]]
+	[ ! -e "${gh_log}" ]
+	[ ! -e "${set_version_log}" ]
+}
+
+@test "release runs release tests and stages the Codex marketplace manifest" {
+	local repo fakebin
+	repo="${TEST_TMPDIR}/repo"
+	fakebin="${TEST_TMPDIR}/fakebin"
+	local git_log gh_log make_log set_version_log
+	git_log="${TEST_TMPDIR}/git.log"
+	gh_log="${TEST_TMPDIR}/gh.log"
+	make_log="${TEST_TMPDIR}/make.log"
+	set_version_log="${TEST_TMPDIR}/set-version.log"
+
+	create_release_repo "$repo"
+	create_fake_git "$fakebin"
+	create_fake_gh "$fakebin"
+	create_fake_make "$fakebin"
+
+	run env \
+		PATH="${fakebin}:$PATH" \
+		FAKE_GIT_LOG="${git_log}" \
+		FAKE_GH_LOG="${gh_log}" \
+		FAKE_MAKE_LOG="${make_log}" \
 		FAKE_SET_VERSION_LOG="${set_version_log}" \
 		FAKE_GIT_LOCAL_MAIN=abc123 \
 		FAKE_GIT_REMOTE_MAIN=abc123 \
@@ -187,6 +243,8 @@ EOF
 		bash "${repo}/scripts/release.sh" 1.2.3
 
 	[ "$status" -eq 0 ]
+	[[ "$(cat "${make_log}")" == *"release-test"* ]]
+	[[ "$(cat "${make_log}")" != *"pre-push"* ]]
 	[[ "$(cat "${git_log}")" == *".agents/plugins/marketplace.json"* ]]
 	[[ "$(cat "${set_version_log}")" == *"1.2.3"* ]]
 	[[ "$(cat "${gh_log}")" == *"release create v1.2.3 --generate-notes"* ]]
