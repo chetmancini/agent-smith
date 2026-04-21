@@ -1,5 +1,7 @@
 import process from "node:process";
 
+import type * as Blessed from "blessed";
+
 import { resolvePaths, type AgentSmithPaths } from "./paths";
 import {
   applyEventToWatchDashboardState,
@@ -31,6 +33,14 @@ interface DonutWidget {
 interface BlessedContribModule {
   table: (options: Record<string, unknown>) => TableWidget;
   donut: (options: Record<string, unknown>) => DonutWidget;
+}
+
+type BlessedModule = typeof Blessed;
+type BlessedRuntimeModule = BlessedModule & { default?: BlessedModule };
+type BlessedNode = Blessed.Widgets.Node;
+
+function requireTuiModule<T>(specifier: string): T {
+  return import.meta.require(specifier) as T;
 }
 
 function compactTimestamp(timestamp: string | null): string {
@@ -208,6 +218,12 @@ function donutData(snapshot: WatchDashboardSnapshot): Array<{
   ];
 }
 
+function appendWidgets(screen: Blessed.Widgets.Screen, widgets: BlessedNode[]): void {
+  for (const widget of widgets) {
+    screen.append(widget);
+  }
+}
+
 export async function runWatchTui(
   paths: AgentSmithPaths = resolvePaths(),
   options: Pick<WatchOptions, "tool" | "project" | "tail" | "pollMs"> = {},
@@ -216,8 +232,8 @@ export async function runWatchTui(
     throw new Error("watch --view tui requires an interactive terminal");
   }
 
-  const blessedModule = await import("blessed");
-  const contribModule = await import("blessed-contrib");
+  const blessedModule = requireTuiModule<BlessedRuntimeModule>("blessed");
+  const contribModule = requireTuiModule<Record<string, unknown>>("blessed-contrib");
   const blessed = blessedModule.default ?? blessedModule;
   const contrib = (contribModule.default ?? contribModule) as BlessedContribModule;
 
@@ -230,7 +246,6 @@ export async function runWatchTui(
   });
 
   const activeTable = contrib.table({
-    parent: screen,
     top: 0,
     left: 0,
     width: "68%",
@@ -249,7 +264,6 @@ export async function runWatchTui(
   });
 
   const historyTable = contrib.table({
-    parent: screen,
     top: "40%",
     left: 0,
     width: "68%",
@@ -268,7 +282,6 @@ export async function runWatchTui(
   });
 
   const statsBox = blessed.box({
-    parent: screen,
     top: 0,
     left: "68%",
     width: "32%",
@@ -284,7 +297,6 @@ export async function runWatchTui(
   });
 
   const statusDonut = contrib.donut({
-    parent: screen,
     top: "25%",
     left: "68%",
     width: "32%",
@@ -302,7 +314,6 @@ export async function runWatchTui(
   });
 
   const aggregationBox = blessed.box({
-    parent: screen,
     top: "50%",
     left: "68%",
     width: "32%",
@@ -318,7 +329,6 @@ export async function runWatchTui(
   });
 
   const feedBox = blessed.box({
-    parent: screen,
     top: "85%",
     left: 0,
     width: "100%",
@@ -332,6 +342,15 @@ export async function runWatchTui(
       fg: "white",
     },
   });
+
+  appendWidgets(screen, [
+    activeTable as unknown as BlessedNode,
+    historyTable as unknown as BlessedNode,
+    statsBox,
+    statusDonut as unknown as BlessedNode,
+    aggregationBox,
+    feedBox,
+  ]);
 
   let { state, nextOffset } = buildWatchDashboardSeed(paths, options);
   const seedNote = options.tail && options.tail > 0 ? `seed: last ${options.tail} events` : "seed: full history";
