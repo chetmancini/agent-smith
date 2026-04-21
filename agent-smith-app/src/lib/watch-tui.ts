@@ -72,6 +72,14 @@ function truncate(value: string | null, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
 }
 
+function truncatePlain(value: string, limit: number): string {
+  if (limit <= 0) {
+    return "";
+  }
+
+  return value.length <= limit ? value : `${value.slice(0, Math.max(limit - 1, 0))}…`;
+}
+
 function tableRowsForSessions(sessions: WatchSessionSummary[]): string[][] {
   if (sessions.length === 0) {
     return [["-", "-", "-", "-", "-", "-"]];
@@ -185,6 +193,11 @@ export function colorizeRecentEvent(line: string): string {
   return `{white-fg}${escapedLine}{/white-fg}`;
 }
 
+function renderRecentEvents(lines: string[], terminalWidth: number): string {
+  const contentWidth = Math.max(terminalWidth - 2, 24);
+  return lines.map((line) => colorizeRecentEvent(truncatePlain(line, contentWidth))).join("\n");
+}
+
 function donutData(snapshot: WatchDashboardSnapshot): Array<{
   percent: number;
   label: string;
@@ -249,7 +262,7 @@ export async function runWatchTui(
     top: 0,
     left: 0,
     width: "68%",
-    height: "40%",
+    height: "34%",
     label: " Active Sessions ",
     keys: true,
     interactive: false,
@@ -264,10 +277,10 @@ export async function runWatchTui(
   });
 
   const historyTable = contrib.table({
-    top: "40%",
+    top: "34%",
     left: 0,
     width: "68%",
-    height: "45%",
+    height: "44%",
     label: " History ",
     keys: true,
     interactive: false,
@@ -285,7 +298,7 @@ export async function runWatchTui(
     top: 0,
     left: "68%",
     width: "32%",
-    height: "25%",
+    height: "20%",
     label: " Stats ",
     tags: true,
     padding: { left: 1, right: 1 },
@@ -297,12 +310,12 @@ export async function runWatchTui(
   });
 
   const statusDonut = contrib.donut({
-    top: "25%",
+    top: "20%",
     left: "68%",
     width: "32%",
-    height: "25%",
+    height: "20%",
     label: " Session Mix ",
-    radius: 9,
+    radius: 8,
     arcWidth: 3,
     remainColor: "black",
     yPadding: 1,
@@ -314,10 +327,10 @@ export async function runWatchTui(
   });
 
   const aggregationBox = blessed.box({
-    top: "50%",
+    top: "40%",
     left: "68%",
     width: "32%",
-    height: "35%",
+    height: "38%",
     label: " Aggregations ",
     tags: true,
     padding: { left: 1, right: 1 },
@@ -329,13 +342,13 @@ export async function runWatchTui(
   });
 
   const feedBox = blessed.box({
-    top: "85%",
+    top: "78%",
     left: 0,
     width: "100%",
-    height: "15%",
+    height: "22%",
     label: " Recent Events ",
     tags: true,
-    padding: { left: 1, right: 1 },
+    padding: { left: 0, right: 0 },
     border: { type: "line" },
     style: {
       border: { fg: "green" },
@@ -375,7 +388,7 @@ export async function runWatchTui(
     statsBox.setContent(renderStats(snapshot, seedNote));
     aggregationBox.setContent(renderAggregations(snapshot));
     statusDonut.setData(donutData(snapshot));
-    feedBox.setContent(snapshot.recentEvents.map((line) => colorizeRecentEvent(line)).join("\n"));
+    feedBox.setContent(renderRecentEvents(snapshot.recentEvents, screen.cols));
     screen.render();
   };
 
@@ -397,6 +410,8 @@ export async function runWatchTui(
     state = buildWatchDashboardState(paths, options);
     render();
   });
+
+  screen.on("resize", render);
 
   render();
 
