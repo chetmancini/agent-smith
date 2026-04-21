@@ -12,6 +12,8 @@ TOOL ?=
 HELP_ASCII ?= 1
 HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
 APP_BUN ?= bun
+APP_CMD ?=
+APP_ARGS ?=
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),claude)
 GEMINI_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),gemini)
@@ -19,7 +21,7 @@ CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -67,6 +69,7 @@ _help:
 		print_section "Quick Start"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
 		print_row "make codex-refresh-schemas" "Alias example; use the same <tool>-refresh-schemas pattern for claude|codex|gemini|opencode"; \
 		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
@@ -80,6 +83,7 @@ _help:
 		print_section "End Users"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
+		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
 		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
 		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
@@ -125,6 +129,7 @@ _help:
 		print_row "make opencode-typecheck" "Run TypeScript checks for the OpenCode plugin"; \
 		print_row "make pre-push" "Run the full local validation gate before pushing"; \
 		print_section "Build And Package"; \
+		print_row "make app-cli APP_CMD=doctor [APP_ARGS=--json]" "Run the standalone TS CLI from the repo root"; \
 		print_row "make build" "Build the standalone app and the OpenCode plugin"; \
 		print_row "make app-build" "Build the standalone Agent Smith Bun CLI bundle"; \
 		print_row "make opencode-build" "Build the OpenCode plugin bundle"; \
@@ -265,6 +270,16 @@ validate-agent-config:
 
 codex-install:
 	$(APP_BUN) run ./agent-smith-app/src/cli.ts install-codex
+
+app-cli:
+	@if [ -z "$(strip $(APP_CMD))" ]; then \
+		echo "Usage: make app-cli APP_CMD=doctor [APP_ARGS=--json]" >&2; \
+		exit 1; \
+	fi
+	$(APP_BUN) run ./agent-smith-app/src/cli.ts $(APP_CMD) $(APP_ARGS)
+
+app-doctor:
+	$(APP_BUN) run ./agent-smith-app/src/cli.ts doctor $(APP_ARGS)
 
 agent-analyze:
 	AGENT_CLI="$(AGENT_CLI)" AGENT_SMITH_TOOL="$(TOOL)" SESSIONS="$(SESSIONS)" "$(SHELL)" scripts/run-agent-skill.sh analyze-config $(TOOL_ARG)

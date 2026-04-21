@@ -1,8 +1,8 @@
 import { accessSync, existsSync, readFileSync, statSync } from "node:fs";
 import { constants } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
+import { repoRootFromHere } from "./agent-hosts";
 import { codexPluginInstalledInCache, personalMarketplaceHasAgentSmith } from "./codex-install";
 import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
@@ -106,11 +106,6 @@ function expandHome(input: string, env: NodeJS.ProcessEnv): string {
     return join(homeDir(env), input.slice(2));
   }
   return input;
-}
-
-function repoRootFromHere(): string {
-  const currentFile = fileURLToPath(import.meta.url);
-  return resolve(dirname(currentFile), "..", "..", "..");
 }
 
 function findBinary(binary: string, env: NodeJS.ProcessEnv): string | null {

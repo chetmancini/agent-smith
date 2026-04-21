@@ -14,6 +14,22 @@ export interface SchemaMetadata {
 
 type FetchLike = (input: string) => Promise<Response>;
 
+export function findAgentSmithRepoRoot(startDir: string): string | null {
+  let current = resolve(startDir);
+
+  while (true) {
+    if (existsSync(join(current, "agent-smith-app", "package.json"))) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
 export function repoRootFromHere(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.AGENT_SMITH_REPO_ROOT;
   if (typeof override === "string" && override.trim().length > 0) {
@@ -21,6 +37,11 @@ export function repoRootFromHere(env: NodeJS.ProcessEnv = process.env): string {
   }
 
   const currentFile = fileURLToPath(import.meta.url);
+  const repoRoot = findAgentSmithRepoRoot(dirname(currentFile)) ?? findAgentSmithRepoRoot(process.cwd());
+  if (repoRoot) {
+    return repoRoot;
+  }
+
   return resolve(dirname(currentFile), "..", "..", "..");
 }
 

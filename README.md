@@ -43,7 +43,7 @@ That automates everything Agent Smith can safely write itself. One manual Codex 
 2. Open the Plugin Directory.
 3. Choose your personal marketplace.
 4. Install `Agent Smith`.
-5. Run `bun run ./agent-smith-app/src/cli.ts doctor`.
+5. Run `make app-doctor` (or `bun run ./agent-smith-app/src/cli.ts doctor`).
 
 Codex loads automatic hook telemetry from the repo-local [`.codex/hooks.json`](.codex/hooks.json) file, so the checkout still needs to stay trusted.
 
@@ -119,6 +119,8 @@ bash scripts/validate-agent-config.sh --tool gemini --refresh
 
 **Standalone TypeScript app** (new migration path):
 ```bash
+make app-doctor
+make app-cli APP_CMD=watch APP_ARGS='--tail 10'
 bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-id demo --metadata '{"cwd":"/tmp/project"}'
 bun run ./agent-smith-app/src/cli.ts rollup
 bun run ./agent-smith-app/src/cli.ts report

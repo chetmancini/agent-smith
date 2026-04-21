@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { findAgentSmithRepoRoot } from "../src/lib/agent-hosts";
 import { runDoctor } from "../src/lib/doctor";
 import { runCli } from "../src/cli";
 
@@ -53,6 +54,7 @@ describe("doctor", () => {
     mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
     mkdirSync(join(repoRoot, ".agents", "plugins"), { recursive: true });
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
+    mkdirSync(join(repoRoot, "agent-smith-app"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
 
     writeJson(join(repoRoot, ".claude-plugin", "plugin.json"), {
@@ -66,6 +68,9 @@ describe("doctor", () => {
       plugins: [{ name: "agent-smith", source: { source: "local", path: "./" } }],
     });
     writeJson(join(repoRoot, ".codex", "hooks.json"), { hooks: {} });
+    writeJson(join(repoRoot, "agent-smith-app", "package.json"), {
+      name: "agent-smith-app",
+    });
     writeJson(join(repoRoot, "opencode-plugin", "package.json"), {
       name: "agent-smith-opencode",
     });
@@ -85,6 +90,13 @@ describe("doctor", () => {
     const report = runDoctor({ repoRoot, env });
     expect(report.overallStatus).toBe("skip");
     expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip"]);
+  });
+
+  test("finds the repo root when invoked from a bundled dist directory", () => {
+    const distDir = join(repoRoot, "agent-smith-app", "dist");
+    mkdirSync(distDir, { recursive: true });
+
+    expect(findAgentSmithRepoRoot(distDir)).toBe(repoRoot);
   });
 
   test("passes when Claude, Codex, and OpenCode are configured", () => {
