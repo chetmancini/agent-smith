@@ -29,6 +29,7 @@ function createIo(stdin = "") {
         stderr += text;
       },
       readStdin: async () => stdin,
+      isTTY: false,
     },
     getStdout: () => stdout,
     getStderr: () => stderr,
