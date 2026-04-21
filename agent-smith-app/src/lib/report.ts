@@ -104,11 +104,17 @@ function buildWhere(filters: ReportFilters): {
   where: string;
   params: string[];
 };
-function buildWhere(filters: ReportFilters, fieldPrefix: string): {
+function buildWhere(
+  filters: ReportFilters,
+  fieldPrefix: string,
+): {
   where: string;
   params: string[];
 };
-function buildWhere(filters: ReportFilters, fieldPrefix = ""): {
+function buildWhere(
+  filters: ReportFilters,
+  fieldPrefix = "",
+): {
   where: string;
   params: string[];
 } {
@@ -303,10 +309,9 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
       (db.query(`SELECT COUNT(*) AS count FROM sessions ${where}`).get(...params) as { count: number } | null)?.count ??
       0;
 
-    const health =
-      (
-        db.query(
-          `
+    const health = (db
+      .query(
+        `
             SELECT
               COALESCE(SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END), 0) AS activeSessions,
               COALESCE(
@@ -332,36 +337,34 @@ export function generateReport(paths = resolvePaths(), filters: ReportFilters = 
             FROM sessions
             ${where}
           `,
-        ).get(...params) as
-        | {
-            activeSessions: number;
-            attentionSessions: number;
-            failureSessions: number;
-            failureEvents: number;
-            denialSessions: number;
-            denialEvents: number;
-            clarificationSessions: number;
-            clarificationEvents: number;
-            testLoopSessions: number;
-            testLoopEvents: number;
-            compressionSessions: number;
-            compressionEvents: number;
-          }
-        | null
-      ) ?? {
-        activeSessions: 0,
-        attentionSessions: 0,
-        failureSessions: 0,
-        failureEvents: 0,
-        denialSessions: 0,
-        denialEvents: 0,
-        clarificationSessions: 0,
-        clarificationEvents: 0,
-        testLoopSessions: 0,
-        testLoopEvents: 0,
-        compressionSessions: 0,
-        compressionEvents: 0,
-      };
+      )
+      .get(...params) as {
+      activeSessions: number;
+      attentionSessions: number;
+      failureSessions: number;
+      failureEvents: number;
+      denialSessions: number;
+      denialEvents: number;
+      clarificationSessions: number;
+      clarificationEvents: number;
+      testLoopSessions: number;
+      testLoopEvents: number;
+      compressionSessions: number;
+      compressionEvents: number;
+    } | null) ?? {
+      activeSessions: 0,
+      attentionSessions: 0,
+      failureSessions: 0,
+      failureEvents: 0,
+      denialSessions: 0,
+      denialEvents: 0,
+      clarificationSessions: 0,
+      clarificationEvents: 0,
+      testLoopSessions: 0,
+      testLoopEvents: 0,
+      compressionSessions: 0,
+      compressionEvents: 0,
+    };
 
     const activeSessions = querySessionRows(
       db,

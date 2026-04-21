@@ -190,11 +190,12 @@ export function formatWatchDuration(seconds: number | null): string {
   return remainder === 0 ? `${minutes}m` : `${minutes}m${remainder}s`;
 }
 
-function sessionNeedsAttention(session: Pick<
-  SessionWatchState,
-  "failureCount" | "denialCount" | "testLoopCount" | "compressionCount"
->): boolean {
-  return session.failureCount > 0 || session.denialCount > 0 || session.testLoopCount > 0 || session.compressionCount > 0;
+function sessionNeedsAttention(
+  session: Pick<SessionWatchState, "failureCount" | "denialCount" | "testLoopCount" | "compressionCount">,
+): boolean {
+  return (
+    session.failureCount > 0 || session.denialCount > 0 || session.testLoopCount > 0 || session.compressionCount > 0
+  );
 }
 
 function resolveSessionStatus(session: SessionWatchState): WatchSessionSummary["status"] {
@@ -243,11 +244,7 @@ function summarizeGroups(
   }
 
   return [...groups.values()].sort((left, right) => {
-    return (
-      right.events - left.events ||
-      right.sessions - left.sessions ||
-      left.name.localeCompare(right.name)
-    );
+    return right.events - left.events || right.sessions - left.sessions || left.name.localeCompare(right.name);
   });
 }
 
@@ -288,7 +285,8 @@ export function applyEventToWatchDashboardState(state: WatchDashboardState, even
     session.endedAt = event.ts;
     session.durationSeconds =
       typeof event.metadata.duration_seconds === "number" ? event.metadata.duration_seconds : session.durationSeconds;
-    session.stopReason = typeof event.metadata.stop_reason === "string" ? event.metadata.stop_reason : session.stopReason;
+    session.stopReason =
+      typeof event.metadata.stop_reason === "string" ? event.metadata.stop_reason : session.stopReason;
   } else if (!session.startedAt) {
     session.startedAt = event.ts;
   }
@@ -379,8 +377,9 @@ export function snapshotWatchDashboard(
     .sort(byRecent)
     .slice(0, options.historyLimit ?? 12);
 
-  const activeSessions = sessionRows.filter((session) => session.status === "active" || session.status === "active-attention")
-    .length;
+  const activeSessions = sessionRows.filter(
+    (session) => session.status === "active" || session.status === "active-attention",
+  ).length;
   const attentionSessions = sessionRows.filter(
     (session) => session.status === "active-attention" || session.status === "attention",
   ).length;
