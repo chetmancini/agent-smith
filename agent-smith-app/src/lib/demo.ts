@@ -18,7 +18,6 @@ export interface FullLoopDemoOptions {
   demoDir?: string;
   delayMs?: number;
   watch?: boolean;
-  autoExitMs?: number;
 }
 
 export interface FullLoopDemoArtifacts {
@@ -49,6 +48,10 @@ interface DemoSandbox {
   repoRoot: string;
   paths: AgentSmithPaths;
   env: NodeJS.ProcessEnv;
+}
+
+interface DemoTmuxSplitPane {
+  paneId: string;
 }
 
 const theme = createTerminalTheme({ color: false });
@@ -273,6 +276,60 @@ function demoWorkingLogPath(paths: AgentSmithPaths): string {
 
 function appendWorkingLog(paths: AgentSmithPaths, message: string): void {
   appendFileSync(demoWorkingLogPath(paths), `${new Date().toISOString().slice(11, 19)} ${message}\n`);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+export function buildDemoTmuxTailCommand(filePath: string): string {
+  return `exec tail -n +1 -f ${shellQuote(filePath)}`;
+}
+
+function openDemoTmuxSplitPane(filePath: string): DemoTmuxSplitPane | null {
+  const tmuxPane = process.env.TMUX_PANE;
+  if (!process.env.TMUX || !tmuxPane || !Bun.which("tmux")) {
+    return null;
+  }
+
+  const proc = Bun.spawnSync(
+    [
+      "tmux",
+      "split-window",
+      "-d",
+      "-h",
+      "-p",
+      "35",
+      "-P",
+      "-F",
+      "#{pane_id}",
+      "-t",
+      tmuxPane,
+      buildDemoTmuxTailCommand(filePath),
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+
+  if (proc.exitCode !== 0) {
+    return null;
+  }
+
+  const paneId = proc.stdout.toString().trim();
+  return paneId ? { paneId } : null;
+}
+
+function closeDemoTmuxSplitPane(splitPane: DemoTmuxSplitPane | null): void {
+  if (!splitPane || !Bun.which("tmux")) {
+    return;
+  }
+
+  Bun.spawnSync(["tmux", "kill-pane", "-t", splitPane.paneId], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
 }
 
 function createDemoAgentRunner(sandbox: DemoSandbox): AgentRunner {
@@ -719,34 +776,39 @@ async function runDemoScenario(sandbox: DemoSandbox, delayMs: number): Promise<F
 
 export async function runFullLoopDemo(options: FullLoopDemoOptions = {}): Promise<FullLoopDemoResult> {
   const sandbox = createDemoSandbox(options.demoDir);
-  const delayMs = options.delayMs ?? 450;
+  const delayMs = options.delayMs ?? 700;
 
   if (!options.watch) {
     return await runDemoScenario(sandbox, delayMs);
   }
 
   const controller = new AbortController();
+  const tmuxSplitPane = openDemoTmuxSplitPane(demoWorkingLogPath(sandbox.paths));
   const watchTask = runWatchTui(sandbox.paths, {
     tail: 0,
     pollMs: 120,
     signal: controller.signal,
-    extraPane: {
-      filePath: demoWorkingLogPath(sandbox.paths),
-      label: " Claude Working ",
-    },
+    extraPane: tmuxSplitPane
+      ? undefined
+      : {
+          filePath: demoWorkingLogPath(sandbox.paths),
+          label: " Claude Working ",
+        },
   });
 
   await pause(delayMs);
   try {
     const result = await runDemoScenario(sandbox, delayMs);
-    await pause(options.autoExitMs ?? 1200);
-    controller.abort();
+    appendWorkingLog(sandbox.paths, "Demo finished. Press q in the watch pane to close.");
     await watchTask;
     return result;
   } catch (error) {
     controller.abort();
     await watchTask.catch(() => undefined);
     throw error;
+  } finally {
+    controller.abort();
+    closeDemoTmuxSplitPane(tmuxSplitPane);
   }
 }
 
