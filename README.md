@@ -112,7 +112,8 @@ bash scripts/metrics-rollup.sh                          # Process events into SQ
 bash scripts/analyze-config.sh --sessions 50             # Local raw report (default)
 bash scripts/analyze-config.sh --llm --sessions 50       # Agent-backed report for the active tool
 bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
-bash scripts/refresh-schemas.sh --tool gemini            # Refresh Gemini CLI schema cache
+bash scripts/refresh-schemas.sh                          # Refresh all schema caches
+bash scripts/refresh-schemas.sh --tool gemini            # Refresh only the Gemini CLI schema cache
 bash scripts/validate-agent-config.sh --tool gemini --refresh
 ```
 
@@ -138,10 +139,10 @@ make app-compile
 make app-pack-check
 ```
 
-**Schema validation** (scoped to the calling agent):
+**Schema validation** (refresh all schemas by default, validate one agent at a time):
 ```bash
 bash scripts/refresh-schemas.sh
-bash scripts/validate-agent-config.sh --refresh
+bash scripts/validate-agent-config.sh --tool codex --refresh
 ```
 
 **Schema upgrade planning** (scoped to the calling agent):
@@ -295,7 +296,7 @@ agent-smith/
 ├── scripts/
 │   ├── metrics-rollup.sh         # JSONL → SQLite
 │   ├── analyze-config.sh         # Metrics → Report
-│   ├── refresh-schemas.sh        # Refresh current-agent schema cache
+│   ├── refresh-schemas.sh        # Refresh all schema caches or one selected tool
 │   ├── validate-agent-config.sh  # Validate current-agent config files
 │   └── lib/agent-tool.sh         # Current-agent detection helpers
 ├── skills/
@@ -389,8 +390,12 @@ make agent-upgrade-settings TOOL=codex
 make agent-loop TOOL=opencode        # validate-schemas then analyze-config
 
 # Ergonomic aliases
+make codex-refresh-schemas
+make codex-validate-agent-config
 make claude-analyze
+make codex-analyze
 make codex-validate-schemas
+make gemini-upgrade-settings
 make codex-upgrade-settings
 make opencode-loop
 
@@ -398,15 +403,16 @@ make opencode-loop
 make agent-analyze TOOL=codex SESSIONS=100
 
 # Local schema tools
-make refresh-schemas
-make validate-agent-config
+make refresh-schemas                  # Refresh all schema caches
+make refresh-schemas TOOL=codex       # Refresh one schema cache
+make validate-agent-config TOOL=codex
 
 # Full repo validation before push
 make pre-push
 make install-git-hooks
 ```
 
-`TOOL=gemini` is currently supported by the shared shell helpers (`scripts/analyze-config.sh`, `scripts/refresh-schemas.sh`, and `scripts/validate-agent-config.sh`) plus the Gemini hook extension. The repo's older slash-command and Makefile agent-helper aliases still target Claude, Codex, and OpenCode.
+`TOOL=gemini` is supported by the shared shell helpers (`scripts/analyze-config.sh`, `scripts/refresh-schemas.sh`, and `scripts/validate-agent-config.sh`) plus the Gemini hook extension, and the Makefile now exposes the same alias pattern for Claude, Codex, Gemini, and OpenCode.
 
 ## License
 

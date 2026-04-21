@@ -14,11 +14,12 @@ HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
 APP_BUN ?= bun
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 CLAUDE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),claude)
+GEMINI_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),gemini)
 CODEX_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),codex)
 OPENCODE_CLI := $(if $(AGENT_CLI),$(AGENT_CLI),opencode)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop claude-refresh-schemas claude-validate-agent-config claude-analyze claude-validate-schemas claude-upgrade-settings claude-loop codex-refresh-schemas codex-validate-agent-config codex-analyze codex-validate-schemas codex-upgrade-settings codex-loop gemini-refresh-schemas gemini-validate-agent-config gemini-analyze gemini-validate-schemas gemini-upgrade-settings gemini-loop opencode-refresh-schemas opencode-validate-agent-config opencode-analyze opencode-validate-schemas opencode-upgrade-settings opencode-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -66,10 +67,11 @@ _help:
 		print_section "Quick Start"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
-		print_row "make refresh-schemas" "Refresh the installed agent schema cache"; \
-		print_row "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
-		print_row "make codex-upgrade-settings" "Apply the Codex settings upgrade flow"; \
-		print_row "make codex-analyze" "Run the Codex-backed analyze-config flow"; \
+		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
+		print_row "make codex-refresh-schemas" "Alias example; use the same <tool>-refresh-schemas pattern for claude|codex|gemini|opencode"; \
+		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
+		print_row "make codex-upgrade-settings" "Alias example; use the same <tool>-upgrade-settings pattern for claude|codex|gemini|opencode"; \
+		print_row "make codex-analyze" "Alias example; use the same <tool>-analyze pattern for claude|codex|gemini|opencode"; \
 		printf '\n%b%s%b\n' "$$note_on" "Run \`make help\` for the full maintainer target list." "$$title_off"; \
 	else \
 		print_section "Help"; \
@@ -78,22 +80,34 @@ _help:
 		print_section "End Users"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
-		print_row "make refresh-schemas" "Refresh the installed agent schema cache"; \
-		print_row "make validate-agent-config" "Validate the installed agent config against the cached schema"; \
+		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches by default, or one with TOOL=claude|gemini|codex|opencode"; \
+		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
 		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Codex, or OpenCode"; \
 		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Codex, or OpenCode"; \
 		print_row "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Codex, or OpenCode"; \
 		print_row "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Codex, or OpenCode"; \
 		print_section "Agent Aliases"; \
 		print_row "make claude-analyze" "Alias for make agent-analyze TOOL=claude"; \
+		print_row "make claude-refresh-schemas" "Alias for make refresh-schemas TOOL=claude"; \
+		print_row "make claude-validate-agent-config" "Alias for make validate-agent-config TOOL=claude"; \
 		print_row "make claude-validate-schemas" "Alias for make agent-validate-schemas TOOL=claude"; \
 		print_row "make claude-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=claude"; \
 		print_row "make claude-loop" "Alias for make agent-loop TOOL=claude"; \
 		print_row "make codex-analyze" "Alias for make agent-analyze TOOL=codex"; \
+		print_row "make codex-refresh-schemas" "Alias for make refresh-schemas TOOL=codex"; \
+		print_row "make codex-validate-agent-config" "Alias for make validate-agent-config TOOL=codex"; \
 		print_row "make codex-validate-schemas" "Alias for make agent-validate-schemas TOOL=codex"; \
 		print_row "make codex-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=codex"; \
 		print_row "make codex-loop" "Alias for make agent-loop TOOL=codex"; \
+		print_row "make gemini-analyze" "Alias for make agent-analyze TOOL=gemini"; \
+		print_row "make gemini-refresh-schemas" "Alias for make refresh-schemas TOOL=gemini"; \
+		print_row "make gemini-validate-agent-config" "Alias for make validate-agent-config TOOL=gemini"; \
+		print_row "make gemini-validate-schemas" "Alias for make agent-validate-schemas TOOL=gemini"; \
+		print_row "make gemini-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=gemini"; \
+		print_row "make gemini-loop" "Alias for make agent-loop TOOL=gemini"; \
 		print_row "make opencode-analyze" "Alias for make agent-analyze TOOL=opencode"; \
+		print_row "make opencode-refresh-schemas" "Alias for make refresh-schemas TOOL=opencode"; \
+		print_row "make opencode-validate-agent-config" "Alias for make validate-agent-config TOOL=opencode"; \
 		print_row "make opencode-validate-schemas" "Alias for make agent-validate-schemas TOOL=opencode"; \
 		print_row "make opencode-upgrade-settings" "Alias for make agent-upgrade-settings TOOL=opencode"; \
 		print_row "make opencode-loop" "Alias for make agent-loop TOOL=opencode"; \
@@ -267,6 +281,12 @@ agent-loop:
 claude-analyze:
 	@$(MAKE) agent-analyze TOOL=claude AGENT_CLI="$(CLAUDE_CLI)" SESSIONS="$(SESSIONS)"
 
+claude-refresh-schemas:
+	@$(MAKE) refresh-schemas TOOL=claude
+
+claude-validate-agent-config:
+	@$(MAKE) validate-agent-config TOOL=claude
+
 claude-validate-schemas:
 	@$(MAKE) agent-validate-schemas TOOL=claude AGENT_CLI="$(CLAUDE_CLI)"
 
@@ -279,6 +299,12 @@ claude-loop:
 codex-analyze:
 	@$(MAKE) agent-analyze TOOL=codex AGENT_CLI="$(CODEX_CLI)" SESSIONS="$(SESSIONS)"
 
+codex-refresh-schemas:
+	@$(MAKE) refresh-schemas TOOL=codex
+
+codex-validate-agent-config:
+	@$(MAKE) validate-agent-config TOOL=codex
+
 codex-validate-schemas:
 	@$(MAKE) agent-validate-schemas TOOL=codex AGENT_CLI="$(CODEX_CLI)"
 
@@ -288,8 +314,32 @@ codex-upgrade-settings:
 codex-loop:
 	@$(MAKE) agent-loop TOOL=codex AGENT_CLI="$(CODEX_CLI)" SESSIONS="$(SESSIONS)"
 
+gemini-analyze:
+	@$(MAKE) agent-analyze TOOL=gemini AGENT_CLI="$(GEMINI_CLI)" SESSIONS="$(SESSIONS)"
+
+gemini-refresh-schemas:
+	@$(MAKE) refresh-schemas TOOL=gemini
+
+gemini-validate-agent-config:
+	@$(MAKE) validate-agent-config TOOL=gemini
+
+gemini-validate-schemas:
+	@$(MAKE) agent-validate-schemas TOOL=gemini AGENT_CLI="$(GEMINI_CLI)"
+
+gemini-upgrade-settings:
+	@$(MAKE) agent-upgrade-settings TOOL=gemini AGENT_CLI="$(GEMINI_CLI)"
+
+gemini-loop:
+	@$(MAKE) agent-loop TOOL=gemini AGENT_CLI="$(GEMINI_CLI)" SESSIONS="$(SESSIONS)"
+
 opencode-analyze:
 	@$(MAKE) agent-analyze TOOL=opencode AGENT_CLI="$(OPENCODE_CLI)" SESSIONS="$(SESSIONS)"
+
+opencode-refresh-schemas:
+	@$(MAKE) refresh-schemas TOOL=opencode
+
+opencode-validate-agent-config:
+	@$(MAKE) validate-agent-config TOOL=opencode
 
 opencode-validate-schemas:
 	@$(MAKE) agent-validate-schemas TOOL=opencode AGENT_CLI="$(OPENCODE_CLI)"

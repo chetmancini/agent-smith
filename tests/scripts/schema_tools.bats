@@ -41,7 +41,66 @@ EOF
     chmod 700 "${fakebin}/curl"
 }
 
-@test "refresh-schemas auto-detects Claude from installed settings" {
+@test "refresh-schemas pulls every supported schema by default" {
+    local fakebin home_dir
+    fakebin="$TEST_TMPDIR/fakebin"
+    home_dir="$TEST_TMPDIR/home"
+
+    mkdir -p "$fakebin"
+    cat > "${fakebin}/curl" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+url=""
+output=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o)
+      output="$2"
+      shift 2
+      ;;
+    -f|-s|-S|-L)
+      shift
+      ;;
+    *)
+      url="$1"
+      shift
+      ;;
+  esac
+done
+case "$url" in
+  https://json.schemastore.org/claude-code-settings.json)
+    printf '%s\n' '{"tool":"claude"}' > "$output"
+    ;;
+  https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/settings.schema.json)
+    printf '%s\n' '{"tool":"gemini"}' > "$output"
+    ;;
+  https://developers.openai.com/codex/config-schema.json)
+    printf '%s\n' '{"tool":"codex"}' > "$output"
+    ;;
+  https://opencode.ai/config.json)
+    printf '%s\n' '{"tool":"opencode"}' > "$output"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+    chmod 700 "${fakebin}/curl"
+
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+
+    [ "$status" -eq 0 ]
+    [ -f "$home_dir/.config/agent-smith/schemas/claude-code-settings.schema.json" ]
+    [ -f "$home_dir/.config/agent-smith/schemas/gemini-cli-settings.schema.json" ]
+    [ -f "$home_dir/.config/agent-smith/schemas/codex-config.schema.json" ]
+    [ -f "$home_dir/.config/agent-smith/schemas/opencode-config.schema.json" ]
+    [[ "$output" == *"Refreshed Claude Code schema"* ]]
+    [[ "$output" == *"Refreshed Gemini CLI schema"* ]]
+    [[ "$output" == *"Refreshed Codex schema"* ]]
+    [[ "$output" == *"Refreshed OpenCode schema"* ]]
+}
+
+@test "refresh-schemas refreshes only Claude when requested" {
     local fakebin home_dir
     fakebin="$TEST_TMPDIR/fakebin"
     home_dir="$TEST_TMPDIR/home"
@@ -50,14 +109,14 @@ EOF
     printf '{"model":"sonnet"}\n' > "$home_dir/.claude/settings.json"
     create_fake_curl "$fakebin" "https://json.schemastore.org/claude-code-settings.json" '{"type":"object","properties":{"model":{"type":"string"}}}'
 
-    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh" --tool claude
 
     [ "$status" -eq 0 ]
     [ -f "$home_dir/.config/agent-smith/schemas/claude-code-settings.schema.json" ]
     [[ "$output" == *"Refreshed Claude Code schema"* ]]
 }
 
-@test "refresh-schemas auto-detects Codex from installed config" {
+@test "refresh-schemas refreshes only Codex when requested" {
     local fakebin home_dir
     fakebin="$TEST_TMPDIR/fakebin"
     home_dir="$TEST_TMPDIR/home"
@@ -66,14 +125,14 @@ EOF
     printf 'model = "gpt-5.4"\n' > "$home_dir/.codex/config.toml"
     create_fake_curl "$fakebin" "https://developers.openai.com/codex/config-schema.json" '{"type":"object","properties":{"model":{"type":"string"}}}'
 
-    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh" --tool codex
 
     [ "$status" -eq 0 ]
     [ -f "$home_dir/.config/agent-smith/schemas/codex-config.schema.json" ]
     [[ "$output" == *"Refreshed Codex schema"* ]]
 }
 
-@test "refresh-schemas auto-detects Gemini from installed settings" {
+@test "refresh-schemas refreshes only Gemini when requested" {
     local fakebin home_dir
     fakebin="$TEST_TMPDIR/fakebin"
     home_dir="$TEST_TMPDIR/home"
@@ -82,7 +141,7 @@ EOF
     printf '{"model":"gemini-3-pro"}\n' > "$home_dir/.gemini/settings.json"
     create_fake_curl "$fakebin" "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/settings.schema.json" '{"type":"object","properties":{"model":{"type":"string"}}}'
 
-    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh" --tool gemini
 
     [ "$status" -eq 0 ]
     [ -f "$home_dir/.config/agent-smith/schemas/gemini-cli-settings.schema.json" ]
@@ -120,7 +179,7 @@ EOF
     [[ "$output" == *"Available top-level schema keys not set: sandbox_mode"* ]]
 }
 
-@test "refresh-schemas auto-detects OpenCode from installed config" {
+@test "refresh-schemas refreshes only OpenCode when requested" {
     local fakebin home_dir
     fakebin="$TEST_TMPDIR/fakebin"
     home_dir="$TEST_TMPDIR/home"
@@ -129,7 +188,7 @@ EOF
     printf '{"model":"anthropic/claude-sonnet-4-6"}\n' > "$home_dir/.config/opencode/opencode.json"
     create_fake_curl "$fakebin" "https://opencode.ai/config.json" '{"type":"object","properties":{"model":{"type":"string"}}}'
 
-    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh"
+    run env HOME="$home_dir" PATH="$fakebin:$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh" --tool opencode
 
     [ "$status" -eq 0 ]
     [ -f "$home_dir/.config/agent-smith/schemas/opencode-config.schema.json" ]
