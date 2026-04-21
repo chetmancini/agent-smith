@@ -54,6 +54,7 @@ describe("doctor", () => {
     mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
     mkdirSync(join(repoRoot, ".agents", "plugins"), { recursive: true });
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
+    mkdirSync(join(repoRoot, "gemini-extension", "hooks"), { recursive: true });
     mkdirSync(join(repoRoot, "agent-smith-app"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
 
@@ -62,6 +63,12 @@ describe("doctor", () => {
     });
     writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), {
       name: "agent-smith",
+    });
+    writeJson(join(repoRoot, "gemini-extension", "gemini-extension.json"), {
+      name: "agent-smith",
+    });
+    writeJson(join(repoRoot, "gemini-extension", "hooks", "hooks.json"), {
+      hooks: {},
     });
     writeJson(join(repoRoot, ".agents", "plugins", "marketplace.json"), {
       name: "agent-smith-local",
@@ -89,7 +96,7 @@ describe("doctor", () => {
   test("skips hosts with no installed binaries", () => {
     const report = runDoctor({ repoRoot, env });
     expect(report.overallStatus).toBe("skip");
-    expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip"]);
+    expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip", "skip"]);
   });
 
   test("finds the repo root when invoked from a bundled dist directory", () => {
@@ -99,8 +106,9 @@ describe("doctor", () => {
     expect(findAgentSmithRepoRoot(distDir)).toBe(repoRoot);
   });
 
-  test("passes when Claude, Codex, and OpenCode are configured", () => {
+  test("passes when Claude, Gemini, Codex, and OpenCode are configured", () => {
     writeExecutable(join(binDir, "claude"));
+    writeExecutable(join(binDir, "gemini"));
     writeExecutable(join(binDir, "codex"));
     writeExecutable(join(binDir, "opencode"));
 
@@ -120,6 +128,12 @@ describe("doctor", () => {
       enabledPlugins: {
         "agent-smith@agent-smith": true,
       },
+    });
+
+    mkdirSync(join(home, ".gemini", "extensions", "agent-smith"), { recursive: true });
+    writeJson(join(home, ".gemini", "extensions", "agent-smith", ".gemini-extension-install.json"), {
+      source: resolve(repoRoot, "gemini-extension"),
+      type: "link",
     });
 
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -159,6 +173,20 @@ trust_level = "trusted"
     const report = runDoctor({ repoRoot: resolve(repoRoot), env });
     expect(report.overallStatus).toBe("pass");
     expect(report.hosts.every((host) => host.status === "pass")).toBe(true);
+  });
+
+  test("fails Gemini when the linked extension points at another checkout", () => {
+    writeExecutable(join(binDir, "gemini"));
+    mkdirSync(join(home, ".gemini", "extensions", "agent-smith"), { recursive: true });
+    writeJson(join(home, ".gemini", "extensions", "agent-smith", ".gemini-extension-install.json"), {
+      source: join(sandbox, "other-repo", "gemini-extension"),
+      type: "link",
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const gemini = report.hosts.find((host) => host.host === "gemini");
+    expect(gemini?.status).toBe("fail");
+    expect(gemini?.checks.find((check) => check.id === "gemini_extension_installed")?.status).toBe("fail");
   });
 
   test("passes when Codex uses a versioned plugin cache layout", () => {
