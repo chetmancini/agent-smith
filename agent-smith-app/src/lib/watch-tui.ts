@@ -226,7 +226,7 @@ function appendWidgets(screen: Blessed.Widgets.Screen, widgets: BlessedNode[]): 
 
 export async function runWatchTui(
   paths: AgentSmithPaths = resolvePaths(),
-  options: Pick<WatchOptions, "tool" | "project" | "tail" | "pollMs"> = {},
+  options: Pick<WatchOptions, "tool" | "project" | "tail" | "pollMs" | "signal"> = {},
 ): Promise<number> {
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     throw new Error("watch --view tui requires an interactive terminal");
@@ -356,6 +356,9 @@ export async function runWatchTui(
   const seedNote = options.tail && options.tail > 0 ? `seed: last ${options.tail} events` : "seed: full history";
   let closed = false;
   const controller = new AbortController();
+  const externalAbort = () => {
+    close();
+  };
 
   const render = () => {
     const snapshot = snapshotWatchDashboard(state, {
@@ -388,6 +391,14 @@ export async function runWatchTui(
     controller.abort();
     screen.destroy();
   };
+
+  if (options.signal) {
+    if (options.signal.aborted) {
+      close();
+    } else {
+      options.signal.addEventListener("abort", externalAbort, { once: true });
+    }
+  }
 
   screen.key(["q", "escape", "C-c"], () => {
     close();
@@ -422,6 +433,7 @@ export async function runWatchTui(
     screen.once("destroy", () => resolve());
   });
 
+  options.signal?.removeEventListener("abort", externalAbort);
   await watchTask;
   return 0;
 }

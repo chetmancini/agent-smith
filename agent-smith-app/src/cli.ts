@@ -5,6 +5,7 @@ import process from "node:process";
 
 import { type SupportedAgentTool, validateToolName } from "./lib/agent-hosts";
 import { installCodexPlugin } from "./lib/codex-install";
+import { renderFullLoopDemo, runFullLoopDemo } from "./lib/demo";
 import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { type LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
@@ -59,6 +60,7 @@ function usage(theme: TerminalTheme = createTerminalTheme()): string {
   agent-smith improve [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--format text|json]
   agent-smith loop [--tool TOOL] [--project NAME] [--limit N] [--refresh-schema] [--iterations N] [--include-unsafe] [--format text|json]
   agent-smith watch [--tool TOOL] [--project NAME] [--tail N] [--poll-ms N] [--view tui|sessions|events] [--json]
+  agent-smith demo [--demo-dir PATH] [--delay-ms N] [--no-watch] [--json]
   agent-smith refresh-schemas [--tool TOOL] [--json]
   agent-smith validate-agent-config [--tool TOOL] [--refresh] [--json]
   agent-smith validate-schemas [--tool TOOL] [--refresh] [--json]
@@ -474,6 +476,52 @@ async function handleWatch(args: string[], io: CliIO, theme: TerminalTheme): Pro
   return 0;
 }
 
+async function handleDemo(args: string[], io: CliIO, theme: TerminalTheme): Promise<number> {
+  let demoDir: string | undefined;
+  let delayMs: number | undefined;
+  let json = false;
+  let watch = true;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--demo-dir":
+        demoDir = shiftValue(args, "--demo-dir");
+        break;
+      case "--delay-ms":
+        delayMs = parseInteger(shiftValue(args, "--delay-ms"), "--delay-ms");
+        break;
+      case "--json":
+        json = true;
+        break;
+      case "--no-watch":
+        watch = false;
+        break;
+      default:
+        throw new CliUsageError(`Unknown demo argument: ${flag}`);
+    }
+  }
+
+  const canWatch = watch && Boolean(io.isTTY ?? process.stdout.isTTY) && Boolean(process.stdin.isTTY);
+  if (watch && !canWatch) {
+    io.stderr(`${theme.warning("demo watch skipped: terminal is not interactive; running headless demo")}\n`);
+  }
+
+  const result = await runFullLoopDemo({
+    demoDir,
+    delayMs,
+    watch: canWatch,
+  });
+
+  if (json) {
+    writeJson(io, result);
+  } else {
+    io.stdout(renderFullLoopDemo(result));
+  }
+
+  return 0;
+}
+
 async function handleRefreshSchemas(
   args: string[],
   io: CliIO,
@@ -708,6 +756,8 @@ export async function runCli(
       return await handleLoop(args, io, theme, runtime.loop);
     case "watch":
       return await handleWatch(args, io, theme);
+    case "demo":
+      return await handleDemo(args, io, theme);
     case "refresh-schemas":
       return await handleRefreshSchemas(args, io, theme, runtime.schema);
     case "validate-agent-config":

@@ -36,6 +36,7 @@ bun run src/cli.ts report
 bun run src/cli.ts improve --tool codex
 bun run src/cli.ts loop --tool codex
 bun run src/cli.ts watch
+bun run src/cli.ts demo
 bun run src/cli.ts watch --tail 500
 bun run src/cli.ts watch --view events --tail 20
 bun run src/cli.ts doctor
@@ -57,6 +58,7 @@ bun run pack:check
 - `improve`: assemble telemetry plus schema/config evidence and ask the active agent for structured recommendations
 - `loop`: run bounded analysis -> apply -> evaluate iterations using the active agent, auto-applying only actions marked safe unless you opt into unsafe actions
 - `watch`: launch a multi-pane TUI by default on a real terminal, with session/event text fallbacks for scripts
+- `demo`: run an isolated full-loop sandbox that generates signals, writes reports, drives the loop, and animates the TUI
 - `doctor`: verify Claude, Codex, and OpenCode integration state when their binaries are installed
 
 ## Next Likely Migrations
