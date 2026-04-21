@@ -98,12 +98,18 @@ export interface WatchDashboardState {
   lastUpdatedAt: string | null;
   recentEvents: string[];
   eventTimestamps: number[];
+  eventTimestampStart: number;
 }
 
 export interface WatchDashboardSeed {
   state: WatchDashboardState;
   nextOffset: number;
 }
+
+const eventRateWindowMs = 20 * 60 * 1000;
+const eventRateBucketCount = 15;
+const eventRateBucketDurationMs = 60_000;
+const eventTimestampCompactThreshold = 256;
 
 export async function* watchEvents(
   paths = resolvePaths(),
@@ -289,7 +295,50 @@ export function createWatchDashboardState(): WatchDashboardState {
     lastUpdatedAt: null,
     recentEvents: [],
     eventTimestamps: [],
+    eventTimestampStart: 0,
   };
+}
+
+function compactEventTimestampQueue(state: WatchDashboardState): void {
+  if (state.eventTimestampStart === 0) {
+    return;
+  }
+
+  if (state.eventTimestampStart >= state.eventTimestamps.length) {
+    state.eventTimestamps = [];
+    state.eventTimestampStart = 0;
+    return;
+  }
+
+  if (
+    state.eventTimestampStart >= eventTimestampCompactThreshold &&
+    state.eventTimestampStart * 2 >= state.eventTimestamps.length
+  ) {
+    state.eventTimestamps = state.eventTimestamps.slice(state.eventTimestampStart);
+    state.eventTimestampStart = 0;
+  }
+}
+
+// Keep the ingest path O(1) by evicting from the queue head and only compacting occasionally.
+function pruneEventTimestamps(state: WatchDashboardState, now: number): number {
+  const cutoff = now - eventRateWindowMs;
+
+  while (
+    state.eventTimestampStart < state.eventTimestamps.length &&
+    state.eventTimestamps[state.eventTimestampStart] < cutoff
+  ) {
+    state.eventTimestampStart += 1;
+  }
+
+  compactEventTimestampQueue(state);
+  return cutoff;
+}
+
+function recordEventTimestamp(state: WatchDashboardState, eventEpoch: number, now = Date.now()): void {
+  const cutoff = pruneEventTimestamps(state, now);
+  if (eventEpoch >= cutoff) {
+    state.eventTimestamps.push(eventEpoch);
+  }
 }
 
 export function applyEventToWatchDashboardState(state: WatchDashboardState, event: AgentSmithEvent): void {
@@ -342,9 +391,7 @@ export function applyEventToWatchDashboardState(state: WatchDashboardState, even
   state.recentEvents = state.recentEvents.slice(0, 24);
 
   const eventEpoch = new Date(event.ts).getTime();
-  state.eventTimestamps.push(eventEpoch);
-  const cutoff = Date.now() - 20 * 60 * 1000;
-  state.eventTimestamps = state.eventTimestamps.filter((ts) => ts >= cutoff);
+  recordEventTimestamp(state, eventEpoch);
 }
 
 export function buildWatchDashboardState(
@@ -433,13 +480,13 @@ export function snapshotWatchDashboard(
   const completedSessions = sessionRows.length - activeSessions;
 
   const now = Date.now();
-  const bucketCount = 15;
-  const bucketDurationMs = 60_000;
-  const eventRateBuckets: number[] = new Array(bucketCount).fill(0);
-  for (const ts of state.eventTimestamps) {
-    const bucketsAgo = Math.floor((now - ts) / bucketDurationMs);
-    if (bucketsAgo >= 0 && bucketsAgo < bucketCount) {
-      eventRateBuckets[bucketCount - 1 - bucketsAgo] += 1;
+  pruneEventTimestamps(state, now);
+  const eventRateBuckets: number[] = new Array(eventRateBucketCount).fill(0);
+  for (let index = state.eventTimestampStart; index < state.eventTimestamps.length; index += 1) {
+    const ts = state.eventTimestamps[index];
+    const bucketsAgo = Math.floor((now - ts) / eventRateBucketDurationMs);
+    if (bucketsAgo >= 0 && bucketsAgo < eventRateBucketCount) {
+      eventRateBuckets[eventRateBucketCount - 1 - bucketsAgo] += 1;
     }
   }
 
