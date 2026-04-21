@@ -344,9 +344,7 @@ export function applyEventToWatchDashboardState(state: WatchDashboardState, even
   const eventEpoch = new Date(event.ts).getTime();
   state.eventTimestamps.push(eventEpoch);
   const cutoff = Date.now() - 20 * 60 * 1000;
-  while (state.eventTimestamps.length > 0 && state.eventTimestamps[0] < cutoff) {
-    state.eventTimestamps.shift();
-  }
+  state.eventTimestamps = state.eventTimestamps.filter((ts) => ts >= cutoff);
 }
 
 export function buildWatchDashboardState(

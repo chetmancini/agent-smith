@@ -406,6 +406,7 @@ export async function runWatchTui(
   const seedNote = options.tail && options.tail > 0 ? `seed: last ${options.tail} events` : "seed: full history";
   let closed = false;
   let tickCount = 0;
+  let errored = false;
   const controller = new AbortController();
   const externalAbort = () => {
     close();
@@ -436,7 +437,7 @@ export async function runWatchTui(
 
   const tickInterval = setInterval(() => {
     tickCount += 1;
-    if (!closed) {
+    if (!closed && !errored) {
       render();
     }
   }, 2000);
@@ -486,6 +487,7 @@ export async function runWatchTui(
     }
   })().catch((error: unknown) => {
     if (!closed) {
+      errored = true;
       statsBox.setContent(`{bold}Watch error{/bold}\n${String(error)}`);
       screen.render();
     }
