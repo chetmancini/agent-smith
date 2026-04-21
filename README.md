@@ -6,7 +6,7 @@
 >
 > ![Agent Smith poster](https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde)
 
-A self-tuning feedback loop plugin for Claude Code, Codex, and OpenCode.
+A self-tuning feedback loop plugin for Claude Code, Gemini CLI, Codex, and OpenCode.
 Collects session metrics, analyzes patterns, and produces tuning
 recommendations to continuously improve agent reliability and autonomy.
 
@@ -53,6 +53,16 @@ make codex-validate-schemas
 make codex-upgrade-settings
 ```
 
+**Gemini CLI:** Agent Smith now ships a hook-based Gemini extension at [`gemini-extension/`](gemini-extension). It currently reuses the existing repo-root shell hooks and scripts, so treat it as a local-checkout integration for now.
+
+From a local clone:
+
+```bash
+gemini extensions link ./gemini-extension
+```
+
+That gives Gemini the existing shell-hook telemetry path without introducing the new native runtime.
+
 ### OpenCode
 
 OpenCode uses the native TypeScript plugin:
@@ -85,14 +95,16 @@ This is the supported OpenCode integration path and provides the full OpenCode-n
 
 ### Usage
 
-Claude Code starts collecting metrics as soon as its hook manifest loads. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, skills work after the plugin is installed from the marketplace, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
+Claude Code starts collecting metrics as soon as its hook manifest loads. Gemini CLI starts collecting metrics after the local [`gemini-extension/`](gemini-extension) hook extension is linked. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, skills work after the plugin is installed from the marketplace, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
 
-**Slash command** (inside any supported agent):
+**Slash command** (inside Claude, Codex, and OpenCode today):
 ```text
 /agent-smith:analyze
 /agent-smith:analyze-fast
 /agent-smith:upgrade-settings
 ```
+
+Gemini currently ships the hook-based extension surface plus the shared shell scripts below. Command parity can come later.
 
 **Manual scripts:**
 ```bash
@@ -100,6 +112,8 @@ bash scripts/metrics-rollup.sh                          # Process events into SQ
 bash scripts/analyze-config.sh --sessions 50             # Local raw report (default)
 bash scripts/analyze-config.sh --llm --sessions 50       # Agent-backed report for the active tool
 bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
+bash scripts/refresh-schemas.sh --tool gemini            # Refresh Gemini CLI schema cache
+bash scripts/validate-agent-config.sh --tool gemini --refresh
 ```
 
 **Standalone TypeScript app** (new migration path):
@@ -210,18 +224,18 @@ When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing
 | Event | Hook | Trigger |
 |-------|------|---------|
 | `session_start` | SessionStart | Every session start |
-| `session_stop` | Stop | Every session end (with duration) |
+| `session_stop` | Claude: Stop; Gemini: AfterAgent | Per-turn end snapshot (with duration) |
 | `session_error` | OpenCode native plugin: `session.error` | OpenCode session crashes |
-| `tool_failure` | Claude: PostToolUseFailure; OpenCode plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
-| `command_failure` | Claude: PostToolUseFailure; Codex/OpenCode: PostToolUse | Bash command failures |
-| `permission_denied` | Claude: PermissionRequest; OpenCode plugin: `permission.replied` | Permission denials |
+| `tool_failure` | Claude: PostToolUseFailure; Gemini: AfterTool `run_shell_command`; OpenCode plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
+| `command_failure` | Claude: PostToolUseFailure; Gemini/Codex/OpenCode: post-tool shell payloads | Bash command failures |
+| `permission_denied` | Claude: PermissionRequest; Gemini: Notification `ToolPermission`; OpenCode plugin: `permission.replied` | Permission denials |
 | `permission_granted` | OpenCode plugin: `permission.replied` | Permission grants |
 | `file_edited` | OpenCode plugin: `file.edited` | File edit telemetry for compaction/test context |
-| `clarifying_question` | UserPromptSubmit | Vague/ambiguous prompts detected |
-| `test_failure_loop` | Claude: PostToolUse; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
-| `context_compression` | Claude: PostCompact; OpenCode plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
+| `clarifying_question` | Claude: UserPromptSubmit; Gemini: BeforeAgent | Vague/ambiguous prompts detected |
+| `test_failure_loop` | Claude: PostToolUse; Gemini: AfterTool `write_file|replace`; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
+| `context_compression` | Claude: PostCompact; Gemini: PreCompress; OpenCode plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
 
-Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin.
+Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Gemini CLI now covers session lifecycle, shell failures, permission prompts, edit-triggered test loops, vague prompt guidance, and compaction through the hook-based extension. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin.
 
 When the host includes structured Bash failure payloads, Agent Smith records the command, exit code, stderr/stdout snippets, and turn or tool-use ids alongside the failure event to keep `events.jsonl` actionable.
 
@@ -259,6 +273,7 @@ agent-smith/
 │   └── tests/*.test.ts           # Bun test coverage for the new app
 ├── .claude-plugin/plugin.json    # Claude Code manifest
 ├── .codex-plugin/plugin.json     # Codex manifest
+├── gemini-extension/             # Gemini CLI hook-based extension
 ├── .agents/plugins/marketplace.json # Codex repo marketplace
 ├── .codex/
 │   └── hooks.json                # Codex repo-local hook registration
@@ -298,6 +313,7 @@ The new `agent-smith-app/` package is where the unified TypeScript runtime can g
 ### Hook Registration
 
 - Claude Code: [`hooks/hooks.json`](hooks/hooks.json)
+- Gemini CLI: [`gemini-extension/hooks/hooks.json`](gemini-extension/hooks/hooks.json)
 - Codex: repo-local [`.codex/hooks.json`](.codex/hooks.json)
 - OpenCode: native plugin entrypoint at [`opencode-plugin/src/index.ts`](opencode-plugin/src/index.ts)
 
@@ -352,7 +368,7 @@ Agent Smith now uses [`VERSION`](VERSION) as the single release source of truth.
 make release VERSION=1.0.1
 ```
 
-If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude and Codex manifests plus [`agent-smith-app/package.json`](agent-smith-app/package.json) and [`opencode-plugin/package.json`](opencode-plugin/package.json).
+If you edit [`VERSION`](VERSION) by hand, run `make sync-version` to push that value into the Claude, Gemini, and Codex manifests plus [`agent-smith-app/package.json`](agent-smith-app/package.json) and [`opencode-plugin/package.json`](opencode-plugin/package.json).
 
 `make release` requires a clean git worktree, a freshly fetched local `main` that exactly matches `origin/main`, and an authenticated `gh` session. Run it from `main` after `git pull --ff-only origin main`. If you only want to bump versioned release files without publishing yet, use `make set-version VERSION=1.0.1`.
 
@@ -390,7 +406,7 @@ make pre-push
 make install-git-hooks
 ```
 
-`TOOL=claude`, `TOOL=codex`, and `TOOL=opencode` are accepted anywhere this repo exposes a tool selector.
+`TOOL=gemini` is currently supported by the shared shell helpers (`scripts/analyze-config.sh`, `scripts/refresh-schemas.sh`, and `scripts/validate-agent-config.sh`) plus the Gemini hook extension. The repo's older slash-command and Makefile agent-helper aliases still target Claude, Codex, and OpenCode.
 
 ## License
 

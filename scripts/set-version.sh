@@ -57,6 +57,8 @@ update_json "${REPO_ROOT}/.claude-plugin/plugin.json" '.version = $version'
 # shellcheck disable=SC2016
 update_json "${REPO_ROOT}/.codex-plugin/plugin.json" '.version = $version'
 # shellcheck disable=SC2016
+update_json "${REPO_ROOT}/gemini-extension/gemini-extension.json" '.version = $version'
+# shellcheck disable=SC2016
 update_json "${REPO_ROOT}/agent-smith-app/package.json" '.version = $version'
 # shellcheck disable=SC2016
 update_json "${REPO_ROOT}/opencode-plugin/package.json" '.version = $version'
@@ -72,5 +74,6 @@ echo "  VERSION"
 echo "  .claude-plugin/plugin.json"
 echo "  .claude-plugin/marketplace.json"
 echo "  .codex-plugin/plugin.json"
+echo "  gemini-extension/gemini-extension.json"
 echo "  agent-smith-app/package.json"
 echo "  opencode-plugin/package.json"

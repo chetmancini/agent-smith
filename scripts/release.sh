@@ -82,6 +82,7 @@ git add \
 	.claude-plugin/plugin.json \
 	.claude-plugin/marketplace.json \
 	.codex-plugin/plugin.json \
+	gemini-extension/gemini-extension.json \
 	agent-smith-app/package.json \
 	opencode-plugin/package.json
 

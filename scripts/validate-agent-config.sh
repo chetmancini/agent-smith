@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: validate-agent-config.sh [--tool claude|codex|opencode] [--refresh]
+Usage: validate-agent-config.sh [--tool claude|gemini|codex|opencode] [--refresh]
 
 Validate the active agent's installed config files against the cached schema.
 EOF
@@ -63,6 +63,16 @@ gather_config_files() {
 			fi
 		done <<EOF
 $(agent_smith_claude_config_candidates)
+EOF
+		;;
+	gemini)
+		while IFS= read -r candidate; do
+			[ -n "$candidate" ] || continue
+			if [ -f "$candidate" ]; then
+				printf '%s\n' "$candidate"
+			fi
+		done <<EOF
+$(agent_smith_tool_config_candidates gemini)
 EOF
 		;;
 	codex)

@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: refresh-schemas.sh [--tool claude|codex|opencode]
+Usage: refresh-schemas.sh [--tool claude|gemini|codex|opencode]
 
 Refresh the cached JSON schema for the active agent only.
 EOF

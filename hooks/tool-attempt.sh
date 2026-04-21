@@ -11,7 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "$_script")" && pwd)"
 source "${SCRIPT_DIR}/lib/metrics.sh"
 
 input=$(cat)
-tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+raw_tool_name=$(echo "$input" | jq -r '.tool_name // "unknown"')
+tool_name=$(normalize_hook_tool_name "$raw_tool_name")
 
 # Belt-and-suspenders filter (matcher already limits to Bash|Edit|Write|Agent)
 case "$tool_name" in

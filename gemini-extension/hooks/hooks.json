@@ -1,0 +1,152 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "agent-smith-session-start",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}session-start.sh",
+            "timeout": 10000,
+            "description": "Record Gemini CLI session start telemetry."
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "agent-smith-vague-prompt",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}vague-prompt.sh",
+            "timeout": 3000,
+            "description": "Inject a clarification reminder for vague prompts."
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "ToolPermission",
+        "hooks": [
+          {
+            "name": "agent-smith-permission-request",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}permission-denied.sh",
+            "timeout": 3000,
+            "description": "Track Gemini CLI permission prompts."
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command|write_file|replace",
+        "hooks": [
+          {
+            "name": "agent-smith-tool-attempt",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}tool-attempt.sh",
+            "timeout": 3000,
+            "description": "Track meaningful Gemini CLI tool attempts."
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "name": "agent-smith-tool-failure",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}tool-failure.sh",
+            "timeout": 3000,
+            "description": "Record shell command failures."
+          }
+        ]
+      },
+      {
+        "matcher": "write_file|replace",
+        "hooks": [
+          {
+            "name": "agent-smith-test-result",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}test-result.sh",
+            "timeout": 60000,
+            "description": "Run the matching test target after file edits."
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "agent-smith-session-stop",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini AGENT_SMITH_DEFAULT_STOP_REASON=turn_complete bash ${extensionPath}${/}..${/}hooks${/}session-stop.sh",
+            "timeout": 5000,
+            "description": "Snapshot per-turn session telemetry."
+          }
+        ]
+      }
+    ],
+    "PreCompress": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "name": "agent-smith-compact-auto",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini COMPACT_TRIGGER=auto bash ${extensionPath}${/}..${/}hooks${/}compact.sh",
+            "timeout": 5000,
+            "description": "Track automatic context compression."
+          }
+        ]
+      },
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "name": "agent-smith-compact-manual",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini COMPACT_TRIGGER=manual bash ${extensionPath}${/}..${/}hooks${/}compact.sh",
+            "timeout": 5000,
+            "description": "Track manual context compression."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "agent-smith-session-end",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}session-end.sh",
+            "timeout": 5000,
+            "description": "Record final session telemetry."
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "agent-smith-auto-analysis",
+            "type": "command",
+            "command": "AGENT_SMITH_TOOL=gemini bash ${extensionPath}${/}..${/}hooks${/}analyze-trigger.sh",
+            "timeout": 10000,
+            "description": "Optionally trigger background local analysis."
+          }
+        ]
+      }
+    ]
+  }
+}
