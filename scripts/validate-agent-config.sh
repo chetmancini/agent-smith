@@ -107,6 +107,9 @@ while IFS= read -r config_path; do
 	tmp_json=""
 	parse_mode="json"
 	ajv_spec="draft7"
+	if [ "$TOOL" = "gemini" ]; then
+		ajv_spec="draft2020"
+	fi
 
 	if [ "$TOOL" = "codex" ] && [[ "$config_path" == *.toml ]]; then
 		parse_mode="toml"
