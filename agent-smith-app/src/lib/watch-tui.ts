@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import process from "node:process";
 
 import type * as Blessed from "blessed";
@@ -14,6 +15,11 @@ import {
   type WatchOptions,
   type WatchSessionSummary,
 } from "./watch";
+
+export interface WatchExtraPaneOptions {
+  filePath: string;
+  label?: string;
+}
 
 interface TableWidget {
   setData: (data: { headers: string[]; data: string[][] }) => void;
@@ -220,6 +226,24 @@ function renderRecentEvents(lines: string[], terminalWidth: number): string {
   return lines.map((line) => colorizeRecentEvent(truncatePlain(line, contentWidth))).join("\n");
 }
 
+function renderExtraPane(extraPane: WatchExtraPaneOptions, terminalWidth: number): string {
+  const contentWidth = Math.max(terminalWidth - 2, 20);
+  let lines: string[];
+
+  try {
+    lines = readFileSync(extraPane.filePath, "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0);
+  } catch {
+    lines = ["waiting for demo activity..."];
+  }
+
+  return lines
+    .slice(-8)
+    .map((line) => truncatePlain(escapeBlessedTagText(line), contentWidth))
+    .join("\n");
+}
+
 function donutData(snapshot: WatchDashboardSnapshot): Array<{
   percent: number;
   label: string;
@@ -261,7 +285,9 @@ function appendWidgets(screen: Blessed.Widgets.Screen, widgets: BlessedNode[]): 
 
 export async function runWatchTui(
   paths: AgentSmithPaths = resolvePaths(),
-  options: Pick<WatchOptions, "tool" | "project" | "tail" | "pollMs" | "signal"> = {},
+  options: Pick<WatchOptions, "tool" | "project" | "tail" | "pollMs" | "signal"> & {
+    extraPane?: WatchExtraPaneOptions;
+  } = {},
 ): Promise<number> {
   if (!process.stdout.isTTY || !process.stdin.isTTY) {
     throw new Error("watch --view tui requires an interactive terminal");
@@ -380,7 +406,7 @@ export async function runWatchTui(
   const feedBox = blessed.box({
     top: "78%",
     left: 0,
-    width: "100%",
+    width: options.extraPane ? "68%" : "100%",
     height: "22%",
     label: " Recent Events ",
     tags: true,
@@ -392,6 +418,23 @@ export async function runWatchTui(
     },
   });
 
+  const extraPaneBox = options.extraPane
+    ? blessed.box({
+        top: "78%",
+        left: "68%",
+        width: "32%",
+        height: "22%",
+        label: options.extraPane.label ?? " Agent Activity ",
+        tags: true,
+        padding: { left: 1, right: 1 },
+        border: { type: "line" },
+        style: {
+          border: { fg: "cyan" },
+          fg: "white",
+        },
+      })
+    : null;
+
   appendWidgets(screen, [
     activeTable as unknown as BlessedNode,
     historyTable as unknown as BlessedNode,
@@ -400,6 +443,7 @@ export async function runWatchTui(
     activitySparkline as unknown as BlessedNode,
     aggregationBox,
     feedBox,
+    ...(extraPaneBox ? [extraPaneBox] : []),
   ]);
 
   let { state, nextOffset } = buildWatchDashboardSeed(paths, options);
@@ -431,7 +475,12 @@ export async function runWatchTui(
     statusDonut.setData(donutData(snapshot));
     activitySparkline.setData(["events/min"], [snapshot.eventRateBuckets]);
     aggregationBox.setContent(renderAggregations(snapshot));
-    feedBox.setContent(renderRecentEvents(snapshot.recentEvents, screen.cols));
+    feedBox.setContent(
+      renderRecentEvents(snapshot.recentEvents, options.extraPane ? Math.floor(screen.cols * 0.68) : screen.cols),
+    );
+    if (extraPaneBox && options.extraPane) {
+      extraPaneBox.setContent(renderExtraPane(options.extraPane, Math.floor(screen.cols * 0.32)));
+    }
     screen.render();
   };
 

@@ -261,7 +261,9 @@ describe("cli", () => {
     expect(existsSync(payload.artifacts.improveReport)).toBe(true);
     expect(existsSync(payload.artifacts.loopReport)).toBe(true);
     expect(existsSync(payload.artifacts.finalReport)).toBe(true);
+    expect(existsSync(payload.artifacts.workingLog)).toBe(true);
     expect(existsSync(payload.artifacts.summary)).toBe(true);
+    expect(readFileSync(payload.artifacts.workingLog, "utf8")).toContain("Claude is running bun test");
   });
 
   test("watch rejects json output with tui view", async () => {
