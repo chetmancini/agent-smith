@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createEvent, deriveSessionId, parseEventLine, projectFromEvent } from "../src/lib/events";
+import { createEvent, deriveSessionId, eventSnippet, parseEventLine, projectFromEvent } from "../src/lib/events";
 
 describe("events", () => {
   test("deriveSessionId is stable for a hint", () => {
@@ -33,5 +33,25 @@ describe("events", () => {
     });
 
     expect(projectFromEvent(event)).toBe("agent-smith");
+  });
+
+  test("eventSnippet formats tool attempts with command or file path detail", () => {
+    expect(
+      eventSnippet(
+        createEvent({
+          eventType: "tool_attempt",
+          metadata: { tool_name: "Bash", command: "bun test" },
+        }),
+      ),
+    ).toBe("Bash bun test");
+
+    expect(
+      eventSnippet(
+        createEvent({
+          eventType: "tool_attempt",
+          metadata: { tool_name: "Edit", file_path: "src/todos.ts" },
+        }),
+      ),
+    ).toBe("Edit src/todos.ts");
   });
 });

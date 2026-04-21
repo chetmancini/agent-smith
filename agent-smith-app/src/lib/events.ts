@@ -132,8 +132,31 @@ export function projectFromEvent(event: AgentSmithEvent): string | null {
 
 export function eventSnippet(event: AgentSmithEvent): string {
   const metadata = event.metadata;
+  if (event.event_type === "tool_attempt") {
+    const toolName = typeof metadata.tool_name === "string" ? metadata.tool_name.trim() : "";
+    const detailCandidate =
+      typeof metadata.command === "string" && metadata.command.trim().length > 0
+        ? metadata.command.trim()
+        : typeof metadata.file_path === "string" && metadata.file_path.trim().length > 0
+          ? metadata.file_path.trim()
+          : "";
+
+    if (toolName.length > 0 && detailCandidate.length > 0) {
+      return `${toolName} ${detailCandidate}`;
+    }
+
+    if (detailCandidate.length > 0) {
+      return detailCandidate;
+    }
+
+    if (toolName.length > 0) {
+      return toolName;
+    }
+  }
+
   const candidates = [
     metadata.command,
+    metadata.file_path,
     metadata.error,
     metadata.prompt_snippet,
     metadata.tool_name,

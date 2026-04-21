@@ -236,6 +236,7 @@ describe("cli", () => {
     expect(getStderr()).toBe("");
 
     const payload = JSON.parse(getStdout()) as {
+      metricsDir: string;
       repoRoot: string;
       loopReport: { stopReason: string; completedRecommendationIds: string[] };
       changedFiles: string[];
@@ -250,6 +251,11 @@ describe("cli", () => {
     expect(payload.changedFiles).toEqual(["AGENTS.md", "README.md"]);
     expect(readFileSync(join(payload.repoRoot, "AGENTS.md"), "utf8")).toContain("scope, target command");
     expect(readFileSync(join(payload.repoRoot, "README.md"), "utf8")).toContain("make demo");
+    const events = readFileSync(join(payload.metricsDir, "events.jsonl"), "utf8");
+    expect(events).toContain('"tool":"claude"');
+    expect(events).toContain('"event_type":"tool_attempt"');
+    expect(events).toContain('"command":"bun test"');
+    expect(events).toContain('"file_path":"src/todos.ts"');
     expect(existsSync(payload.artifacts.initialReport)).toBe(true);
     expect(existsSync(payload.artifacts.improveReport)).toBe(true);
     expect(existsSync(payload.artifacts.loopReport)).toBe(true);
