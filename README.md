@@ -165,22 +165,22 @@ Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze
 
 ## Support Matrix
 
-| Feature                            | Claude Code | Codex | OpenCode |
-|------------------------------------|:-----------:|:-----:|:--------:|
-| Session lifecycle                  | ✓           | ✓     | ✓        |
-| Bash failure tracking              | ✓           | ✓     | ✓        |
-| Vague prompt guidance              | ✓           | ✓     | ✓        |
-| Rollup & analysis                  | ✓           | ✓     | ✓        |
-| Schema validation                  | ✓           | ✓     | ✓        |
-| Tool failures                      | ✓           |       | ✓        |
-| Permission denials                 | ✓           |       | ✓        |
-| Permission grants                  |             |       | ✓        |
-| Session errors                     |             |       | ✓        |
-| File-edited telemetry              |             |       | ✓        |
-| Context compression                | ✓           |       | ✓        |
-| Edit-triggered test-loop detection | ✓           |       | ✓        |
+| Feature                            | Claude Code | Gemini CLI | Codex | OpenCode |
+|------------------------------------|:-----------:|:----------:|:-----:|:--------:|
+| Session lifecycle                  | ✓           | ✓          | ✓     | ✓        |
+| Bash failure tracking              | ✓           | ✓          | ✓     | ✓        |
+| Vague prompt guidance              | ✓           | ✓          | ✓     | ✓        |
+| Rollup & analysis                  | ✓           | ✓          | ✓     | ✓        |
+| Schema validation                  | ✓           | ✓          | ✓     | ✓        |
+| Tool failures                      | ✓           | ✓          |       | ✓        |
+| Permission denials                 | ✓           | ✓          |       | ✓        |
+| Permission grants                  |             |            |       | ✓        |
+| Session errors                     |             |            |       | ✓        |
+| File-edited telemetry              |             |            |       | ✓        |
+| Context compression                | ✓           | ✓          |       | ✓        |
+| Edit-triggered test-loop detection | ✓           | ✓          |       | ✓        |
 
-Schema validation and upgrade planning are available for all three agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. OpenCode reaches the richer cells above through the native npm plugin. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
+Schema validation and upgrade planning are available for all four agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. Gemini currently reaches the cells above through the hook-based extension, while OpenCode reaches its richer metric surface through the native npm plugin. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 

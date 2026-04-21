@@ -62,9 +62,12 @@ rev-parse)
 		printf '%s\n' "${FAKE_GIT_HEAD:-}"
 		;;
 	*)
-		exit 1
+		exit 0
 		;;
 	esac
+	;;
+add|commit|tag|push)
+	exit 0
 	;;
 *)
 	echo "unexpected git command: $*" >&2
@@ -82,7 +85,7 @@ create_fake_gh() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_GH_LOG}"
-exit 99
+exit 0
 EOF
 	chmod 700 "${fakebin}/gh"
 }
@@ -91,11 +94,11 @@ create_release_repo() {
 	local repo="$1"
 	mkdir -p "${repo}/scripts"
 	cp "${PROJECT_ROOT}/scripts/release.sh" "${repo}/scripts/release.sh"
-	cat >"${repo}/scripts/set-version.sh" <<'EOF'
+cat >"${repo}/scripts/set-version.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_SET_VERSION_LOG}"
-exit 99
+exit "${FAKE_SET_VERSION_EXIT_CODE:-0}"
 EOF
 	chmod 700 "${repo}/scripts/release.sh" "${repo}/scripts/set-version.sh"
 }
@@ -158,4 +161,33 @@ EOF
 	[[ "$(cat "${git_log}")" == *"fetch --quiet origin main"* ]]
 	[ ! -e "${gh_log}" ]
 	[ ! -e "${set_version_log}" ]
+}
+
+@test "release stages the Codex marketplace manifest" {
+	local repo fakebin
+	repo="${TEST_TMPDIR}/repo"
+	fakebin="${TEST_TMPDIR}/fakebin"
+	local git_log gh_log set_version_log
+	git_log="${TEST_TMPDIR}/git.log"
+	gh_log="${TEST_TMPDIR}/gh.log"
+	set_version_log="${TEST_TMPDIR}/set-version.log"
+
+	create_release_repo "$repo"
+	create_fake_git "$fakebin"
+	create_fake_gh "$fakebin"
+
+	run env \
+		PATH="${fakebin}:$PATH" \
+		FAKE_GIT_LOG="${git_log}" \
+		FAKE_GH_LOG="${gh_log}" \
+		FAKE_SET_VERSION_LOG="${set_version_log}" \
+		FAKE_GIT_LOCAL_MAIN=abc123 \
+		FAKE_GIT_REMOTE_MAIN=abc123 \
+		FAKE_GIT_HEAD=abc123 \
+		bash "${repo}/scripts/release.sh" 1.2.3
+
+	[ "$status" -eq 0 ]
+	[[ "$(cat "${git_log}")" == *".agents/plugins/marketplace.json"* ]]
+	[[ "$(cat "${set_version_log}")" == *"1.2.3"* ]]
+	[[ "$(cat "${gh_log}")" == *"release create v1.2.3 --generate-notes"* ]]
 }
