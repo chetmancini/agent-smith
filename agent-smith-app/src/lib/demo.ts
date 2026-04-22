@@ -298,7 +298,7 @@ function shellQuote(value: string): string {
 }
 
 export function buildDemoTmuxTailCommand(filePath: string): string {
-  return `exec tail -n +1 -f ${shellQuote(filePath)}`;
+  return `exec tail -n +1 -F ${shellQuote(filePath)}`;
 }
 
 function openDemoTmuxSplitPane(filePath: string): DemoTmuxSplitPane | null {
