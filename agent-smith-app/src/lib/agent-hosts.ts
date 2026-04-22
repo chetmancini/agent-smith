@@ -80,6 +80,10 @@ export function toolConfigCandidates(
   cwd = process.cwd(),
 ): string[] {
   const home = homeDir(env);
+  const geminiHome =
+    typeof env.GEMINI_CLI_HOME === "string" && env.GEMINI_CLI_HOME.length > 0
+      ? env.GEMINI_CLI_HOME
+      : join(home, ".gemini");
 
   switch (tool) {
     case "claude":
@@ -89,7 +93,7 @@ export function toolConfigCandidates(
         join(cwd, ".claude", "settings.json"),
       ];
     case "gemini":
-      return [join(home, ".gemini", "settings.json"), join(cwd, ".gemini", "settings.json")];
+      return [join(geminiHome, "settings.json"), join(cwd, ".gemini", "settings.json")];
     case "codex":
       return [join(home, ".codex", "config.toml")];
     case "opencode":

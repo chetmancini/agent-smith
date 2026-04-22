@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { agentCommand } from "../src/lib/agent-runner";
-import { detectTool, schemaCachePath, schemaUrl, validateToolName } from "../src/lib/agent-hosts";
+import { detectTool, schemaCachePath, schemaUrl, toolConfigCandidates, validateToolName } from "../src/lib/agent-hosts";
 
 describe("agent hosts", () => {
   const tempDirs: string[] = [];
@@ -21,6 +21,36 @@ describe("agent hosts", () => {
 
   test("detectTool accepts gemini from AGENT_SMITH_TOOL", () => {
     expect(detectTool(undefined, { AGENT_SMITH_TOOL: "gemini" }, "/tmp/repo")).toBe("gemini");
+  });
+
+  test("gemini config candidates honor GEMINI_CLI_HOME and empty override falls back to HOME", () => {
+    expect(
+      toolConfigCandidates(
+        "gemini",
+        { HOME: "/tmp/home", GEMINI_CLI_HOME: "/tmp/gemini-home" } as NodeJS.ProcessEnv,
+        "/tmp/repo",
+      ),
+    ).toEqual(["/tmp/gemini-home/settings.json", "/tmp/repo/.gemini/settings.json"]);
+
+    expect(
+      toolConfigCandidates("gemini", { HOME: "/tmp/home", GEMINI_CLI_HOME: "" } as NodeJS.ProcessEnv, "/tmp/repo"),
+    ).toEqual(["/tmp/home/.gemini/settings.json", "/tmp/repo/.gemini/settings.json"]);
+  });
+
+  test("detectTool finds gemini config from GEMINI_CLI_HOME", () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "agent-smith-agent-hosts-"));
+    const geminiHome = join(sandbox, "custom-gemini-home");
+    tempDirs.push(sandbox);
+    mkdirSync(geminiHome, { recursive: true });
+    writeFileSync(join(geminiHome, "settings.json"), "{}\n");
+
+    expect(
+      detectTool(undefined, {
+        HOME: join(sandbox, "home"),
+        GEMINI_CLI_HOME: geminiHome,
+        PATH: "",
+      } as NodeJS.ProcessEnv),
+    ).toBe("gemini");
   });
 
   test("gemini uses the checked-in schema cache path and prompt mode runner", () => {
