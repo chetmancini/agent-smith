@@ -17,7 +17,7 @@ APP_ARGS ?=
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test release-test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test release-test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install pi-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -64,6 +64,7 @@ _help:
 	if [ "$(HELP_MODE)" = "quick" ]; then \
 		print_section "Core Commands"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
+		print_row "make pi-install" "Install Agent Smith into Pi from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop demo"; \
@@ -80,6 +81,7 @@ _help:
 		print_row "make help" "Show every maintained make target"; \
 		print_section "Core Commands"; \
 		print_row "make codex-install" "Install Agent Smith into Codex from this checkout"; \
+		print_row "make pi-install" "Install Agent Smith into Pi from this checkout"; \
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
 		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop sandbox demo"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
@@ -251,6 +253,9 @@ validate-agent-config:
 
 codex-install:
 	$(APP_BUN) run ./agent-smith-app/src/cli.ts install-codex
+
+pi-install:
+	$(APP_BUN) run ./agent-smith-app/src/cli.ts install-pi
 
 app-cli:
 	@if [ -z "$(strip $(APP_CMD))" ]; then \

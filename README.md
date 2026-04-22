@@ -89,13 +89,28 @@ For a local checkout instead of the published package:
 
 ### Pi
 
-Pi support in this repo is project-local. Run `pi` from the repo root and it auto-discovers:
+Install from a local clone:
+
+```bash
+bun run ./agent-smith-app/src/cli.ts install-pi
+```
+
+Or:
+
+```bash
+make pi-install
+```
+
+Then:
+
+1. Start a new Pi session.
+2. Run `make app-doctor`.
+
+The installer adds this checkout to `~/.pi/agent/settings.json` so Pi can discover Agent Smith from any working directory. The installed package exposes:
 
 - `.pi/extensions/agent-smith/index.ts` for telemetry and slash-command aliases
 - `commands/` as prompt templates
 - `skills/` as Agent Skills
-
-No extra install step is required for this checkout beyond having the `pi` CLI available.
 
 ## Comparison Matrix
 
@@ -125,7 +140,7 @@ No extra install step is required for this checkout beyond having the `pi` CLI a
 | Context compression | ✓ | ✓ |  | ✓ | ✓ |
 | Edit-triggered test-loop detection | ✓ | ✓ |  | ✓ | ✓ |
 
-As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini is supported for install, doctor, and the shared shell workflow through the hook extension, but slash-command parity is still pending. OpenCode reaches its richer telemetry surface through the native TypeScript plugin. Pi support is project-local through the repo extension, with bundled schema validation and repo-scoped slash-command aliases; Pi currently records context compression without the Claude/Gemini auto-vs-manual trigger split because that reason is not exposed by Pi's extension events.
+As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini is supported for install, doctor, and the shared shell workflow through the hook extension, but slash-command parity is still pending. OpenCode reaches its richer telemetry surface through the native TypeScript plugin. Pi support installs this checkout as a Pi package, which exposes the repo extension, bundled schema validation, and slash-command aliases across working directories; Pi currently records context compression without the Claude/Gemini auto-vs-manual trigger split because that reason is not exposed by Pi's extension events.
 
 ## Using Agent Smith
 
@@ -137,7 +152,7 @@ Claude Code, Codex, OpenCode, and Pi currently expose these slash commands:
 /agent-smith:upgrade-settings
 ```
 
-Gemini currently ships the hook extension plus the shared shell commands below. Slash-command parity can come later. Pi provides the same command names as repo-local aliases over the discovered prompt templates.
+Gemini currently ships the hook extension plus the shared shell commands below. Slash-command parity can come later. Pi provides the same command names through the installed package's prompt-template aliases.
 
 Useful commands:
 
@@ -255,7 +270,7 @@ Token usage and estimated USD cost are calculated during rollup, not during the 
 | `.codex-plugin/` | Codex manifest |
 | `gemini-extension/` | Gemini CLI extension |
 | `opencode-plugin/` | Native OpenCode plugin |
-| `.pi/extensions/agent-smith/` | Repo-local Pi extension |
+| `.pi/extensions/agent-smith/` | Pi extension entrypoint packaged from this repo |
 | `.codex/hooks.json` | Repo-local Codex hook registration |
 | `schemas/` | Bundled schema snapshots such as Pi settings |
 | `hooks/` | Shared shell hook scripts and libraries |

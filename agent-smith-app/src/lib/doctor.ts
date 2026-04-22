@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { repoRootFromHere } from "./agent-hosts";
 import { codexPluginInstalledInCache, personalMarketplaceHasAgentSmith } from "./codex-install";
+import { inspectPiInstall } from "./pi-install";
 import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
 
 export type DoctorStatus = "pass" | "warn" | "fail" | "skip";
@@ -556,10 +557,23 @@ function detectPi(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
     return makeSkipHost("pi", binary);
   }
 
+  const installInspection = inspectPiInstall({ env, repoRoot });
   const repoExtension = join(repoRoot, ".pi", "extensions", "agent-smith", "index.ts");
   const repoSchema = join(repoRoot, "schemas", "pi-settings.schema.json");
   const repoCommands = join(repoRoot, "commands");
   const repoSkills = join(repoRoot, "skills");
+  const packageCheck =
+    installInspection.error !== null
+      ? makeCheck("pi_package_installed", "Pi package install", false, "", installInspection.error)
+      : makeCheck(
+          "pi_package_installed",
+          "Pi package install",
+          installInspection.currentRepoInstalled,
+          `${installInspection.settingsPath} installs ${installInspection.installedSource}`,
+          installInspection.otherAgentSmithSources.length > 0
+            ? `${installInspection.settingsPath} points Agent Smith at ${installInspection.otherAgentSmithSources.join(", ")} instead of ${repoRoot}`
+            : `${installInspection.settingsPath} does not install this Agent Smith checkout`,
+        );
 
   const checks: DoctorCheck[] = [
     makeCheck(
@@ -590,6 +604,7 @@ function detectPi(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
       `${repoSkills} exists for Pi skill discovery`,
       `${repoSkills} is missing`,
     ),
+    packageCheck,
   ];
 
   const status = combineStatuses(checks.map((check) => check.status));
@@ -601,8 +616,8 @@ function detectPi(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
     status,
     summary:
       status === "pass"
-        ? "Pi binary found and Agent Smith's repo-local Pi extension is ready"
-        : "Pi binary found, but the repo-local Agent Smith Pi extension surface is incomplete",
+        ? "Pi binary found and Agent Smith is installed for cross-project Pi sessions"
+        : "Pi binary found, but Agent Smith is not fully installed into Pi",
     checks,
   };
 }

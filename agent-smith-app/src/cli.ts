@@ -10,6 +10,7 @@ import { renderDoctorReport, runDoctor } from "./lib/doctor";
 import { createEvent } from "./lib/events";
 import { type LoopRuntime, renderLoopReport, runImprovementLoop } from "./lib/loop";
 import { resolvePaths } from "./lib/paths";
+import { installPiPackage } from "./lib/pi-install";
 import { generateImprovementReport, renderImprovementReport } from "./lib/recommendations";
 import type { ImproveRuntime } from "./lib/recommendations";
 import { generateReport, renderTextReport } from "./lib/report";
@@ -67,6 +68,7 @@ function usage(theme: TerminalTheme = createTerminalTheme()): string {
   agent-smith upgrade-settings [--tool TOOL] [--refresh] [--format text|json]
   agent-smith update-settings [--tool TOOL] [--refresh] [--format text|json]
   agent-smith install-codex [--repo-root PATH] [--json]
+  agent-smith install-pi [--repo-root PATH] [--json]
   agent-smith doctor [--json]
   agent-smith paths [--json]
 `;
@@ -681,6 +683,46 @@ function handleInstallCodex(args: string[], io: CliIO, theme: TerminalTheme): nu
   return 0;
 }
 
+function handleInstallPi(args: string[], io: CliIO, theme: TerminalTheme): number {
+  let json = false;
+  let repoRoot: string | undefined;
+
+  while (args.length > 0) {
+    const flag = args.shift();
+    switch (flag) {
+      case "--json":
+        json = true;
+        break;
+      case "--repo-root":
+        repoRoot = shiftValue(args, "--repo-root");
+        break;
+      default:
+        throw new CliUsageError(`Unknown install-pi argument: ${flag}`);
+    }
+  }
+
+  const result = installPiPackage({ repoRoot });
+  if (json) {
+    writeJson(io, result);
+    return 0;
+  }
+
+  io.stdout(`${theme.bold(theme.accent("Pi install scaffold is ready."))}\n`);
+  io.stdout(`${theme.dim("Repo root:")} ${result.paths.repoRoot}\n`);
+  io.stdout(`${theme.dim("Updated settings:")} ${result.paths.piSettingsPath}\n`);
+  io.stdout(`${theme.dim("Installed source:")} ${result.installedSource}\n`);
+  io.stdout(`\n${theme.bold(theme.info("Changes"))}\n`);
+  io.stdout(`- pi settings: ${result.changed.settings ? theme.success("updated") : theme.muted("already current")}\n`);
+  if (result.replacedSources.length > 0) {
+    io.stdout(`- replaced old Agent Smith sources: ${result.replacedSources.join(", ")}\n`);
+  }
+  io.stdout(`\n${theme.bold(theme.info("Next"))}\n`);
+  for (const step of result.manualSteps) {
+    io.stdout(`- ${step}\n`);
+  }
+  return 0;
+}
+
 function handleDoctor(args: string[], io: CliIO, theme: TerminalTheme): number {
   let json = false;
   while (args.length > 0) {
@@ -768,6 +810,8 @@ export async function runCli(
       return await handleUpgradeSettings(args, io, theme, runtime.schema);
     case "install-codex":
       return handleInstallCodex(args, io, theme);
+    case "install-pi":
+      return handleInstallPi(args, io, theme);
     case "doctor":
       return handleDoctor(args, io, theme);
     case "paths":

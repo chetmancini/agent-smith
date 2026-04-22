@@ -468,6 +468,61 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     }
   });
 
+  test("install-pi adds this checkout to Pi user settings and replaces older Agent Smith checkouts", async () => {
+    mkdirSync(join(repoDir, ".pi", "extensions", "agent-smith"), { recursive: true });
+    mkdirSync(join(repoDir, "commands"), { recursive: true });
+    mkdirSync(join(repoDir, "skills"), { recursive: true });
+    mkdirSync(join(repoDir, "schemas"), { recursive: true });
+    mkdirSync(join(repoDir, "agent-smith-app"), { recursive: true });
+    writeFileSync(join(repoDir, ".pi", "extensions", "agent-smith", "index.ts"), "export default function () {}\n");
+    writeFileSync(join(repoDir, "commands", "analyze.md"), "# Analyze\n");
+    writeFileSync(join(repoDir, "skills", "SKILL.md"), "---\nname: test\ndescription: test\n---\n");
+    writeFileSync(join(repoDir, "schemas", "pi-settings.schema.json"), '{\n  "type": "object"\n}\n');
+    writeFileSync(join(repoDir, "agent-smith-app", "package.json"), '{ "name": "agent-smith-app" }\n');
+
+    const previousHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    const oldRepo = join(metricsDir, "old-agent-smith");
+    mkdirSync(join(oldRepo, ".pi", "extensions", "agent-smith"), { recursive: true });
+    mkdirSync(join(oldRepo, "agent-smith-app"), { recursive: true });
+    writeFileSync(join(oldRepo, ".pi", "extensions", "agent-smith", "index.ts"), "export default function () {}\n");
+    writeFileSync(join(oldRepo, "agent-smith-app", "package.json"), '{ "name": "agent-smith-app" }\n');
+
+    mkdirSync(join(homeDir, ".pi", "agent"), { recursive: true });
+    writeFileSync(
+      join(homeDir, ".pi", "agent", "settings.json"),
+      `${JSON.stringify(
+        {
+          defaultThinkingLevel: "high",
+          packages: [oldRepo],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    try {
+      const { io, getStdout } = createIo();
+      const exitCode = await runCli(["install-pi", "--repo-root", repoDir], io);
+      expect(exitCode).toBe(0);
+      expect(getStdout()).toContain("Pi install scaffold is ready");
+
+      const settings = JSON.parse(readFileSync(join(homeDir, ".pi", "agent", "settings.json"), "utf8")) as {
+        defaultThinkingLevel: string;
+        packages: string[];
+      };
+      expect(settings.defaultThinkingLevel).toBe("high");
+      expect(settings.packages).toEqual([join("..", "..", "..", "repo")]);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
   test("refresh-schemas writes the detected tool schema without shelling out", async () => {
     mkdirSync(join(homeDir, ".codex"), { recursive: true });
     writeFileSync(join(homeDir, ".codex", "config.toml"), 'model = "gpt-5.4"\n');
