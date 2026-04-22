@@ -246,6 +246,7 @@ function detectClaude(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResul
   const knownMarketplacesPath = join(home, ".claude", "plugins", "known_marketplaces.json");
   const settingsPath = join(home, ".claude", "settings.json");
   const repoManifest = join(repoRoot, ".claude-plugin", "plugin.json");
+  const repoHooks = join(repoRoot, "hooks", "hooks.json");
 
   const installedPlugins = readJson(installedPluginsPath) as {
     plugins?: Record<string, unknown>;
@@ -266,6 +267,13 @@ function detectClaude(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResul
       existsSync(repoManifest),
       `${repoManifest} exists`,
       `${repoManifest} is missing`,
+    ),
+    makeCheck(
+      "claude_repo_hooks",
+      "Repo Claude hooks file",
+      existsSync(repoHooks),
+      `${repoHooks} exists`,
+      `${repoHooks} is missing`,
     ),
     makeCheck(
       "claude_marketplace_known",

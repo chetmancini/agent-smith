@@ -54,6 +54,7 @@ describe("doctor", () => {
     mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
     mkdirSync(join(repoRoot, ".agents", "plugins"), { recursive: true });
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
+    mkdirSync(join(repoRoot, "hooks"), { recursive: true });
     mkdirSync(join(repoRoot, "gemini-extension", "hooks"), { recursive: true });
     mkdirSync(join(repoRoot, "agent-smith-app"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
@@ -63,6 +64,9 @@ describe("doctor", () => {
     });
     writeJson(join(repoRoot, ".codex-plugin", "plugin.json"), {
       name: "agent-smith",
+    });
+    writeJson(join(repoRoot, "hooks", "hooks.json"), {
+      hooks: {},
     });
     writeJson(join(repoRoot, "gemini-extension", "gemini-extension.json"), {
       name: "agent-smith",
@@ -187,6 +191,34 @@ trust_level = "trusted"
     const gemini = report.hosts.find((host) => host.host === "gemini");
     expect(gemini?.status).toBe("fail");
     expect(gemini?.checks.find((check) => check.id === "gemini_extension_installed")?.status).toBe("fail");
+  });
+
+  test("fails Claude when the repo hooks file is missing", () => {
+    writeExecutable(join(binDir, "claude"));
+    rmSync(join(repoRoot, "hooks", "hooks.json"));
+
+    mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+    writeJson(join(home, ".claude", "plugins", "installed_plugins.json"), {
+      version: 2,
+      plugins: {
+        "agent-smith@agent-smith": [{ scope: "user", version: "0.3.0" }],
+      },
+    });
+    writeJson(join(home, ".claude", "plugins", "known_marketplaces.json"), {
+      "agent-smith": {
+        source: { source: "github", repo: "chetmancini/agent-smith" },
+      },
+    });
+    writeJson(join(home, ".claude", "settings.json"), {
+      enabledPlugins: {
+        "agent-smith@agent-smith": true,
+      },
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const claude = report.hosts.find((host) => host.host === "claude");
+    expect(claude?.status).toBe("fail");
+    expect(claude?.checks.find((check) => check.id === "claude_repo_hooks")?.status).toBe("fail");
   });
 
   test("passes when Codex uses a versioned plugin cache layout", () => {

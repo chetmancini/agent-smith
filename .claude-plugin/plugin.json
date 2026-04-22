@@ -1,7 +1,7 @@
 {
   "name": "agent-smith",
   "version": "0.5.3",
-  "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
+  "description": "Self-tuning feedback loop for Claude Code, Gemini CLI, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
   "author": {
     "name": "Chet Mancini",
     "url": "https://github.com/chetmancini"
@@ -19,6 +19,7 @@
     "schema-validation",
     "feedback-loop",
     "claude-code",
+    "gemini-cli",
     "codex"
   ],
   "skills": "./skills/"

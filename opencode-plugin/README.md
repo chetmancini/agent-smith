@@ -52,7 +52,7 @@ The native plugin captures events that have no Claude Code equivalent:
 
 ## How It Works
 
-Metrics are written to `~/.config/agent-smith/events.jsonl`, the same location used by the shell hooks for Claude Code and Codex. This means all your metrics from all agents end up in one unified database.
+Metrics are written to `~/.config/agent-smith/events.jsonl`, the same location used by the shell hooks for Claude Code, Gemini CLI, and Codex. This means all your metrics from all agents end up in one unified database.
 
 Run analysis with:
 

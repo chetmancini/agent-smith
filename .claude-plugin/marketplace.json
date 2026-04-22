@@ -4,14 +4,14 @@
     "name": "Chet Mancini"
   },
   "metadata": {
-    "description": "Marketplace for the Agent Smith feedback loop plugin for Claude Code.",
+    "description": "Marketplace for the Agent Smith feedback loop across Claude Code, Gemini CLI, Codex, and OpenCode.",
     "version": "0.5.3"
   },
   "plugins": [
     {
       "name": "agent-smith",
       "source": "./",
-      "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
+      "description": "Self-tuning feedback loop for Claude Code, Gemini CLI, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
       "version": "0.5.3",
       "author": {
         "name": "Chet Mancini"
@@ -29,6 +29,7 @@
         "schema-validation",
         "feedback-loop",
         "claude-code",
+        "gemini-cli",
         "codex"
       ],
       "category": "coding"

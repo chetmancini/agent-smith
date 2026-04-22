@@ -59,7 +59,7 @@ bun run pack:check
 - `loop`: run bounded analysis -> apply -> evaluate iterations using the active agent, auto-applying only actions marked safe unless you opt into unsafe actions
 - `watch`: launch a multi-pane TUI by default on a real terminal, with session/event text fallbacks for scripts
 - `demo`: run an isolated full-loop sandbox that simulates Claude fixing a tiny todo app, emits tool-call telemetry, writes reports, drives the loop, and keeps the watch open until `q`; inside tmux it opens a side pane for the `Claude Working` log and otherwise falls back to an embedded pane
-- `doctor`: verify Claude, Codex, and OpenCode integration state when their binaries are installed
+- `doctor`: verify Claude, Gemini, Codex, and OpenCode integration state when their binaries are installed
 
 ## Next Likely Migrations
 
