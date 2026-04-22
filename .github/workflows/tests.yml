@@ -102,7 +102,9 @@ jobs:
             tests/scripts/schema_tools.bats \
             tests/scripts/run_agent_skill.bats \
             tests/scripts/release.bats \
-            tests/scripts/codex_hook_layout.bats
+            tests/scripts/codex_hook_layout.bats \
+            tests/scripts/gemini_hook_layout.bats \
+            tests/scripts/readme_compatibility.bats
 
   app-checks:
     runs-on: ubuntu-latest

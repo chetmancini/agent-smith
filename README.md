@@ -89,6 +89,17 @@ For a local checkout instead of the published package:
 
 ## Comparison Matrix
 
+### Workflow Surface
+
+| Surface | Claude Code | Gemini CLI | Codex | OpenCode |
+| --- | :---: | :---: | :---: | :---: |
+| Install path in this repo | ✓ | ✓ | ✓ | ✓ |
+| `agent-smith doctor` coverage | ✓ | ✓ | ✓ | ✓ |
+| Slash commands | ✓ |  | ✓ | ✓ |
+| Shared shell commands | ✓ | ✓ | ✓ | ✓ |
+
+### Telemetry Surface
+
 | Feature | Claude Code | Gemini CLI | Codex | OpenCode |
 | --- | :---: | :---: | :---: | :---: |
 | Session lifecycle | ✓ | ✓ | ✓ | ✓ |
@@ -104,7 +115,7 @@ For a local checkout instead of the published package:
 | Context compression | ✓ | ✓ |  | ✓ |
 | Edit-triggered test-loop detection | ✓ | ✓ |  | ✓ |
 
-As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini reaches the matrix above through the hook-based extension, while OpenCode reaches its richer telemetry surface through the native TypeScript plugin.
+As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini is supported for install, doctor, and the shared shell workflow through the hook extension, but slash-command parity is still pending. OpenCode reaches its richer telemetry surface through the native TypeScript plugin.
 
 ## Using Agent Smith
 
