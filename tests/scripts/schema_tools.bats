@@ -97,10 +97,12 @@ EOF
 	[ -f "$home_dir/.config/agent-smith/schemas/gemini-cli-settings.schema.json" ]
 	[ -f "$home_dir/.config/agent-smith/schemas/codex-config.schema.json" ]
 	[ -f "$home_dir/.config/agent-smith/schemas/opencode-config.schema.json" ]
+	[ -f "$home_dir/.config/agent-smith/schemas/pi-settings.schema.json" ]
 	[[ "$output" == *"Refreshed Claude Code schema"* ]]
 	[[ "$output" == *"Refreshed Gemini CLI schema"* ]]
 	[[ "$output" == *"Refreshed Codex schema"* ]]
 	[[ "$output" == *"Refreshed OpenCode schema"* ]]
+	[[ "$output" == *"Refreshed Pi schema"* ]]
 }
 
 @test "refresh-schemas refreshes only Claude when requested" {
@@ -233,6 +235,20 @@ EOF
 	[[ "$output" == *"Refreshed models.dev schema"* ]]
 }
 
+@test "refresh-schemas refreshes only Pi from the bundled schema snapshot" {
+	local home_dir
+	home_dir="$TEST_TMPDIR/home"
+
+	mkdir -p "$home_dir/.pi/agent"
+	printf '{"defaultProvider":"anthropic"}\n' >"$home_dir/.pi/agent/settings.json"
+
+	run env HOME="$home_dir" PATH="$PATH" bash "$PROJECT_ROOT/scripts/refresh-schemas.sh" --tool pi
+
+	[ "$status" -eq 0 ]
+	[ -f "$home_dir/.config/agent-smith/schemas/pi-settings.schema.json" ]
+	[[ "$output" == *"Refreshed Pi schema"* ]]
+}
+
 @test "validate-agent-config parses OpenCode JSON config and reports schema diff" {
 	local home_dir schema_dir
 	home_dir="$TEST_TMPDIR/home"
@@ -262,6 +278,37 @@ EOF
 	[[ "$output" == *"Tool: OpenCode"* ]]
 	[[ "$output" == *"Parse: valid json"* ]]
 	[[ "$output" == *"Available top-level schema keys not set: compaction"* ]]
+}
+
+@test "validate-agent-config parses Pi JSON config and reports schema diff" {
+	local home_dir schema_dir
+	home_dir="$TEST_TMPDIR/home"
+	schema_dir="$home_dir/.config/agent-smith/schemas"
+
+	mkdir -p "$home_dir/.pi/agent" "$schema_dir"
+	cat >"$home_dir/.pi/agent/settings.json" <<'EOF'
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514"
+}
+EOF
+	cat >"$schema_dir/pi-settings.schema.json" <<'EOF'
+{
+  "type": "object",
+  "properties": {
+    "defaultProvider": { "type": "string" },
+    "defaultModel": { "type": "string" },
+    "theme": { "type": "string" }
+  }
+}
+EOF
+
+	run env HOME="$home_dir" PATH="$PATH" bash "$PROJECT_ROOT/scripts/validate-agent-config.sh" --tool pi
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Tool: Pi"* ]]
+	[[ "$output" == *"Parse: valid json"* ]]
+	[[ "$output" == *"Available top-level schema keys not set: theme"* ]]
 }
 
 @test "validate-agent-config passes models.dev ref to ajv for OpenCode" {

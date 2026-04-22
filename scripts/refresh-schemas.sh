@@ -17,7 +17,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: refresh-schemas.sh [--tool claude|gemini|codex|opencode]
+Usage: refresh-schemas.sh [--tool claude|gemini|codex|opencode|pi]
 
 Refresh cached JSON schemas for all supported agents by default.
 Use --tool to refresh only one schema.
@@ -39,14 +39,18 @@ refresh_schema() {
 	schema_path="$(agent_smith_schema_cache_path "$tool")"
 	metadata_path="$(agent_smith_schema_metadata_path "$tool")"
 	schema_dir="$(dirname "$schema_path")"
-	TMP_SCHEMA="$(mktemp "${TMPDIR:-/tmp}/agent-smith-schema.XXXXXX")"
 
 	mkdir -p "$schema_dir"
-
-	curl -fsSL "$schema_url" -o "$TMP_SCHEMA"
-	mv "$TMP_SCHEMA" "$schema_path"
-	TMP_SCHEMA=""
-	chmod 600 "$schema_path" 2>/dev/null || true
+	if [ "$tool" = "pi" ]; then
+		cp "${SCRIPT_DIR}/../schemas/pi-settings.schema.json" "$schema_path"
+		chmod 600 "$schema_path" 2>/dev/null || true
+	else
+		TMP_SCHEMA="$(mktemp "${TMPDIR:-/tmp}/agent-smith-schema.XXXXXX")"
+		curl -fsSL "$schema_url" -o "$TMP_SCHEMA"
+		mv "$TMP_SCHEMA" "$schema_path"
+		TMP_SCHEMA=""
+		chmod 600 "$schema_path" 2>/dev/null || true
+	fi
 
 	if [ "$tool" = "opencode" ]; then
 		models_dev_schema_path="$(agent_smith_models_dev_schema_cache_path)"

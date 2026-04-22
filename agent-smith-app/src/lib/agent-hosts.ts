@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-export type SupportedAgentTool = "claude" | "gemini" | "codex" | "opencode";
+export type SupportedAgentTool = "claude" | "gemini" | "codex" | "opencode" | "pi";
 
 export interface SchemaMetadata {
   tool: SupportedAgentTool;
@@ -13,6 +13,9 @@ export interface SchemaMetadata {
 }
 
 type FetchLike = (input: string) => Promise<Response>;
+
+const SUPPORTED_AGENT_TOOLS = ["claude", "gemini", "codex", "opencode", "pi"] as const;
+const PI_BUNDLED_SCHEMA_SOURCE = "bundled://schemas/pi-settings.schema.json";
 
 export function findAgentSmithRepoRoot(startDir: string): string | null {
   let current = resolve(startDir);
@@ -71,7 +74,7 @@ export function findBinary(binary: string, env: NodeJS.ProcessEnv = process.env)
 }
 
 export function validateToolName(tool: string): tool is SupportedAgentTool {
-  return tool === "claude" || tool === "gemini" || tool === "codex" || tool === "opencode";
+  return SUPPORTED_AGENT_TOOLS.includes(tool as SupportedAgentTool);
 }
 
 export function toolConfigCandidates(
@@ -98,6 +101,8 @@ export function toolConfigCandidates(
       return [join(home, ".codex", "config.toml")];
     case "opencode":
       return [join(home, ".config", "opencode", "opencode.json")];
+    case "pi":
+      return [join(home, ".pi", "agent", "settings.json"), join(cwd, ".pi", "settings.json")];
   }
 }
 
@@ -137,22 +142,18 @@ export function detectTool(
     throw new Error(`unsupported AGENT_SMITH_TOOL '${envTool}'`);
   }
 
-  const configuredTools = (["claude", "gemini", "codex", "opencode"] as const).filter(
-    (tool) => existingToolConfigs(tool, env, cwd).length > 0,
-  );
+  const configuredTools = SUPPORTED_AGENT_TOOLS.filter((tool) => existingToolConfigs(tool, env, cwd).length > 0);
   if (configuredTools.length === 1) {
     return configuredTools[0];
   }
 
-  const cliTools = (["claude", "gemini", "codex", "opencode"] as const).filter((tool) => {
-    return findBinary(tool, env) !== null;
-  });
+  const cliTools = SUPPORTED_AGENT_TOOLS.filter((tool) => findBinary(tool, env) !== null);
   if (cliTools.length === 1) {
     return cliTools[0];
   }
 
   throw new Error(
-    "unable to infer which agent to inspect. Set AGENT_SMITH_TOOL=claude, AGENT_SMITH_TOOL=gemini, AGENT_SMITH_TOOL=codex, or AGENT_SMITH_TOOL=opencode.",
+    "unable to infer which agent to inspect. Set AGENT_SMITH_TOOL=claude, AGENT_SMITH_TOOL=gemini, AGENT_SMITH_TOOL=codex, AGENT_SMITH_TOOL=opencode, or AGENT_SMITH_TOOL=pi.",
   );
 }
 
@@ -166,6 +167,8 @@ export function schemaUrl(tool: SupportedAgentTool): string {
       return "https://developers.openai.com/codex/config-schema.json";
     case "opencode":
       return "https://opencode.ai/config.json";
+    case "pi":
+      return PI_BUNDLED_SCHEMA_SOURCE;
   }
 }
 
@@ -179,6 +182,8 @@ export function toolLabel(tool: SupportedAgentTool): string {
       return "Codex";
     case "opencode":
       return "OpenCode";
+    case "pi":
+      return "Pi";
   }
 }
 
@@ -193,6 +198,8 @@ export function schemaCachePath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv
       return join(base, "codex-config.schema.json");
     case "opencode":
       return join(base, "opencode-config.schema.json");
+    case "pi":
+      return join(base, "pi-settings.schema.json");
   }
 }
 
@@ -211,7 +218,13 @@ export function schemaMetadataPath(tool: SupportedAgentTool, env: NodeJS.Process
       return join(base, "codex-config.schema.metadata.json");
     case "opencode":
       return join(base, "opencode-config.schema.metadata.json");
+    case "pi":
+      return join(base, "pi-settings.schema.metadata.json");
   }
+}
+
+function bundledPiSchemaPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(repoRootFromHere(env), "schemas", "pi-settings.schema.json");
 }
 
 export function readJsonFile(path: string): unknown | null {
@@ -268,16 +281,21 @@ export async function ensureSchemaCached(
   }
 
   const url = schemaUrl(tool);
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const response = await fetchImpl(url);
-  if (!response.ok) {
-    throw new Error(`failed to fetch schema for ${tool}: ${response.status} ${response.statusText}`);
+  if (tool === "pi") {
+    writeFileSync(schemaPath, readFileSync(bundledPiSchemaPath(env), "utf8"), { mode: 0o600 });
+  } else {
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const response = await fetchImpl(url);
+    if (!response.ok) {
+      throw new Error(`failed to fetch schema for ${tool}: ${response.status} ${response.statusText}`);
+    }
+
+    const body = await response.text();
+    writeFileSync(schemaPath, body, { mode: 0o600 });
   }
 
-  const body = await response.text();
-  writeFileSync(schemaPath, body, { mode: 0o600 });
-
   if (tool === "opencode") {
+    const fetchImpl = options.fetchImpl ?? fetch;
     const modelsResponse = await fetchImpl("https://models.dev/model-schema.json");
     if (!modelsResponse.ok) {
       throw new Error(

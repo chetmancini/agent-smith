@@ -1,6 +1,6 @@
 #!/bin/bash
 # Config analyzer: gather metrics and optionally invoke the active agent for tuning suggestions
-# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode] [--llm] [--include-settings] [--auto]
+# Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode|pi] [--llm] [--include-settings] [--auto]
 
 set -euo pipefail
 
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode] [--llm] [--include-settings] [--auto]
+Usage: analyze-config.sh [--sessions N] [--project NAME] [--tool claude|gemini|codex|opencode|pi] [--llm] [--include-settings] [--auto]
 
 Generate a local Agent Smith metrics report, optionally followed by active-agent recommendations.
 EOF
@@ -60,7 +60,7 @@ EOF
 done
 
 if [ -n "$TOOL_FILTER" ] && ! agent_smith_validate_tool_name "$TOOL_FILTER"; then
-	echo "Error: unsupported tool '$TOOL_FILTER' (expected claude, gemini, codex, or opencode)" >&2
+	echo "Error: unsupported tool '$TOOL_FILTER' (expected claude, gemini, codex, opencode, or pi)" >&2
 	exit 1
 fi
 
@@ -95,6 +95,7 @@ llm_cli_label() {
 	gemini) printf '%s\n' 'Gemini CLI' ;;
 	codex) printf '%s\n' 'Codex' ;;
 	opencode) printf '%s\n' 'OpenCode' ;;
+	pi) printf '%s\n' 'Pi' ;;
 	*) return 1 ;;
 	esac
 }
@@ -112,6 +113,10 @@ run_llm_prompt() {
 		;;
 	opencode)
 		"$LLM_BIN" run --dir "$PLUGIN_ROOT" "$prompt" >"$output_file" 2>/dev/null
+		;;
+	pi)
+		cd "$PLUGIN_ROOT"
+		"$LLM_BIN" -p "$prompt" >"$output_file" 2>/dev/null
 		;;
 	*)
 		return 1
@@ -206,6 +211,13 @@ read_redacted_settings_snapshot() {
 		fi
 		return 1
 		;;
+	pi)
+		if settings_path=$(agent_smith_first_existing_tool_config pi); then
+			redact_settings_json "$settings_path"
+			return $?
+		fi
+		return 1
+		;;
 	claude | "")
 		if settings_path=$(agent_smith_first_existing_tool_config claude); then
 			redact_settings_json "$settings_path"
@@ -257,6 +269,12 @@ EOF
 		cat <<'EOF'
 - `API Errors`, `Tool Success Rates`, and `Subagent*` sections are not collected for OpenCode with the current Agent Smith integration.
 - OpenCode-specific `session_error`, `permission_granted`, and `file_edited` signals are summarized below when present.
+EOF
+		;;
+	pi)
+		cat <<'EOF'
+- Pi currently emits session lifecycle, vague prompt, context compression, and Bash/Edit/Write telemetry through the repo-local extension.
+- Permission prompts, explicit session-error events, and subagent signals are not surfaced by the current Pi integration.
 EOF
 		;;
 	*)

@@ -8,7 +8,7 @@
 
 Agent configuration is hard, fragile, and always changing. Agent Smith outsources that tuning work to your agent: it gathers empirical data from watching real sessions and recommends concrete changes to prompts, settings, and workflow.
 
-Get a feedback loop based on how Claude Code, Codex, Gemini CLI, or OpenCode actually behave on your real work instead of guessing what might help.
+Get a feedback loop based on how Claude Code, Codex, Gemini CLI, OpenCode, or Pi actually behave on your real work instead of guessing what might help.
 
 Agent Smith:
 
@@ -87,39 +87,49 @@ For a local checkout instead of the published package:
 }
 ```
 
+### Pi
+
+Pi support in this repo is project-local. Run `pi` from the repo root and it auto-discovers:
+
+- `.pi/extensions/agent-smith/index.ts` for telemetry and slash-command aliases
+- `commands/` as prompt templates
+- `skills/` as Agent Skills
+
+No extra install step is required for this checkout beyond having the `pi` CLI available.
+
 ## Comparison Matrix
 
 ### Workflow Surface
 
-| Surface | Claude Code | Gemini CLI | Codex | OpenCode |
-| --- | :---: | :---: | :---: | :---: |
-| Install path in this repo | ✓ | ✓ | ✓ | ✓ |
-| `agent-smith doctor` coverage | ✓ | ✓ | ✓ | ✓ |
-| Slash commands | ✓ |  | ✓ | ✓ |
-| Shared shell commands | ✓ | ✓ | ✓ | ✓ |
+| Surface | Claude Code | Gemini CLI | Codex | OpenCode | Pi |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Install path in this repo | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `agent-smith doctor` coverage | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Slash commands | ✓ |  | ✓ | ✓ | ✓ |
+| Shared shell commands | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ### Telemetry Surface
 
-| Feature | Claude Code | Gemini CLI | Codex | OpenCode |
-| --- | :---: | :---: | :---: | :---: |
-| Session lifecycle | ✓ | ✓ | ✓ | ✓ |
-| Bash failure tracking | ✓ | ✓ | ✓ | ✓ |
-| Vague prompt guidance | ✓ | ✓ | ✓ | ✓ |
-| Rollup and analysis | ✓ | ✓ | ✓ | ✓ |
-| Schema validation | ✓ | ✓ | ✓ | ✓ |
-| Tool failures | ✓ | ✓ |  | ✓ |
-| Permission denials | ✓ | ✓ |  | ✓ |
-| Permission grants |  |  |  | ✓ |
-| Session errors |  |  |  | ✓ |
-| File-edited telemetry |  |  |  | ✓ |
-| Context compression | ✓ | ✓ |  | ✓ |
-| Edit-triggered test-loop detection | ✓ | ✓ |  | ✓ |
+| Feature | Claude Code | Gemini CLI | Codex | OpenCode | Pi |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Session lifecycle | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Bash failure tracking | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Vague prompt guidance | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Rollup and analysis | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Schema validation | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Tool failures | ✓ | ✓ |  | ✓ | ✓ |
+| Permission denials | ✓ | ✓ |  | ✓ |  |
+| Permission grants |  |  |  | ✓ |  |
+| Session errors |  |  |  | ✓ |  |
+| File-edited telemetry |  |  |  | ✓ |  |
+| Context compression | ✓ | ✓ |  | ✓ | ✓ |
+| Edit-triggered test-loop detection | ✓ | ✓ |  | ✓ | ✓ |
 
-As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini is supported for install, doctor, and the shared shell workflow through the hook extension, but slash-command parity is still pending. OpenCode reaches its richer telemetry surface through the native TypeScript plugin.
+As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini is supported for install, doctor, and the shared shell workflow through the hook extension, but slash-command parity is still pending. OpenCode reaches its richer telemetry surface through the native TypeScript plugin. Pi support is project-local through the repo extension, with bundled schema validation and repo-scoped slash-command aliases; Pi currently records context compression without the Claude/Gemini auto-vs-manual trigger split because that reason is not exposed by Pi's extension events.
 
 ## Using Agent Smith
 
-Claude Code, Codex, and OpenCode currently expose these slash commands:
+Claude Code, Codex, OpenCode, and Pi currently expose these slash commands:
 
 ```text
 /agent-smith:analyze
@@ -127,7 +137,7 @@ Claude Code, Codex, and OpenCode currently expose these slash commands:
 /agent-smith:upgrade-settings
 ```
 
-Gemini currently ships the hook extension plus the shared shell commands below. Slash-command parity can come later.
+Gemini currently ships the hook extension plus the shared shell commands below. Slash-command parity can come later. Pi provides the same command names as repo-local aliases over the discovered prompt templates.
 
 Useful commands:
 
@@ -245,7 +255,9 @@ Token usage and estimated USD cost are calculated during rollup, not during the 
 | `.codex-plugin/` | Codex manifest |
 | `gemini-extension/` | Gemini CLI extension |
 | `opencode-plugin/` | Native OpenCode plugin |
+| `.pi/extensions/agent-smith/` | Repo-local Pi extension |
 | `.codex/hooks.json` | Repo-local Codex hook registration |
+| `schemas/` | Bundled schema snapshots such as Pi settings |
 | `hooks/` | Shared shell hook scripts and libraries |
 | `scripts/` | Rollup, analysis, schema, and helper scripts |
 | `commands/` | Slash-command prompts |
@@ -328,7 +340,7 @@ make pre-push
 make install-git-hooks
 ```
 
-The Makefile keeps a single parameterized interface: use `TOOL=claude|gemini|codex|opencode` for the agent-backed `agent-*`, `refresh-schemas`, and `validate-agent-config` targets.
+The Makefile keeps a single parameterized interface: use `TOOL=claude|gemini|codex|opencode|pi` for the agent-backed `agent-*`, `refresh-schemas`, and `validate-agent-config` targets.
 
 ## License
 

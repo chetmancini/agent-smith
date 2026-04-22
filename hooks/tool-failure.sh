@@ -20,7 +20,7 @@ tool_use_id=$(echo "$input" | jq -r '.tool_use_id // .toolUseId // empty')
 
 restore_metrics_session_id "$session_id" || true
 
-if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "gemini" ]; then
+if [ "${AGENT_SMITH_TOOL:-claude}" = "codex" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "opencode" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "gemini" ] || [ "${AGENT_SMITH_TOOL:-claude}" = "pi" ]; then
 	exit_code=$(echo "$input" | jq -r '
 		def parsed_tool_response:
 			(.tool_response // null) as $response

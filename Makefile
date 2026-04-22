@@ -67,12 +67,12 @@ _help:
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
 		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop demo"; \
-		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches, or one with TOOL=claude|gemini|codex|opencode"; \
+		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches, or one with TOOL=claude|gemini|codex|opencode|pi"; \
 		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
-		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-analyze TOOL=codex [SESSIONS=100]" "Run the analyze-config skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-loop TOOL=codex [SESSIONS=100]" "Validate schemas, then analyze via Claude, Gemini, Codex, or OpenCode"; \
+		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-analyze TOOL=codex [SESSIONS=100]" "Run the analyze-config skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-loop TOOL=codex [SESSIONS=100]" "Validate schemas, then analyze via Claude, Gemini, Codex, OpenCode, or Pi"; \
 		printf '\n%b%s%b\n' "$$note_on" "Run \`make help\` for the full maintainer target list." "$$title_off"; \
 	else \
 		print_section "Help"; \
@@ -83,12 +83,12 @@ _help:
 		print_row "make deps" "Install Bun dependencies for the local packages"; \
 		print_row "make demo [APP_ARGS='--no-watch']" "Run the isolated full-loop sandbox demo"; \
 		print_row "make app-doctor [APP_ARGS=--json]" "Run the standalone TS CLI doctor from the repo root"; \
-		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches, or one with TOOL=claude|gemini|codex|opencode"; \
+		print_row "make refresh-schemas [TOOL=codex]" "Refresh all schema caches, or one with TOOL=claude|gemini|codex|opencode|pi"; \
 		print_row "make validate-agent-config [TOOL=codex]" "Validate one installed agent config; set TOOL when auto-detect is ambiguous"; \
-		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Gemini, Codex, or OpenCode"; \
-		print_row "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Gemini, Codex, or OpenCode"; \
+		print_row "make agent-validate-schemas TOOL=codex" "Run the validate-schemas skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-upgrade-settings TOOL=codex" "Run the settings upgrade skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-analyze TOOL=codex" "Run the analyze-config skill via Claude, Gemini, Codex, OpenCode, or Pi"; \
+		print_row "make agent-loop TOOL=codex" "Run validate-schemas then analyze-config via Claude, Gemini, Codex, OpenCode, or Pi"; \
 		print_section "Validation"; \
 		print_row "make shell-test" "Run the Bats suites for hooks, scripts, and metrics"; \
 		print_row "make test" "Run all tests (Bats + TypeScript packages)"; \
@@ -119,7 +119,7 @@ _help:
 		print_row "make opencode-install" "Install Bun dependencies for the OpenCode plugin"; \
 		print_row "make install-git-hooks" "Install the repo-managed pre-push hook dispatcher"; \
 		print_section "Variables"; \
-		print_var "TOOL" "$(if $(TOOL),$(TOOL),<auto>)" "(claude|gemini|codex|opencode)"; \
+		print_var "TOOL" "$(if $(TOOL),$(TOOL),<auto>)" "(claude|gemini|codex|opencode|pi)"; \
 		print_var "SESSIONS" "$(SESSIONS)" "(used by analyze and loop helpers)"; \
 		print_var "HELP_ASCII" "$(HELP_ASCII)" "(set to 0 to hide the full help header image)"; \
 		print_var "AGENT_CLI" "$(if $(AGENT_CLI),$(AGENT_CLI),<tool default>)" "(override the selected agent binary)"; \
