@@ -153,46 +153,39 @@ bun run ./agent-smith-app/src/cli.ts loop --tool codex
 ## How It Works
 
 ```text
-        +-----------+
-        |  COLLECT  |
-        | hooks and |
-        | plugins   |
-        +-----------+
-              |
-              v
-        +-----------+
-        | ROLL UP   |
-        | JSONL to  |
-        | SQLite    |
-        +-----------+
-              |
-              v
-        +-----------+
-        | ANALYZE   |
-        | raw or    |
-        | agent-led |
-        +-----------+
-              |
-              v
-        +-----------+
-        |  APPLY    |
-        | safe fixes|
-        | + review  |
-        +-----------+
-              |
-              v
-        +-----------+
-        |  BETTER   |
-        |  AGENT    |
-        |   LOOP    |
-        +-----------+
-              |
-              +--------------------+
-                                   |
-                                   v
-                              +-----------+
-                              |  COLLECT  |
-                              +-----------+
+        ┌───────────┐
+        │  COLLECT  │◄────────────────────┐
+        │ hooks and │                     │
+        │ plugins   │                     │
+        └─────┬─────┘                     │
+              │                           │
+              ▼                           │
+        ┌───────────┐                     │
+        │  ROLL UP  │                     │
+        │ JSONL to  │                     │
+        │  SQLite   │                     │
+        └─────┬─────┘                     │
+              │                           │
+              ▼                           │
+        ┌───────────┐                     │
+        │  ANALYZE  │                     │
+        │  raw or   │                     │
+        │ agent-led │                     │
+        └─────┬─────┘                     │
+              │                           │
+              ▼                           │
+        ┌───────────┐                     │
+        │   APPLY   │                     │
+        │ safe fixes│                     │
+        │ and review│                     │
+        └─────┬─────┘                     │
+              │                           │
+              ▼                           │
+        ┌───────────┐                     │
+        │  BETTER   │─────────────────────┘
+        │  AGENT    │
+        │   LOOP    │
+        └───────────┘
 ```
 
 - Collect: hooks or plugins emit structured events into `~/.config/agent-smith/events.jsonl`.
