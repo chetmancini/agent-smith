@@ -383,6 +383,42 @@ EOF
 	[[ "$output" == *"Schema check: valid (ajv)"* ]]
 }
 
+@test "validate-agent-config skips models.dev refresh when no OpenCode config is installed" {
+	local home_dir schema_dir fakebin
+	home_dir="$TEST_TMPDIR/home"
+	schema_dir="$home_dir/.config/agent-smith/schemas"
+	fakebin="$TEST_TMPDIR/fakebin"
+
+	mkdir -p "$schema_dir" "$fakebin"
+	cat >"$schema_dir/opencode-config.schema.json" <<'EOF'
+{
+  "type": "object",
+  "properties": {
+    "model": { "$ref": "https://models.dev/model-schema.json#/$defs/Model" }
+  }
+}
+EOF
+	cat >"$fakebin/curl" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+printf 'curl should not run\n' >&2
+exit 1
+EOF
+	chmod 700 "$fakebin/curl"
+	cat >"$fakebin/ajv" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+printf 'ajv should not run\n' >&2
+exit 1
+EOF
+	chmod 700 "$fakebin/ajv"
+
+	run env HOME="$home_dir" PATH="$fakebin:$PATH" TMPDIR="$TEST_TMPDIR" bash "$PROJECT_ROOT/scripts/validate-agent-config.sh" --tool opencode
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Status: no installed OpenCode config files found"* ]]
+}
+
 @test "validate-agent-config parses Claude settings files" {
 	local home_dir schema_dir project_dir
 	home_dir="$TEST_TMPDIR/home"

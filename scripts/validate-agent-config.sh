@@ -48,15 +48,6 @@ if command -v ajv >/dev/null 2>&1; then
 	AJV_BIN="ajv"
 fi
 
-if [ "$REFRESH" -eq 1 ] || [ ! -f "$SCHEMA_PATH" ] || { [ -n "$AJV_BIN" ] && [ "$TOOL" = "opencode" ] && [ ! -f "$MODELS_DEV_SCHEMA_PATH" ]; }; then
-	AGENT_SMITH_TOOL="$TOOL" bash "${PLUGIN_ROOT}/scripts/refresh-schemas.sh" >/dev/null
-fi
-
-if [ ! -f "$SCHEMA_PATH" ]; then
-	echo "Error: schema cache missing at $SCHEMA_PATH" >&2
-	exit 1
-fi
-
 gather_config_files() {
 	case "$TOOL" in
 	claude)
@@ -93,6 +84,19 @@ EOF
 }
 
 CONFIG_FILES="$(gather_config_files)"
+NEEDS_MODELS_DEV_REFRESH=0
+if [ -n "$AJV_BIN" ] && [ "$TOOL" = "opencode" ] && [ -n "$CONFIG_FILES" ] && [ ! -f "$MODELS_DEV_SCHEMA_PATH" ]; then
+	NEEDS_MODELS_DEV_REFRESH=1
+fi
+
+if [ "$REFRESH" -eq 1 ] || [ ! -f "$SCHEMA_PATH" ] || [ "$NEEDS_MODELS_DEV_REFRESH" -eq 1 ]; then
+	AGENT_SMITH_TOOL="$TOOL" bash "${PLUGIN_ROOT}/scripts/refresh-schemas.sh" >/dev/null
+fi
+
+if [ ! -f "$SCHEMA_PATH" ]; then
+	echo "Error: schema cache missing at $SCHEMA_PATH" >&2
+	exit 1
+fi
 
 printf 'Schema Validation Summary\n'
 printf 'Tool: %s\n' "$SCHEMA_LABEL"
