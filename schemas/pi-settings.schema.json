@@ -1,0 +1,292 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pi settings.json",
+  "description": "Agent Smith bundled Pi settings schema snapshot derived from the public Pi settings documentation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "defaultProvider": {
+      "type": "string",
+      "description": "Default provider (e.g., \"anthropic\", \"openai\")."
+    },
+    "defaultModel": {
+      "type": "string",
+      "description": "Default model ID."
+    },
+    "defaultThinkingLevel": {
+      "type": "string",
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh"],
+      "description": "Default thinking level."
+    },
+    "hideThinkingBlock": {
+      "type": "boolean",
+      "default": false,
+      "description": "Hide thinking blocks in output."
+    },
+    "thinkingBudgets": {
+      "type": "object",
+      "description": "Custom token budgets per thinking level.",
+      "additionalProperties": false,
+      "properties": {
+        "minimal": { "type": "number" },
+        "low": { "type": "number" },
+        "medium": { "type": "number" },
+        "high": { "type": "number" },
+        "xhigh": { "type": "number" }
+      }
+    },
+    "theme": {
+      "type": "string",
+      "default": "dark",
+      "description": "Theme name."
+    },
+    "quietStartup": {
+      "type": "boolean",
+      "default": false,
+      "description": "Hide startup header."
+    },
+    "collapseChangelog": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show condensed changelog after updates."
+    },
+    "enableInstallTelemetry": {
+      "type": "boolean",
+      "default": true,
+      "description": "Send an anonymous version/update ping after changelog-detected updates."
+    },
+    "doubleEscapeAction": {
+      "type": "string",
+      "enum": ["tree", "fork", "none"],
+      "default": "tree",
+      "description": "Action for double-escape."
+    },
+    "treeFilterMode": {
+      "type": "string",
+      "enum": ["default", "no-tools", "user-only", "labeled-only", "all"],
+      "default": "default",
+      "description": "Default filter for /tree."
+    },
+    "editorPaddingX": {
+      "type": "number",
+      "description": "Horizontal padding for input editor."
+    },
+    "autocompleteMaxVisible": {
+      "type": "number",
+      "description": "Max visible items in autocomplete dropdown."
+    },
+    "showHardwareCursor": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show terminal cursor."
+    },
+    "compaction": {
+      "type": "object",
+      "description": "Compaction settings.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "reserveTokens": {
+          "type": "number",
+          "default": 16384
+        },
+        "keepRecentTokens": {
+          "type": "number",
+          "default": 20000
+        }
+      }
+    },
+    "branchSummary": {
+      "type": "object",
+      "description": "Branch summary settings.",
+      "additionalProperties": false,
+      "properties": {
+        "reserveTokens": {
+          "type": "number",
+          "default": 16384
+        },
+        "skipPrompt": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "description": "Retry settings.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "maxRetries": {
+          "type": "number",
+          "default": 3
+        },
+        "baseDelayMs": {
+          "type": "number",
+          "default": 2000
+        },
+        "maxDelayMs": {
+          "type": "number",
+          "default": 60000
+        }
+      }
+    },
+    "steeringMode": {
+      "type": "string",
+      "enum": ["all", "one-at-a-time"],
+      "default": "one-at-a-time",
+      "description": "How steering messages are sent."
+    },
+    "followUpMode": {
+      "type": "string",
+      "enum": ["all", "one-at-a-time"],
+      "default": "one-at-a-time",
+      "description": "How follow-up messages are sent."
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["sse", "websocket", "auto"],
+      "default": "sse",
+      "description": "Preferred provider transport."
+    },
+    "terminal": {
+      "type": "object",
+      "description": "Terminal settings.",
+      "additionalProperties": false,
+      "properties": {
+        "showImages": {
+          "type": "boolean",
+          "default": true
+        },
+        "clearOnShrink": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "description": "Image handling settings.",
+      "additionalProperties": false,
+      "properties": {
+        "autoResize": {
+          "type": "boolean",
+          "default": true
+        },
+        "blockImages": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "shellPath": {
+      "type": "string",
+      "description": "Custom shell path."
+    },
+    "shellCommandPrefix": {
+      "type": "string",
+      "description": "Prefix for every bash command."
+    },
+    "npmCommand": {
+      "type": "array",
+      "description": "Command argv used for npm package lookup/install operations.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sessionDir": {
+      "type": "string",
+      "description": "Directory where session files are stored."
+    },
+    "enabledModels": {
+      "type": "array",
+      "description": "Model patterns for Ctrl+P cycling.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "markdown": {
+      "type": "object",
+      "description": "Markdown settings.",
+      "additionalProperties": false,
+      "properties": {
+        "codeBlockIndent": {
+          "type": "string",
+          "default": "  "
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "description": "npm/git packages to load resources from.",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": { "type": "string" },
+              "extensions": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "skills": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "prompts": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "themes": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["source"]
+          }
+        ]
+      }
+    },
+    "extensions": {
+      "type": "array",
+      "description": "Local extension file paths or directories.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Local skill file paths or directories.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prompts": {
+      "type": "array",
+      "description": "Local prompt template paths or directories.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "themes": {
+      "type": "array",
+      "description": "Local theme file paths or directories.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "enableSkillCommands": {
+      "type": "boolean",
+      "default": true,
+      "description": "Register skills as /skill:name commands."
+    }
+  }
+}

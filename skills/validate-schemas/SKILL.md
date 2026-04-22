@@ -1,6 +1,6 @@
 ---
 name: validate-schemas
-description: Validate the installed agent config against the latest official schema, surface new features to adopt, and flag deprecated config to remove. Use when asked to validate settings, check schema, update schemas, verify configuration files, or review config for new/deprecated options.
+description: Validate the installed agent config against the latest schema, surface new features to adopt, and flag deprecated config to remove. Use when asked to validate settings, check schema, update schemas, verify configuration files, or review config for new/deprecated options.
 ---
 
 # Validate Schemas
@@ -14,6 +14,7 @@ Refresh the active agent's schema cache, validate that agent's installed config 
 | Claude Code | `https://json.schemastore.org/claude-code-settings.json` | `~/.claude/settings.json`, `.claude/settings.json` |
 | Codex | `https://developers.openai.com/codex/config-schema.json` | `~/.codex/config.toml` |
 | OpenCode | `https://opencode.ai/config.json` | `~/.config/opencode/opencode.json` |
+| Pi | `bundled://schemas/pi-settings.schema.json` | `~/.pi/agent/settings.json`, `.pi/settings.json` |
 | Kilo Code | `https://app.kilo.ai/config.json` | `~/.config/opencode/opencode.json` |
 
 ## Process
@@ -22,12 +23,12 @@ Refresh the active agent's schema cache, validate that agent's installed config 
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/refresh-schemas.sh` and `scripts/validate-agent-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `opencode-plugin/package.json`, use the current repo root.
+- If the current repo already contains `scripts/refresh-schemas.sh` and `scripts/validate-agent-config.sh` plus `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `opencode-plugin/package.json`, or `.pi/extensions/agent-smith/index.ts`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 Resolve the initiating agent:
 
-- Use `claude` when running inside Claude Code, `codex` when running inside Codex, and `opencode` when running inside OpenCode.
+- Use `claude` when running inside Claude Code, `codex` when running inside Codex, `opencode` when running inside OpenCode, and `pi` when running inside Pi.
 - Unless the user explicitly asks for cross-agent validation, only inspect the initiating agent's config family.
 - Export `AGENT_SMITH_TOOL=<initiating-agent>` before running the helper scripts so they do not guess when both tools are installed.
 
@@ -39,7 +40,7 @@ Use the helper script first. It refreshes only the initiating agent's schema cac
 AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh"
 ```text
 
-For Codex, run the same command with `AGENT_SMITH_TOOL=codex`.
+For Codex, run the same command with `AGENT_SMITH_TOOL=codex`. For Pi, run it with `AGENT_SMITH_TOOL=pi`; Agent Smith uses the bundled Pi schema snapshot because Pi does not currently publish an official JSON schema.
 
 ### 3. Validate the installed config files
 
@@ -192,4 +193,4 @@ AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh"
 - After applying tuning suggestions from the analyze-config skill
 - When troubleshooting configuration issues
 - Periodically, to catch schema drift after tool updates
-- When a new version of Claude Code, Codex, or OpenCode is released
+- When a new version of Claude Code, Codex, OpenCode, or Pi is released

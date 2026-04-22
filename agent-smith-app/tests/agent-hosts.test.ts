@@ -19,8 +19,16 @@ describe("agent hosts", () => {
     expect(validateToolName("gemini")).toBe(true);
   });
 
+  test("validateToolName accepts pi", () => {
+    expect(validateToolName("pi")).toBe(true);
+  });
+
   test("detectTool accepts gemini from AGENT_SMITH_TOOL", () => {
     expect(detectTool(undefined, { AGENT_SMITH_TOOL: "gemini" }, "/tmp/repo")).toBe("gemini");
+  });
+
+  test("detectTool accepts pi from AGENT_SMITH_TOOL", () => {
+    expect(detectTool(undefined, { AGENT_SMITH_TOOL: "pi" }, "/tmp/repo")).toBe("pi");
   });
 
   test("gemini config candidates honor GEMINI_CLI_HOME and empty override falls back to HOME", () => {
@@ -74,5 +82,24 @@ describe("agent hosts", () => {
       "/tmp/home/.config/agent-smith/schemas/gemini-cli-settings.schema.json",
     );
     expect(agentCommand("gemini", "review config", "/tmp/repo", env)).toEqual([geminiPath, "-p", "review config"]);
+  });
+
+  test("pi uses the bundled schema cache path and prompt mode runner", () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "agent-smith-agent-hosts-"));
+    const binDir = join(sandbox, "bin");
+    tempDirs.push(sandbox);
+    mkdirSync(binDir, { recursive: true });
+    const piPath = join(binDir, "pi");
+    writeFileSync(piPath, "#!/bin/sh\nexit 0\n");
+    chmodSync(piPath, 0o755);
+
+    const env = {
+      HOME: "/tmp/home",
+      PATH: binDir,
+    } as NodeJS.ProcessEnv;
+
+    expect(schemaUrl("pi")).toBe("bundled://schemas/pi-settings.schema.json");
+    expect(schemaCachePath("pi", env)).toBe("/tmp/home/.config/agent-smith/schemas/pi-settings.schema.json");
+    expect(agentCommand("pi", "review config", "/tmp/repo", env)).toEqual([piPath, "-p", "review config"]);
   });
 });

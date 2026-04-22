@@ -16,7 +16,7 @@ AUTO_MODE=0
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|gemini|codex|opencode] [--sessions N] [--include-settings] [--auto]
+Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|gemini|codex|opencode|pi] [--sessions N] [--include-settings] [--auto]
 EOF
 }
 
@@ -114,6 +114,9 @@ codex)
 opencode)
 	AGENT_BIN="${AGENT_CLI_BIN:-opencode}"
 	;;
+pi)
+	AGENT_BIN="${AGENT_CLI_BIN:-pi}"
+	;;
 *)
 	echo "Error: unsupported tool '${TOOL}'" >&2
 	exit 1
@@ -142,5 +145,10 @@ codex)
 opencode)
 	# OpenCode uses `run` for one-shot execution with --dir to set the working directory.
 	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" run --dir "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
+	;;
+pi)
+	# Pi uses print mode for one-shot execution and picks up the repo-local .pi extension automatically.
+	cd "${PLUGIN_ROOT}"
+	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" -p "${COMMON_PROMPT}"
 	;;
 esac

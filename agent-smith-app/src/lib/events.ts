@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export type AgentTool = "claude" | "codex" | "opencode" | "unknown";
+export type AgentTool = "claude" | "gemini" | "codex" | "opencode" | "pi" | "unknown";
 
 export interface AgentSmithEvent {
   ts: string;

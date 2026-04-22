@@ -35,6 +35,8 @@ export function agentCommand(
       return [binary, "exec", "-C", repoRoot, prompt];
     case "opencode":
       return [binary, "run", "--dir", repoRoot, prompt];
+    case "pi":
+      return [binary, "-p", prompt];
   }
 }
 

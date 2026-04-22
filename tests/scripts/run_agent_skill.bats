@@ -95,6 +95,21 @@ EOF
 	[[ "$output" == *"--tool gemini"* ]]
 }
 
+@test "run-agent-skill dispatches Pi via non-interactive prompt mode" {
+	local fakebin
+	fakebin="$TEST_TMPDIR/fakebin"
+	create_fake_agent "$fakebin" fake-pi
+
+	run env PATH="$fakebin:$PATH" AGENT_CLI=fake-pi SESSIONS=40 \
+		bash "$PROJECT_ROOT/scripts/run-agent-skill.sh" analyze-config --tool pi
+
+	[ "$status" -eq 0 ]
+	[[ "$output" == -p\ * ]]
+	[[ "$output" == *"Use the analyze-config skill from the loaded plugin"* ]]
+	[[ "$output" == *"Use 40 sessions"* ]]
+	[[ "$output" == *"--tool pi"* ]]
+}
+
 @test "run-agent-skill dispatches upgrade-settings prompt" {
 	local fakebin
 	fakebin="$TEST_TMPDIR/fakebin"

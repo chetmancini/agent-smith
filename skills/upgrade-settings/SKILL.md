@@ -1,6 +1,6 @@
 ---
 name: upgrade-settings
-description: Refresh the latest official schema for the active agent, compare it against the installed config, and produce an implementation plan for new features to adopt or deprecated settings to remove. Use when asked to review schema updates, upgrade settings, leverage new schema features, deprecate old settings, or turn schema drift into an actionable implementation plan.
+description: Refresh the latest schema for the active agent, compare it against the installed config, and produce an implementation plan for new features to adopt or deprecated settings to remove. Use when asked to review schema updates, upgrade settings, leverage new schema features, deprecate old settings, or turn schema drift into an actionable implementation plan.
 ---
 
 # Upgrade Settings
@@ -11,12 +11,12 @@ Refresh the active agent schema, inspect the installed config against that schem
 
 Before running any scripts, resolve `AGENT_SMITH_ROOT`:
 
-- If the current repo already contains `scripts/refresh-schemas.sh`, `scripts/validate-agent-config.sh`, and one of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, or `opencode-plugin/package.json`, use the current repo root.
+- If the current repo already contains `scripts/refresh-schemas.sh`, `scripts/validate-agent-config.sh`, and one of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `opencode-plugin/package.json`, or `.pi/extensions/agent-smith/index.ts`, use the current repo root.
 - Otherwise, locate the installed Agent Smith plugin root first, then run all scripts from that path.
 
 ## Process
 
-1. Resolve the initiating agent: use `claude` inside Claude Code, `codex` inside Codex, and `opencode` inside OpenCode. Unless the user explicitly asks for cross-agent planning, only inspect that agent family.
+1. Resolve the initiating agent: use `claude` inside Claude Code, `codex` inside Codex, `opencode` inside OpenCode, and `pi` inside Pi. Unless the user explicitly asks for cross-agent planning, only inspect that agent family.
 2. Export `AGENT_SMITH_TOOL=<initiating-agent>` before invoking the helper scripts so they do not guess when multiple agents are installed.
 3. Refresh the latest schema with `bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh" --tool <initiating-agent>`.
 4. Validate the installed config with `bash "${AGENT_SMITH_ROOT}/scripts/validate-agent-config.sh" --tool <initiating-agent> --refresh` and capture the output.
@@ -25,6 +25,7 @@ Before running any scripts, resolve `AGENT_SMITH_ROOT`:
    - Claude Code: `~/.claude/settings.json`, `~/.claude/settings.local.json`, and repo-local `.claude/settings.json` when present
    - Codex: `~/.codex/config.toml`
    - OpenCode: `~/.config/opencode/opencode.json`
+   - Pi: `~/.pi/agent/settings.json` and repo-local `.pi/settings.json` when present
 7. Compare the current config against the latest schema and focus on:
    - new top-level keys or subkeys not currently configured
    - new enum values for fields the user already sets
@@ -71,6 +72,6 @@ Produce a report in this format:
 ## Guardrails
 
 - Keep the plan scoped to the initiating agent unless the user explicitly asks for a cross-agent comparison.
-- Do not suggest Claude-specific settings for Codex or OpenCode, and do not suggest Codex/OpenCode-only settings for Claude.
+- Do not suggest Claude-specific settings for Codex, OpenCode, or Pi, and do not suggest agent-specific settings outside the initiating agent family.
 - Prefer schema-backed recommendations over speculation.
 - If a key is merely available but not obviously useful from the current config, put it under `Investigate Later` instead of forcing an adoption recommendation.

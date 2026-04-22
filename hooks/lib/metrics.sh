@@ -87,7 +87,8 @@ restore_metrics_session_id() {
 		"${CLAUDE_SESSION_ID:-}" \
 		"${GEMINI_SESSION_ID:-}" \
 		"${CODEX_SESSION_ID:-}" \
-		"${OPENCODE_SESSION_ID:-}"; do
+		"${OPENCODE_SESSION_ID:-}" \
+		"${PI_SESSION_ID:-}"; do
 		if [ -n "$env_session_id" ]; then
 			METRICS_SESSION_ID=$(derive_session_id "$env_session_id")
 			export METRICS_SESSION_ID

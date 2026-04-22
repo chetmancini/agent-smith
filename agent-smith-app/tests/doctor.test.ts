@@ -56,8 +56,12 @@ describe("doctor", () => {
     mkdirSync(join(repoRoot, ".codex"), { recursive: true });
     mkdirSync(join(repoRoot, "hooks"), { recursive: true });
     mkdirSync(join(repoRoot, "gemini-extension", "hooks"), { recursive: true });
+    mkdirSync(join(repoRoot, ".pi", "extensions", "agent-smith"), { recursive: true });
     mkdirSync(join(repoRoot, "agent-smith-app"), { recursive: true });
     mkdirSync(join(repoRoot, "opencode-plugin"), { recursive: true });
+    mkdirSync(join(repoRoot, "commands"), { recursive: true });
+    mkdirSync(join(repoRoot, "schemas"), { recursive: true });
+    mkdirSync(join(repoRoot, "skills"), { recursive: true });
 
     writeJson(join(repoRoot, ".claude-plugin", "plugin.json"), {
       name: "agent-smith",
@@ -74,6 +78,8 @@ describe("doctor", () => {
     writeJson(join(repoRoot, "gemini-extension", "hooks", "hooks.json"), {
       hooks: {},
     });
+    writeFileSync(join(repoRoot, ".pi", "extensions", "agent-smith", "index.ts"), "export default function () {}\n");
+    writeFileSync(join(repoRoot, "commands", "analyze.md"), "# Analyze\n");
     writeJson(join(repoRoot, ".agents", "plugins", "marketplace.json"), {
       name: "agent-smith-local",
       plugins: [{ name: "agent-smith", source: { source: "local", path: "./" } }],
@@ -85,6 +91,11 @@ describe("doctor", () => {
     writeJson(join(repoRoot, "opencode-plugin", "package.json"), {
       name: "agent-smith-opencode",
     });
+    writeJson(join(repoRoot, "schemas", "pi-settings.schema.json"), {
+      type: "object",
+      properties: {},
+    });
+    writeFileSync(join(repoRoot, "skills", "SKILL.md"), "---\nname: test\ndescription: test\n---\n");
 
     env = {
       ...process.env,
@@ -100,7 +111,7 @@ describe("doctor", () => {
   test("skips hosts with no installed binaries", () => {
     const report = runDoctor({ repoRoot, env });
     expect(report.overallStatus).toBe("skip");
-    expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip", "skip"]);
+    expect(report.hosts.map((host) => host.status)).toEqual(["skip", "skip", "skip", "skip", "skip"]);
   });
 
   test("finds the repo root when invoked from a bundled dist directory", () => {
@@ -110,11 +121,12 @@ describe("doctor", () => {
     expect(findAgentSmithRepoRoot(distDir)).toBe(repoRoot);
   });
 
-  test("passes when Claude, Gemini, Codex, and OpenCode are configured", () => {
+  test("passes when Claude, Gemini, Codex, OpenCode, and Pi are configured", () => {
     writeExecutable(join(binDir, "claude"));
     writeExecutable(join(binDir, "gemini"));
     writeExecutable(join(binDir, "codex"));
     writeExecutable(join(binDir, "opencode"));
+    writeExecutable(join(binDir, "pi"));
 
     mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
     writeJson(join(home, ".claude", "plugins", "installed_plugins.json"), {
@@ -299,6 +311,15 @@ trust_level = "trusted"
     const report = runDoctor({ repoRoot: resolve(repoRoot), env });
     const opencode = report.hosts.find((host) => host.host === "opencode");
     expect(opencode?.status).toBe("pass");
+  });
+
+  test("passes Pi when the repo-local extension surface exists", () => {
+    writeExecutable(join(binDir, "pi"));
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const pi = report.hosts.find((host) => host.host === "pi");
+    expect(pi?.status).toBe("pass");
+    expect(pi?.checks.find((check) => check.id === "pi_repo_extension")?.status).toBe("pass");
   });
 
   test("cli doctor --json returns nonzero on failures", async () => {

@@ -23,7 +23,7 @@ while [ $# -gt 0 ]; do
 		;;
 	-h | --help)
 		cat <<'EOF'
-Usage: validate-agent-config.sh [--tool claude|gemini|codex|opencode] [--refresh]
+Usage: validate-agent-config.sh [--tool claude|gemini|codex|opencode|pi] [--refresh]
 
 Validate the active agent's installed config files against the cached schema.
 EOF
@@ -78,6 +78,14 @@ EOF
 	opencode)
 		if [ -f "${HOME}/.config/opencode/opencode.json" ]; then
 			printf '%s\n' "${HOME}/.config/opencode/opencode.json"
+		fi
+		;;
+	pi)
+		if [ -f "${HOME}/.pi/agent/settings.json" ]; then
+			printf '%s\n' "${HOME}/.pi/agent/settings.json"
+		fi
+		if [ -f "$(pwd)/.pi/settings.json" ]; then
+			printf '%s\n' "$(pwd)/.pi/settings.json"
 		fi
 		;;
 	esac

@@ -16,7 +16,7 @@ export interface DoctorCheck {
 }
 
 export interface DoctorHostResult {
-  host: "claude" | "gemini" | "codex" | "opencode";
+  host: "claude" | "gemini" | "codex" | "opencode" | "pi";
   binary: string;
   installed: boolean;
   binaryPath: string | null;
@@ -549,6 +549,64 @@ function detectOpenCode(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostRes
   };
 }
 
+function detectPi(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResult {
+  const binary = "pi";
+  const binaryPath = findBinary(binary, env);
+  if (!binaryPath) {
+    return makeSkipHost("pi", binary);
+  }
+
+  const repoExtension = join(repoRoot, ".pi", "extensions", "agent-smith", "index.ts");
+  const repoSchema = join(repoRoot, "schemas", "pi-settings.schema.json");
+  const repoCommands = join(repoRoot, "commands");
+  const repoSkills = join(repoRoot, "skills");
+
+  const checks: DoctorCheck[] = [
+    makeCheck(
+      "pi_repo_extension",
+      "Repo Pi extension",
+      existsSync(repoExtension),
+      `${repoExtension} exists`,
+      `${repoExtension} is missing`,
+    ),
+    makeCheck(
+      "pi_repo_schema",
+      "Bundled Pi settings schema",
+      existsSync(repoSchema),
+      `${repoSchema} exists`,
+      `${repoSchema} is missing`,
+    ),
+    makeCheck(
+      "pi_repo_commands",
+      "Repo Agent Smith prompts",
+      existsSync(repoCommands),
+      `${repoCommands} exists for Pi prompt discovery`,
+      `${repoCommands} is missing`,
+    ),
+    makeCheck(
+      "pi_repo_skills",
+      "Repo Agent Smith skills",
+      existsSync(repoSkills),
+      `${repoSkills} exists for Pi skill discovery`,
+      `${repoSkills} is missing`,
+    ),
+  ];
+
+  const status = combineStatuses(checks.map((check) => check.status));
+  return {
+    host: "pi",
+    binary,
+    installed: true,
+    binaryPath,
+    status,
+    summary:
+      status === "pass"
+        ? "Pi binary found and Agent Smith's repo-local Pi extension is ready"
+        : "Pi binary found, but the repo-local Agent Smith Pi extension surface is incomplete",
+    checks,
+  };
+}
+
 export function runDoctor(options?: { repoRoot?: string; env?: NodeJS.ProcessEnv }): DoctorReport {
   const env = options?.env ?? process.env;
   const repoRoot = options?.repoRoot ?? repoRootFromHere();
@@ -557,6 +615,7 @@ export function runDoctor(options?: { repoRoot?: string; env?: NodeJS.ProcessEnv
     detectGemini(repoRoot, env),
     detectCodex(repoRoot, env),
     detectOpenCode(repoRoot, env),
+    detectPi(repoRoot, env),
   ];
 
   const activeStatuses = hosts.filter((host) => host.installed).map((host) => host.status);
