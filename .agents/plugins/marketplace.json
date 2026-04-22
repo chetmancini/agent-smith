@@ -16,7 +16,7 @@
       },
       "category": "Coding",
       "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
-      "version": "0.5.2",
+      "version": "0.5.3",
       "author": {
         "name": "Chet Mancini",
         "url": "https://github.com/chetmancini"

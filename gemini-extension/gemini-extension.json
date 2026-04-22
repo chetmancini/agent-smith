@@ -1,6 +1,6 @@
 {
   "name": "agent-smith",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Hook-based Agent Smith integration for Gemini CLI. Records local session telemetry and reuses the existing shell-based feedback loop.",
   "contextFileName": "GEMINI.md"
 }

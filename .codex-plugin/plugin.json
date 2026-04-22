@@ -1,6 +1,6 @@
 {
   "name": "agent-smith",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Self-tuning feedback loop for Claude Code, Codex, and OpenCode. Collects session metrics, analyzes patterns, and produces tuning recommendations to improve agent reliability and autonomy.",
   "author": {
     "name": "Chet Mancini",
