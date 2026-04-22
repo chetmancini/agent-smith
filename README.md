@@ -391,6 +391,7 @@ npm publish
 ```bash
 # Run skills through any agent
 make agent-analyze TOOL=claude
+make agent-analyze TOOL=gemini
 make agent-validate-schemas TOOL=codex
 make agent-upgrade-settings TOOL=codex
 make agent-loop TOOL=opencode        # validate-schemas then analyze-config
@@ -408,7 +409,7 @@ make pre-push
 make install-git-hooks
 ```
 
-The Makefile keeps a single parameterized interface: use `TOOL=claude|codex|opencode` for the agent-backed `agent-*` targets, and `TOOL=claude|gemini|codex|opencode` for `refresh-schemas` and `validate-agent-config`.
+The Makefile keeps a single parameterized interface: use `TOOL=claude|gemini|codex|opencode` for the agent-backed `agent-*`, `refresh-schemas`, and `validate-agent-config` targets.
 
 ## License
 

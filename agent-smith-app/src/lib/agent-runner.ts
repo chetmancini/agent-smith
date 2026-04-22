@@ -29,6 +29,8 @@ export function agentCommand(
   switch (tool) {
     case "claude":
       return [binary, "--plugin-dir", repoRoot, "-p", prompt];
+    case "gemini":
+      return [binary, "-p", prompt];
     case "codex":
       return [binary, "exec", "-C", repoRoot, prompt];
     case "opencode":

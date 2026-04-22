@@ -16,7 +16,7 @@ AUTO_MODE=0
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|codex|opencode] [--sessions N] [--include-settings] [--auto]
+Usage: scripts/run-agent-skill.sh <analyze-config|validate-schemas|upgrade-settings|loop> [--tool claude|gemini|codex|opencode] [--sessions N] [--include-settings] [--auto]
 EOF
 }
 
@@ -105,6 +105,9 @@ case "${TOOL}" in
 claude)
 	AGENT_BIN="${AGENT_CLI_BIN:-claude}"
 	;;
+gemini)
+	AGENT_BIN="${AGENT_CLI_BIN:-gemini}"
+	;;
 codex)
 	AGENT_BIN="${AGENT_CLI_BIN:-codex}"
 	;;
@@ -125,14 +128,19 @@ fi
 case "${TOOL}" in
 claude)
 	# Claude needs the plugin directory injected explicitly for one-shot runs.
-	exec "${AGENT_BIN}" --plugin-dir "${PLUGIN_ROOT}" -p "${COMMON_PROMPT}"
+	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" --plugin-dir "${PLUGIN_ROOT}" -p "${COMMON_PROMPT}"
+	;;
+gemini)
+	# Gemini uses prompt mode for one-shot runs and relies on the repo cwd for project context.
+	cd "${PLUGIN_ROOT}"
+	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" -p "${COMMON_PROMPT}"
 	;;
 codex)
 	# Codex loads the local plugin manifest from the repo itself, so run in repo context.
-	exec "${AGENT_BIN}" exec -C "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
+	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" exec -C "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
 	;;
 opencode)
 	# OpenCode uses `run` for one-shot execution with --dir to set the working directory.
-	exec "${AGENT_BIN}" run --dir "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
+	AGENT_SMITH_TOOL="${TOOL}" exec "${AGENT_BIN}" run --dir "${PLUGIN_ROOT}" "${COMMON_PROMPT}"
 	;;
 esac
