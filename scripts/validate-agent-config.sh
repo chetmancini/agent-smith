@@ -9,6 +9,7 @@ source "${SCRIPT_DIR}/lib/agent-tool.sh"
 
 TOOL=""
 REFRESH=0
+MODELS_DEV_SCHEMA_PATH=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -38,19 +39,22 @@ done
 TOOL="$(agent_smith_detect_tool "$TOOL")"
 SCHEMA_PATH="$(agent_smith_schema_cache_path "$TOOL")"
 SCHEMA_LABEL="$(agent_smith_tool_label "$TOOL")"
+if [ "$TOOL" = "opencode" ]; then
+	MODELS_DEV_SCHEMA_PATH="$(agent_smith_models_dev_schema_cache_path)"
+fi
 
-if [ "$REFRESH" -eq 1 ] || [ ! -f "$SCHEMA_PATH" ]; then
+AJV_BIN=""
+if command -v ajv >/dev/null 2>&1; then
+	AJV_BIN="ajv"
+fi
+
+if [ "$REFRESH" -eq 1 ] || [ ! -f "$SCHEMA_PATH" ] || { [ -n "$AJV_BIN" ] && [ "$TOOL" = "opencode" ] && [ ! -f "$MODELS_DEV_SCHEMA_PATH" ]; }; then
 	AGENT_SMITH_TOOL="$TOOL" bash "${PLUGIN_ROOT}/scripts/refresh-schemas.sh" >/dev/null
 fi
 
 if [ ! -f "$SCHEMA_PATH" ]; then
 	echo "Error: schema cache missing at $SCHEMA_PATH" >&2
 	exit 1
-fi
-
-AJV_BIN=""
-if command -v ajv >/dev/null 2>&1; then
-	AJV_BIN="ajv"
 fi
 
 gather_config_files() {
@@ -156,15 +160,12 @@ PY
 	printf 'Parse: valid %s\n' "$parse_mode"
 
 	if [ -n "$AJV_BIN" ]; then
-		if [ "$TOOL" = "opencode" ]; then
-			if ajv validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec" -r "$(agent_smith_models_dev_schema_cache_path)" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
-				printf 'Schema check: valid (ajv)\n'
-			else
-				printf 'Schema check: invalid (ajv)\n'
-				sed 's/^/  /' /tmp/agent-smith-ajv.err
-				VALIDATION_STATUS=1
-			fi
-		elif ajv validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
+		ajv_args=(validate -s "$SCHEMA_PATH" -d "$tmp_json" --spec="$ajv_spec")
+		if [ "$TOOL" = "opencode" ] && [ -f "$MODELS_DEV_SCHEMA_PATH" ]; then
+			ajv_args+=(-r "$MODELS_DEV_SCHEMA_PATH")
+		fi
+
+		if ajv "${ajv_args[@]}" >/tmp/agent-smith-ajv.out 2>/tmp/agent-smith-ajv.err; then
 			printf 'Schema check: valid (ajv)\n'
 		else
 			printf 'Schema check: invalid (ajv)\n'

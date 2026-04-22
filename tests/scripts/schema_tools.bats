@@ -307,6 +307,82 @@ EOF
 	[[ "$output" == *"Schema check: valid (ajv)"* ]]
 }
 
+@test "validate-agent-config refreshes missing models.dev cache before OpenCode ajv" {
+	local home_dir schema_dir fakebin
+	home_dir="$TEST_TMPDIR/home"
+	schema_dir="$home_dir/.config/agent-smith/schemas"
+	fakebin="$TEST_TMPDIR/fakebin"
+
+	mkdir -p "$home_dir/.config/opencode" "$schema_dir" "$fakebin"
+	cat >"$home_dir/.config/opencode/opencode.json" <<'EOF'
+{
+  "model": "anthropic/claude-sonnet-4-6"
+}
+EOF
+	cat >"$schema_dir/opencode-config.schema.json" <<'EOF'
+{
+  "type": "object",
+  "properties": {
+    "model": { "$ref": "https://models.dev/model-schema.json#/$defs/Model" }
+  }
+}
+EOF
+	cat >"$fakebin/curl" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+url=""
+output=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o)
+		output="$2"
+		shift 2
+		;;
+	-f|-s|-S|-L)
+		shift
+		;;
+	*)
+		url="$1"
+		shift
+		;;
+	esac
+done
+
+	case "$url" in
+		https://opencode.ai/config.json)
+			cat >"$output" <<'JSON'
+{"type":"object","properties":{"model":{"$ref":"https://models.dev/model-schema.json#/$defs/Model"}}}
+JSON
+			;;
+		https://models.dev/model-schema.json)
+			cat >"$output" <<'JSON'
+{"$defs":{"Model":{"type":"string"}}}
+JSON
+			;;
+		*)
+		printf 'unexpected curl url: %s\n' "$url" >&2
+		exit 1
+		;;
+esac
+EOF
+	chmod 700 "$fakebin/curl"
+	cat >"$fakebin/ajv" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$@" > "${TMPDIR:-/tmp}/agent-smith-ajv-args.txt"
+exit 0
+EOF
+	chmod 700 "$fakebin/ajv"
+
+	run env HOME="$home_dir" PATH="$fakebin:$PATH" TMPDIR="$TEST_TMPDIR" bash "$PROJECT_ROOT/scripts/validate-agent-config.sh" --tool opencode
+
+	[ "$status" -eq 0 ]
+	[ -f "$schema_dir/models-dev-model.schema.json" ]
+	grep -F -- "-r" "$TEST_TMPDIR/agent-smith-ajv-args.txt"
+	grep -F -- "$schema_dir/models-dev-model.schema.json" "$TEST_TMPDIR/agent-smith-ajv-args.txt"
+	[[ "$output" == *"Schema check: valid (ajv)"* ]]
+}
+
 @test "validate-agent-config parses Claude settings files" {
 	local home_dir schema_dir project_dir
 	home_dir="$TEST_TMPDIR/home"
