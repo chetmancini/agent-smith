@@ -14,7 +14,10 @@ setup() {
 	run grep -F "| Slash commands | ✓ |  | ✓ | ✓ | ✓ |" "$PROJECT_ROOT/README.md"
 	[ "$status" -eq 0 ]
 
-	run grep -F "Pi support is project-local through the repo extension, with bundled schema validation and repo-scoped slash-command aliases." "$PROJECT_ROOT/README.md"
+	run grep -F "Pi support is project-local through the repo extension, with bundled schema validation and repo-scoped slash-command aliases" "$PROJECT_ROOT/README.md"
+	[ "$status" -eq 0 ]
+
+	run grep -F "Pi currently records context compression without the Claude/Gemini auto-vs-manual trigger split" "$PROJECT_ROOT/README.md"
 	[ "$status" -eq 0 ]
 }
 
