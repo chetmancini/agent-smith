@@ -103,15 +103,24 @@ function resolveConfiguredSource(settingsPath: string, source: string): string {
   return resolve(dirname(settingsPath), source);
 }
 
-function canonicalSource(settingsPath: string, repoRoot: string): string {
-  const relativeSource = relative(dirname(settingsPath), repoRoot).replaceAll("\\", "/");
+export function normalizePiPackageSource(relativeSource: string): string {
   if (relativeSource.length === 0) {
     return ".";
   }
-  if (relativeSource.startsWith(".")) {
+  if (
+    relativeSource.startsWith(".") ||
+    relativeSource.startsWith("/") ||
+    relativeSource.startsWith("//") ||
+    /^[A-Za-z]:\//.test(relativeSource)
+  ) {
     return relativeSource;
   }
   return `./${relativeSource}`;
+}
+
+function canonicalSource(settingsPath: string, repoRoot: string): string {
+  const relativeSource = relative(dirname(settingsPath), repoRoot).replaceAll("\\", "/");
+  return normalizePiPackageSource(relativeSource);
 }
 
 function looksLikeAgentSmithRepo(path: string): boolean {
