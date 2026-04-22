@@ -6,7 +6,7 @@
 >
 > ![Agent Smith poster](https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde)
 
-Agent configuration is hard, fragile, and always changing. Agent Smith outsources that tuning work to your agent: it gathers empirical data from watching real sessions and and recommends concrete changes to prompts, settings, and workflow.
+Agent configuration is hard, fragile, and always changing. Agent Smith outsources that tuning work to your agent: it gathers empirical data from watching real sessions and recommends concrete changes to prompts, settings, and workflow.
 
 Get a feedback loop based on how Claude Code, Codex, Gemini CLI, or OpenCode actually behave on your real work instead of guessing what might help.
 
