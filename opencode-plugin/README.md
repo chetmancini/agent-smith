@@ -58,7 +58,7 @@ Run analysis with:
 
 ```bash
 # From the agent-smith repo
-make opencode-analyze
+make agent-analyze TOOL=opencode
 ```
 
 Or use the `/agent-smith:analyze` slash command inside OpenCode.
