@@ -6,26 +6,37 @@
 >
 > ![Agent Smith poster](https://github.com/user-attachments/assets/401bb432-7be5-441a-8617-c1d1d2e52fde)
 
-A self-tuning feedback loop plugin for Claude Code, Gemini CLI, Codex, and OpenCode.
-Collects session metrics, analyzes patterns, and produces tuning
-recommendations to continuously improve agent reliability and autonomy.
+Agent configuration is hard, fragile, and always changing. Agent Smith outsources that tuning work to your agent: it gathers empirical data from watching real sessions and recommends concrete changes to prompts, settings, and workflow.
 
-## Quick Start
+Get a feedback loop based on how Claude Code, Codex, Gemini CLI, or OpenCode actually behave on your real work instead of guessing what might help.
 
-### Installation
+Agent Smith:
 
-**Claude Code:**
+- Collects hook and plugin telemetry from supported hosts
+- Pulls the latest configuration schemas
+- Emits events to a user-level SQLite database
+- Generates agent-backed analysis reports by agent or project
+- Helps apply safe config improvements and surfaces larger changes for review
+
+## Installation
+
+### Prerequisites
+
+- Bun `>=1.3.0`
+- `jq`
+- `sqlite3`
+- `python3`
+
+### Claude Code
 
 ```bash
 claude plugins marketplace add chetmancini/agent-smith
 claude plugins install agent-smith@agent-smith
-# local development
-claude --plugin-dir path/to/agent-smith
 ```
 
-**Codex:** Agent Smith now ships a repo marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) plus an install helper that lays down the personal marketplace entry, links the plugin source into `~/.codex/plugins/agent-smith`, enables `features.codex_hooks = true`, and trusts this checkout in `~/.codex/config.toml`.
+### Codex
 
-From a local clone:
+Install from a local clone:
 
 ```bash
 bun run ./agent-smith-app/src/cli.ts install-codex
@@ -37,37 +48,29 @@ Or:
 make codex-install
 ```
 
-That automates everything Agent Smith can safely write itself. One manual Codex step remains:
+Then:
 
 1. Restart Codex.
 2. Open the Plugin Directory.
 3. Choose your personal marketplace.
 4. Install `Agent Smith`.
-5. Run `make app-doctor` (or `bun run ./agent-smith-app/src/cli.ts doctor`).
+5. Run `make app-doctor`.
 
-Codex loads automatic hook telemetry from the repo-local [`.codex/hooks.json`](.codex/hooks.json) file, so the checkout still needs to stay trusted.
+The installer enables `features.codex_hooks = true`, links the plugin into `~/.codex/plugins/agent-smith`, and configures the personal marketplace entry. The checkout still needs to stay trusted so Codex can load the repo-local [`.codex/hooks.json`](.codex/hooks.json).
 
-```bash
-make agent-analyze TOOL=codex
-make agent-validate-schemas TOOL=codex
-make agent-upgrade-settings TOOL=codex
-```
+### Gemini CLI
 
-**Gemini CLI:** Agent Smith now ships a hook-based Gemini extension at [`gemini-extension/`](gemini-extension). It currently reuses the existing repo-root shell hooks and scripts, so treat it as a local-checkout integration for now.
-
-From a local clone:
+Gemini currently ships as a local-checkout hook extension:
 
 ```bash
 gemini extensions link ./gemini-extension
 ```
 
-That gives Gemini the existing shell-hook telemetry path without introducing the new native runtime.
+This reuses the shared repo-root shell hooks and scripts.
 
 ### OpenCode
 
-OpenCode uses the native TypeScript plugin:
-
-Add to your `opencode.json`:
+Add Agent Smith to `opencode.json`:
 
 ```json
 {
@@ -76,7 +79,7 @@ Add to your `opencode.json`:
 }
 ```
 
-Or from a local clone:
+For a local checkout instead of the published package:
 
 ```json
 {
@@ -84,283 +87,195 @@ Or from a local clone:
 }
 ```
 
-This is the supported OpenCode integration path and provides the full OpenCode-native telemetry surface.
+## Comparison Matrix
 
-### Prerequisites
+| Feature | Claude Code | Gemini CLI | Codex | OpenCode |
+| --- | :---: | :---: | :---: | :---: |
+| Session lifecycle | ✓ | ✓ | ✓ | ✓ |
+| Bash failure tracking | ✓ | ✓ | ✓ | ✓ |
+| Vague prompt guidance | ✓ | ✓ | ✓ | ✓ |
+| Rollup and analysis | ✓ | ✓ | ✓ | ✓ |
+| Schema validation | ✓ | ✓ | ✓ | ✓ |
+| Tool failures | ✓ | ✓ |  | ✓ |
+| Permission denials | ✓ | ✓ |  | ✓ |
+| Permission grants |  |  |  | ✓ |
+| Session errors |  |  |  | ✓ |
+| File-edited telemetry |  |  |  | ✓ |
+| Context compression | ✓ | ✓ |  | ✓ |
+| Edit-triggered test-loop detection | ✓ | ✓ |  | ✓ |
 
-- **Bun** `>=1.3.0` — required for the standalone app, the OpenCode plugin, and `make pre-push`
-- **jq** — `brew install jq`
-- **sqlite3** — ships with macOS
-- **python3** — for Codex TOML parsing during schema validation
+As of April 22, 2026, Codex still exposes a narrower hook surface than Claude Code. Gemini reaches the matrix above through the hook-based extension, while OpenCode reaches its richer telemetry surface through the native TypeScript plugin.
 
-### Usage
+## Using Agent Smith
 
-Claude Code starts collecting metrics as soon as its hook manifest loads. Gemini CLI starts collecting metrics after the local [`gemini-extension/`](gemini-extension) hook extension is linked. OpenCode starts collecting metrics when the native `agent-smith-opencode` plugin loads. In Codex, skills work after the plugin is installed from the marketplace, and automatic hook-based metrics collection works when `features.codex_hooks = true` and the repo-local [`.codex/hooks.json`](.codex/hooks.json) file is available in a trusted project.
+Claude Code, Codex, and OpenCode currently expose these slash commands:
 
-**Slash command** (inside Claude, Codex, and OpenCode today):
 ```text
 /agent-smith:analyze
 /agent-smith:analyze-fast
 /agent-smith:upgrade-settings
 ```
 
-Gemini currently ships the hook-based extension surface plus the shared shell scripts below. Command parity can come later.
+Gemini currently ships the hook extension plus the shared shell commands below. Slash-command parity can come later.
 
-**Manual scripts:**
+Useful commands:
+
 ```bash
-bash scripts/metrics-rollup.sh                          # Process events into SQLite
-bash scripts/analyze-config.sh --sessions 50             # Local raw report (default)
-bash scripts/analyze-config.sh --llm --sessions 50       # Agent-backed report for the active tool
-bash scripts/analyze-config.sh --llm --include-settings   # Include redacted settings snapshot
-bash scripts/refresh-schemas.sh                          # Refresh all schema caches
-bash scripts/refresh-schemas.sh --tool gemini            # Refresh only the Gemini CLI schema cache
-bash scripts/validate-agent-config.sh --tool gemini --refresh
+bash scripts/metrics-rollup.sh
+bash scripts/analyze-config.sh --sessions 50
+bash scripts/analyze-config.sh --llm --sessions 50
+bash scripts/refresh-schemas.sh
+bash scripts/validate-agent-config.sh --tool codex --refresh
+make agent-upgrade-settings TOOL=codex
+make app-doctor
 ```
 
-**Standalone TypeScript app** (new migration path):
+The standalone TypeScript CLI is the migration path for the shared runtime:
+
 ```bash
-make app-doctor
-make demo
-make app-cli APP_CMD=watch APP_ARGS='--tail 10'
-bun run ./agent-smith-app/src/cli.ts emit session_start --tool codex --session-id demo --metadata '{"cwd":"/tmp/project"}'
-bun run ./agent-smith-app/src/cli.ts rollup
+bun run ./agent-smith-app/src/cli.ts doctor
 bun run ./agent-smith-app/src/cli.ts report
 bun run ./agent-smith-app/src/cli.ts improve --tool codex
 bun run ./agent-smith-app/src/cli.ts loop --tool codex
-bun run ./agent-smith-app/src/cli.ts watch --tail 10
-bun run ./agent-smith-app/src/cli.ts demo
-bun run ./agent-smith-app/src/cli.ts install-codex
-bun run ./agent-smith-app/src/cli.ts doctor
-bun run ./agent-smith-app/src/cli.ts refresh-schemas --tool codex
-bun run ./agent-smith-app/src/cli.ts validate-agent-config --tool codex --refresh
-bun run ./agent-smith-app/src/cli.ts upgrade-settings --tool codex
 ```
-
-**Standalone app distribution checks:**
-```bash
-make app-build
-make app-compile
-make app-pack-check
-```
-
-**Schema validation** (refresh all schemas by default, validate one agent at a time):
-```bash
-bash scripts/refresh-schemas.sh
-bash scripts/validate-agent-config.sh --tool codex --refresh
-```
-
-**Schema upgrade planning** (scoped to the calling agent):
-```bash
-make agent-upgrade-settings TOOL=codex
-```
-
-Or ask your agent to use the `validate-schemas`, `upgrade-settings`, or `analyze-config` skills directly. The shell scripts remain available, but the Bun CLI now has native `refresh-schemas`, `validate-agent-config`/`validate-schemas`, and `upgrade-settings`/`update-settings` commands for the same workflow.
-
-### Configuration
-
-| Environment Variable | Default | Purpose |
-|---------------------|---------|---------|
-| `AGENT_METRICS_ENABLED` | `1` | Set to `0` to disable all metrics collection |
-| `METRICS_DIR` | `~/.config/agent-smith` | Where metrics data is stored |
-| `ANALYZE_THRESHOLD` | `50` | Sessions required before optional automatic analysis |
-| `AUTO_ANALYZE_ENABLED` | `0` | Set to `1` for background report generation |
-| `AUTO_ANALYZE_MODE` | `raw` | `raw` for local-only reports, `llm` for agent-backed analysis |
-| `AUTO_ANALYZE_INCLUDE_SETTINGS` | `0` | Set to `1` to include redacted settings in LLM prompts |
-
-## Support Matrix
-
-| Feature                            | Claude Code | Gemini CLI | Codex | OpenCode |
-|------------------------------------|:-----------:|:----------:|:-----:|:--------:|
-| Session lifecycle                  | ✓           | ✓          | ✓     | ✓        |
-| Bash failure tracking              | ✓           | ✓          | ✓     | ✓        |
-| Vague prompt guidance              | ✓           | ✓          | ✓     | ✓        |
-| Rollup & analysis                  | ✓           | ✓          | ✓     | ✓        |
-| Schema validation                  | ✓           | ✓          | ✓     | ✓        |
-| Tool failures                      | ✓           | ✓          |       | ✓        |
-| Permission denials                 | ✓           | ✓          |       | ✓        |
-| Permission grants                  |             |            |       | ✓        |
-| Session errors                     |             |            |       | ✓        |
-| File-edited telemetry              |             |            |       | ✓        |
-| Context compression                | ✓           | ✓          |       | ✓        |
-| Edit-triggered test-loop detection | ✓           | ✓          |       | ✓        |
-
-Schema validation and upgrade planning are available for all four agents. As of April 15, 2026, Codex still exposes a narrower hook surface than Claude Code, and Agent Smith only sees `Bash` in current Codex tool-scoped hooks. Gemini currently reaches the cells above through the hook-based extension, while OpenCode reaches its richer metric surface through the native npm plugin. Metrics are tagged by initiating agent, and analysis stays scoped per-agent.
 
 ## How It Works
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│  1. COLLECT                                             │
-│  Hooks emit metrics supported by the host agent:        │
-│  session lifecycle, vague prompts, bash failures,       │
-│  and, where available, tool failures,                   │
-│  permission denials, test loops, compact events         │
-│  → ~/.config/agent-smith/events.jsonl                   │
-└────────────────────────┬────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────┐
-│  2. ROLLUP                                              │
-│  JSONL events → SQLite database                         │
-│  Incremental, resumable, auto-rotating                  │
-│  → ~/.config/agent-smith/rollup.db                      │
-└────────────────────────┬────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────┐
-│  3. ANALYZE                                             │
-│  CLI runs default to a local raw report                 │
-│  /agent-smith:analyze defaults to agent-backed LLM      │
-│  → ~/.config/agent-smith/reports/<date>-analysis.md     │
-└────────────────────────┬────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────┐
-│  4. APPLY                                               │
-│  Auto-apply safe changes (prompt wording)               │
-│  Present structural changes for approval                │
-│  → settings files, commands, and agent instructions     │
-└─────────────────────────────────────────────────────────┘
+        +-----------+
+        |  COLLECT  |
+        | hooks and |
+        | plugins   |
+        +-----------+
+              |
+              v
+        +-----------+
+        | ROLL UP   |
+        | JSONL to  |
+        | SQLite    |
+        +-----------+
+              |
+              v
+        +-----------+
+        | ANALYZE   |
+        | raw or    |
+        | agent-led |
+        +-----------+
+              |
+              v
+        +-----------+
+        |  APPLY    |
+        | safe fixes|
+        | + review  |
+        +-----------+
+              |
+              v
+        +-----------+
+        |  BETTER   |
+        |  AGENT    |
+        |   LOOP    |
+        +-----------+
+              |
+              +--------------------+
+                                   |
+                                   v
+                              +-----------+
+                              |  COLLECT  |
+                              +-----------+
 ```
 
-Automatic analysis is disabled by default. You can opt in to background raw reports, or run analysis manually anytime. LLM-backed analysis is never run automatically unless you explicitly enable it.
+- Collect: hooks or plugins emit structured events into `~/.config/agent-smith/events.jsonl`.
+- Roll up: the event stream is ingested into `~/.config/agent-smith/rollup.db`.
+- Analyze: Agent Smith generates a raw local report or an agent-backed report in `~/.config/agent-smith/reports/`.
+- Apply: safe changes can be applied automatically; larger configuration or workflow changes stay reviewable.
 
-`make demo` now runs an isolated sandbox under `.context/full-loop-demo/`, simulates Claude working through a tiny Bun todo app, emits synthetic tool attempts and failures, rolls the stream into SQLite, generates report and improve artifacts, applies safe loop recommendations inside the sandbox repo, and keeps the watch open until you press `q`. Inside tmux it opens a side pane for the `Claude Working` log; outside tmux it falls back to the embedded pane in the TUI.
+The default CLI path produces a local raw report. The slash command `/agent-smith:analyze` defaults to the smarter agent-backed path. Automatic analysis is disabled by default.
 
-When `--include-settings` is enabled, Agent Smith redacts obvious secret-bearing keys (API keys, tokens, passwords, client secrets) before sending the settings snapshot to the active agent.
+When `--include-settings` is enabled for agent-backed analysis, Agent Smith redacts obvious secret-bearing keys before sending the settings snapshot to the active agent.
 
 ### What Gets Collected
 
-| Event | Hook | Trigger |
-|-------|------|---------|
-| `session_start` | SessionStart | Every session start |
-| `session_stop` | Claude: Stop; Gemini: AfterAgent | Per-turn end snapshot (with duration) |
-| `session_error` | OpenCode native plugin: `session.error` | OpenCode session crashes |
-| `tool_failure` | Claude: PostToolUseFailure; Gemini: AfterTool `run_shell_command`; OpenCode plugin: `tool.execute.after` | Tool errors (filters expected non-zero exits) |
-| `command_failure` | Claude: PostToolUseFailure; Gemini/Codex/OpenCode: post-tool shell payloads | Bash command failures |
-| `permission_denied` | Claude: PermissionRequest; Gemini: Notification `ToolPermission`; OpenCode plugin: `permission.replied` | Permission denials |
-| `permission_granted` | OpenCode plugin: `permission.replied` | Permission grants |
-| `file_edited` | OpenCode plugin: `file.edited` | File edit telemetry for compaction/test context |
-| `clarifying_question` | Claude: UserPromptSubmit; Gemini: BeforeAgent | Vague/ambiguous prompts detected |
-| `test_failure_loop` | Claude: PostToolUse; Gemini: AfterTool `write_file` or `replace`; OpenCode plugin: `tool.execute.after` | 3+ consecutive test failures after edits |
-| `context_compression` | Claude: PostCompact; Gemini: PreCompress; OpenCode plugin: `session.compacted` and `experimental.session.compacting` | Context compression |
+| Event | Typical trigger |
+| --- | --- |
+| `session_start` | Session begins |
+| `session_stop` | Turn or session ends |
+| `session_error` | OpenCode session crashes |
+| `tool_failure` | Tool execution fails |
+| `command_failure` | Shell command exits non-zero |
+| `permission_denied` | Permission request is denied |
+| `permission_granted` | OpenCode permission is granted |
+| `file_edited` | OpenCode edit telemetry fires |
+| `clarifying_question` | Prompt is vague or ambiguous |
+| `test_failure_loop` | Repeated test failures after edits |
+| `context_compression` | Host compacts or compresses context |
 
-Not every host agent exposes every hook above. Today Codex supports session lifecycle, vague prompt guidance, Bash failure tracking, rollup/analysis, and schema validation. Gemini CLI now covers session lifecycle, shell failures, permission prompts, edit-triggered test loops, vague prompt guidance, and compaction through the hook-based extension. Claude Code also exposes tool failures, permission denials, edit-triggered test loops, compact events, stop failures, tool attempts, and subagent lifecycle. OpenCode reaches its richer metric set through the native plugin.
+Not every host exposes every event. Metrics are tagged by initiating agent, and analysis stays scoped per agent.
 
-When the host includes structured Bash failure payloads, Agent Smith records the command, exit code, stderr/stdout snippets, and turn or tool-use ids alongside the failure event to keep `events.jsonl` actionable.
-
-All events are appended to `~/.config/agent-smith/events.jsonl` as structured JSONL with user-only file permissions.
+When the host provides structured shell-failure payloads, Agent Smith records command text, exit code, output snippets, and turn or tool identifiers so the raw event stream stays actionable.
 
 ### Session Cost
 
-Token usage and estimated USD cost are calculated during `metrics-rollup.sh`, not during hooks. The session-start hook persists the transcript path, and rollup reads transcripts to aggregate token counts. Cost is recalculated on each rollup run so mid-session runs capture partial progress. Results are written to the `sessions` table in `rollup.db`.
+Token usage and estimated USD cost are calculated during rollup, not during the hook itself. Session start stores the transcript path, and rollup re-reads transcripts so repeated runs can capture partial progress from an in-flight session.
 
-### Data Location
+## Data Location
 
 ```text
 ~/.config/agent-smith/
-├── events.jsonl          # Raw metric events (append-only)
-├── rollup.db             # SQLite database (queryable)
-├── reports/              # Analysis reports
-│   └── 2026-03-27-analysis.md
-├── .session_start_ts_*   # Temporary: per-session timing
-├── .cost_snapshot_*      # Temporary: per-session cost snapshots
-├── .transcript_paths     # Temporary: session→transcript mapping
-└── .test_fail_count_*    # Temporary: per-session consecutive test failures
+├── events.jsonl          # Raw metric events
+├── rollup.db             # SQLite rollup database
+├── reports/              # Generated analysis reports
+├── .session_start_ts_*   # Temporary timing files
+├── .cost_snapshot_*      # Temporary cost snapshots
+├── .transcript_paths     # Transcript lookup state
+└── .test_fail_count_*    # Consecutive test failure counters
 ```
 
 ## Development
 
-### Plugin Structure
+### Repo Layout
 
-```text
-agent-smith/
-├── agent-smith-app/
-│   ├── src/cli.ts                # Standalone TS CLI entrypoint
-│   ├── src/lib/rollup.ts         # JSONL -> SQLite ingestion
-│   ├── src/lib/report.ts         # Query/report helpers
-│   ├── src/lib/watch.ts          # Live watch foundation for future TUI
-│   └── tests/*.test.ts           # Bun test coverage for the new app
-├── .claude-plugin/plugin.json    # Claude Code manifest
-├── .codex-plugin/plugin.json     # Codex manifest
-├── gemini-extension/             # Gemini CLI hook-based extension
-├── .agents/plugins/marketplace.json # Codex repo marketplace
-├── .codex/
-│   └── hooks.json                # Codex repo-local hook registration
-├── hooks.json                    # Legacy Codex hook copy kept in sync with .codex/hooks.json
-├── assets/
-│   └── agent-smith.svg           # Codex plugin icon
-├── hooks/
-│   ├── hooks.json                # Claude Code hook registration
-│   ├── lib/metrics.sh            # Core metrics library
-│   ├── lib/common.sh             # Logging utilities
-│   ├── session-start.sh          # Session lifecycle
-│   ├── session-stop.sh
-│   ├── tool-failure.sh           # Error tracking
-│   ├── permission-denied.sh
-│   ├── vague-prompt.sh           # Prompt quality
-│   ├── test-result.sh            # Test loop detection
-│   ├── analyze-trigger.sh        # Auto-trigger analysis
-│   └── compact.sh                # Context compression
-├── scripts/
-│   ├── metrics-rollup.sh         # JSONL → SQLite
-│   ├── analyze-config.sh         # Metrics → Report
-│   ├── refresh-schemas.sh        # Refresh all schema caches or one selected tool
-│   ├── validate-agent-config.sh  # Validate current-agent config files
-│   └── lib/agent-tool.sh         # Current-agent detection helpers
-├── skills/
-│   ├── analyze-config/SKILL.md   # Analysis skill
-│   ├── upgrade-settings/SKILL.md # Schema-driven settings upgrade skill
-│   └── validate-schemas/SKILL.md # Schema validation skill
-├── commands/analyze.md           # /agent-smith:analyze
-├── commands/analyze-fast.md      # /agent-smith:analyze-fast
-├── commands/upgrade-settings.md  # /agent-smith:upgrade-settings
-└── tests/lib/metrics.bats        # BATS test suite
-```
+| Path | Purpose |
+| --- | --- |
+| `agent-smith-app/` | Standalone TypeScript CLI and shared runtime |
+| `.claude-plugin/` | Claude Code manifest |
+| `.codex-plugin/` | Codex manifest |
+| `gemini-extension/` | Gemini CLI extension |
+| `opencode-plugin/` | Native OpenCode plugin |
+| `.codex/hooks.json` | Repo-local Codex hook registration |
+| `hooks/` | Shared shell hook scripts and libraries |
+| `scripts/` | Rollup, analysis, schema, and helper scripts |
+| `commands/` | Slash-command prompts |
+| `skills/` | Agent Smith skills |
+| `tests/` | Bats and integration tests |
 
-The new `agent-smith-app/` package is where the unified TypeScript runtime can grow. For now it coexists with the shell scripts and OpenCode plugin rather than replacing them.
+### Maintainer Dependencies
 
-### Hook Registration
+- `bun` for the standalone app, the OpenCode plugin, and TypeScript checks
+- `bats` for the shell test suites
+- `jq` for JSON validation and release helpers
+- `shellcheck` for shell linting
+- `shfmt` for shell formatting checks
+- `markdownlint` for README, command, and skill docs
+- `gh` for GitHub release creation
 
-- Claude Code: [`hooks/hooks.json`](hooks/hooks.json)
-- Gemini CLI: [`gemini-extension/hooks/hooks.json`](gemini-extension/hooks/hooks.json)
-- Codex: repo-local [`.codex/hooks.json`](.codex/hooks.json)
-- OpenCode: native plugin entrypoint at [`opencode-plugin/src/index.ts`](opencode-plugin/src/index.ts)
+### Validation
 
-### Running Tests
-
-```bash
-brew install bats-core   # if needed
-make test
-# or
-bats --print-output-on-failure \
-  tests/lib/metrics.bats \
-  tests/hooks/security.bats \
-  tests/hooks/integration.bats \
-  tests/scripts/schema_tools.bats \
-  tests/scripts/run_agent_skill.bats \
-  tests/scripts/release.bats \
-  tests/scripts/codex_hook_layout.bats
-```
-
-### Local Validation Before Push
+Run this before pushing or updating a PR:
 
 ```bash
 make pre-push
 ```
 
-`make pre-push` installs Bun dependencies for the tracked TypeScript packages, then runs repo linting, formatter checks, type checks, the full test suite, and both package builds. This is the command agents should run before pushing or updating a PR.
-
-To block pushes automatically for this clone:
+To install the tracked git hook for this clone:
 
 ```bash
 make install-git-hooks
 ```
 
-That installs a shared git `pre-push` dispatcher which resolves the current worktree's tracked [`.githooks/pre-push`](.githooks/pre-push).
-
-### Linting
+Targeted local checks:
 
 ```bash
-brew install jq shellcheck shfmt
-npm install --global markdownlint-cli
+make test
 make lint
 make format-check
 make typecheck
