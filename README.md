@@ -48,9 +48,9 @@ That automates everything Agent Smith can safely write itself. One manual Codex 
 Codex loads automatic hook telemetry from the repo-local [`.codex/hooks.json`](.codex/hooks.json) file, so the checkout still needs to stay trusted.
 
 ```bash
-make codex-analyze
-make codex-validate-schemas
-make codex-upgrade-settings
+make agent-analyze TOOL=codex
+make agent-validate-schemas TOOL=codex
+make agent-upgrade-settings TOOL=codex
 ```
 
 **Gemini CLI:** Agent Smith now ships a hook-based Gemini extension at [`gemini-extension/`](gemini-extension). It currently reuses the existing repo-root shell hooks and scripts, so treat it as a local-checkout integration for now.
@@ -395,16 +395,6 @@ make agent-validate-schemas TOOL=codex
 make agent-upgrade-settings TOOL=codex
 make agent-loop TOOL=opencode        # validate-schemas then analyze-config
 
-# Ergonomic aliases
-make codex-refresh-schemas
-make codex-validate-agent-config
-make claude-analyze
-make codex-analyze
-make codex-validate-schemas
-make gemini-upgrade-settings
-make codex-upgrade-settings
-make opencode-loop
-
 # Override session window
 make agent-analyze TOOL=codex SESSIONS=100
 
@@ -418,7 +408,7 @@ make pre-push
 make install-git-hooks
 ```
 
-`TOOL=gemini` is supported by the shared shell helpers (`scripts/analyze-config.sh`, `scripts/refresh-schemas.sh`, and `scripts/validate-agent-config.sh`) plus the Gemini hook extension, and the Makefile now exposes the same alias pattern for Claude, Codex, Gemini, and OpenCode.
+The Makefile keeps a single parameterized interface: use `TOOL=claude|codex|opencode` for the agent-backed `agent-*` targets, and `TOOL=claude|gemini|codex|opencode` for `refresh-schemas` and `validate-agent-config`.
 
 ## License
 
