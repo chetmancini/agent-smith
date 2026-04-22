@@ -186,6 +186,11 @@ trust_level = "trusted"
       plugin: [resolve(repoRoot, "opencode-plugin")],
     });
 
+    mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+    writeJson(join(home, ".pi", "agent", "settings.json"), {
+      packages: [resolve(repoRoot)],
+    });
+
     const report = runDoctor({ repoRoot: resolve(repoRoot), env });
     expect(report.overallStatus).toBe("pass");
     expect(report.hosts.every((host) => host.status === "pass")).toBe(true);
@@ -315,11 +320,37 @@ trust_level = "trusted"
 
   test("passes Pi when the repo-local extension surface exists", () => {
     writeExecutable(join(binDir, "pi"));
+    mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+    writeJson(join(home, ".pi", "agent", "settings.json"), {
+      packages: [resolve(repoRoot)],
+    });
 
     const report = runDoctor({ repoRoot: resolve(repoRoot), env });
     const pi = report.hosts.find((host) => host.host === "pi");
     expect(pi?.status).toBe("pass");
     expect(pi?.checks.find((check) => check.id === "pi_repo_extension")?.status).toBe("pass");
+    expect(pi?.checks.find((check) => check.id === "pi_package_installed")?.status).toBe("pass");
+  });
+
+  test("fails Pi when settings point Agent Smith at another checkout", () => {
+    writeExecutable(join(binDir, "pi"));
+    const otherRepo = join(sandbox, "other-repo");
+    mkdirSync(join(otherRepo, ".pi", "extensions", "agent-smith"), { recursive: true });
+    mkdirSync(join(otherRepo, "agent-smith-app"), { recursive: true });
+    writeFileSync(join(otherRepo, ".pi", "extensions", "agent-smith", "index.ts"), "export default function () {}\n");
+    writeJson(join(otherRepo, "agent-smith-app", "package.json"), {
+      name: "agent-smith-app",
+    });
+
+    mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+    writeJson(join(home, ".pi", "agent", "settings.json"), {
+      packages: [otherRepo],
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const pi = report.hosts.find((host) => host.host === "pi");
+    expect(pi?.status).toBe("fail");
+    expect(pi?.checks.find((check) => check.id === "pi_package_installed")?.status).toBe("fail");
   });
 
   test("cli doctor --json returns nonzero on failures", async () => {
