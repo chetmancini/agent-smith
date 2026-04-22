@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-export type SupportedAgentTool = "claude" | "codex" | "opencode";
+export type SupportedAgentTool = "claude" | "gemini" | "codex" | "opencode";
 
 export interface SchemaMetadata {
   tool: SupportedAgentTool;
@@ -71,7 +71,7 @@ export function findBinary(binary: string, env: NodeJS.ProcessEnv = process.env)
 }
 
 export function validateToolName(tool: string): tool is SupportedAgentTool {
-  return tool === "claude" || tool === "codex" || tool === "opencode";
+  return tool === "claude" || tool === "gemini" || tool === "codex" || tool === "opencode";
 }
 
 export function toolConfigCandidates(
@@ -88,6 +88,8 @@ export function toolConfigCandidates(
         join(home, ".claude", "settings.local.json"),
         join(cwd, ".claude", "settings.json"),
       ];
+    case "gemini":
+      return [join(home, ".gemini", "settings.json"), join(cwd, ".gemini", "settings.json")];
     case "codex":
       return [join(home, ".codex", "config.toml")];
     case "opencode":
@@ -131,14 +133,14 @@ export function detectTool(
     throw new Error(`unsupported AGENT_SMITH_TOOL '${envTool}'`);
   }
 
-  const configuredTools = (["claude", "codex", "opencode"] as const).filter(
+  const configuredTools = (["claude", "gemini", "codex", "opencode"] as const).filter(
     (tool) => existingToolConfigs(tool, env, cwd).length > 0,
   );
   if (configuredTools.length === 1) {
     return configuredTools[0];
   }
 
-  const cliTools = (["claude", "codex", "opencode"] as const).filter((tool) => {
+  const cliTools = (["claude", "gemini", "codex", "opencode"] as const).filter((tool) => {
     return findBinary(tool, env) !== null;
   });
   if (cliTools.length === 1) {
@@ -146,7 +148,7 @@ export function detectTool(
   }
 
   throw new Error(
-    "unable to infer which agent to inspect. Set AGENT_SMITH_TOOL=claude, AGENT_SMITH_TOOL=codex, or AGENT_SMITH_TOOL=opencode.",
+    "unable to infer which agent to inspect. Set AGENT_SMITH_TOOL=claude, AGENT_SMITH_TOOL=gemini, AGENT_SMITH_TOOL=codex, or AGENT_SMITH_TOOL=opencode.",
   );
 }
 
@@ -154,6 +156,8 @@ export function schemaUrl(tool: SupportedAgentTool): string {
   switch (tool) {
     case "claude":
       return "https://json.schemastore.org/claude-code-settings.json";
+    case "gemini":
+      return "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/settings.schema.json";
     case "codex":
       return "https://developers.openai.com/codex/config-schema.json";
     case "opencode":
@@ -165,6 +169,8 @@ export function toolLabel(tool: SupportedAgentTool): string {
   switch (tool) {
     case "claude":
       return "Claude Code";
+    case "gemini":
+      return "Gemini CLI";
     case "codex":
       return "Codex";
     case "opencode":
@@ -177,6 +183,8 @@ export function schemaCachePath(tool: SupportedAgentTool, env: NodeJS.ProcessEnv
   switch (tool) {
     case "claude":
       return join(base, "claude-code-settings.schema.json");
+    case "gemini":
+      return join(base, "gemini-cli-settings.schema.json");
     case "codex":
       return join(base, "codex-config.schema.json");
     case "opencode":
@@ -193,6 +201,8 @@ export function schemaMetadataPath(tool: SupportedAgentTool, env: NodeJS.Process
   switch (tool) {
     case "claude":
       return join(base, "claude-code-settings.schema.metadata.json");
+    case "gemini":
+      return join(base, "gemini-cli-settings.schema.metadata.json");
     case "codex":
       return join(base, "codex-config.schema.metadata.json");
     case "opencode":
