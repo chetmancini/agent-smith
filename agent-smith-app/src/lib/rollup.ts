@@ -88,6 +88,16 @@ function getCurrentOffset(db: Database, eventsFile: string): number {
   return row?.byte_offset ?? 0;
 }
 
+function updateIngestionOffset(db: Database, eventsFile: string, nextOffset: number): void {
+  db.query(`
+    INSERT INTO ingestion_state (file_path, byte_offset)
+    VALUES (?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET
+      byte_offset = excluded.byte_offset,
+      last_ingested_at = datetime('now')
+  `).run(eventsFile, nextOffset);
+}
+
 function upsertDailyRollup(db: Database): void {
   db.exec(`
     UPDATE daily_rollup
@@ -108,6 +118,10 @@ export function rollupEvents(paths = resolvePaths()): RollupResult {
     const chunk = readEventsSince(paths.eventsFile, offset);
 
     if (chunk.events.length === 0 && chunk.skippedLines === 0) {
+      if (chunk.nextOffset !== offset) {
+        updateIngestionOffset(db, paths.eventsFile, chunk.nextOffset);
+        hardenPrivateFile(paths.dbFile);
+      }
       return {
         ingestedEvents: 0,
         skippedLines: 0,
@@ -163,14 +177,6 @@ export function rollupEvents(paths = resolvePaths()): RollupResult {
         project = COALESCE(sessions.project, excluded.project)
     `);
 
-    const updateOffset = db.query(`
-      INSERT INTO ingestion_state (file_path, byte_offset)
-      VALUES (?, ?)
-      ON CONFLICT(file_path) DO UPDATE SET
-        byte_offset = excluded.byte_offset,
-        last_ingested_at = datetime('now')
-    `);
-
     const transaction = db.transaction((events: AgentSmithEvent[]) => {
       for (const event of events) {
         const metadataJson = JSON.stringify(event.metadata);
@@ -210,7 +216,7 @@ export function rollupEvents(paths = resolvePaths()): RollupResult {
         );
       }
 
-      updateOffset.run(paths.eventsFile, chunk.nextOffset);
+      updateIngestionOffset(db, paths.eventsFile, chunk.nextOffset);
       upsertDailyRollup(db);
     });
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,18 @@ import { resolvePaths } from "../src/lib/paths";
 import { generateReport } from "../src/lib/report";
 import { rollupEvents } from "../src/lib/rollup";
 import { appendEvent } from "../src/lib/store";
+
+function readStoredOffset(dbFile: string, eventsFile: string): number | null {
+  const db = new Database(dbFile, { readonly: true });
+  try {
+    const row = db.query("SELECT byte_offset FROM ingestion_state WHERE file_path = ?").get(eventsFile) as {
+      byte_offset: number;
+    } | null;
+    return row?.byte_offset ?? null;
+  } finally {
+    db.close();
+  }
+}
 
 describe("rollup and report", () => {
   let metricsDir: string;
@@ -123,6 +136,34 @@ describe("rollup and report", () => {
     const result = rollupEvents(paths);
     expect(result.ingestedEvents).toBe(1);
     expect(result.skippedLines).toBe(0);
+  });
+
+  test("rollup persists offset reset when events file is truncated without new events", () => {
+    const paths = resolvePaths(process.env);
+
+    appendEvent(
+      paths,
+      createEvent({
+        eventType: "session_start",
+        tool: "codex",
+        sessionId: "session-a",
+        metadata: { cwd: "/tmp/project-a" },
+      }),
+    );
+
+    const initial = rollupEvents(paths);
+    expect(initial.ingestedEvents).toBe(1);
+    expect(readStoredOffset(paths.dbFile, paths.eventsFile)).toBe(initial.nextOffset);
+
+    writeFileSync(paths.eventsFile, "");
+
+    const reset = rollupEvents(paths);
+    expect(reset).toEqual({
+      ingestedEvents: 0,
+      skippedLines: 0,
+      nextOffset: 0,
+    });
+    expect(readStoredOffset(paths.dbFile, paths.eventsFile)).toBe(0);
   });
 
   test("project-filtered reports derive session coverage from matching events", () => {
