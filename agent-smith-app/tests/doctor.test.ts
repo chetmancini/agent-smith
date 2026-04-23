@@ -210,6 +210,22 @@ trust_level = "trusted"
     expect(gemini?.checks.find((check) => check.id === "gemini_extension_installed")?.status).toBe("fail");
   });
 
+  test("checks Gemini extension state under GEMINI_CLI_HOME", () => {
+    writeExecutable(join(binDir, "gemini"));
+    const geminiHome = join(sandbox, "custom-gemini-home");
+    env.GEMINI_CLI_HOME = geminiHome;
+    mkdirSync(join(geminiHome, "extensions", "agent-smith"), { recursive: true });
+    writeJson(join(geminiHome, "extensions", "agent-smith", ".gemini-extension-install.json"), {
+      source: resolve(repoRoot, "gemini-extension"),
+      type: "link",
+    });
+
+    const report = runDoctor({ repoRoot: resolve(repoRoot), env });
+    const gemini = report.hosts.find((host) => host.host === "gemini");
+    expect(gemini?.status).toBe("pass");
+    expect(gemini?.checks.find((check) => check.id === "gemini_extension_installed")?.status).toBe("pass");
+  });
+
   test("fails Claude when the repo hooks file is missing", () => {
     writeExecutable(join(binDir, "claude"));
     rmSync(join(repoRoot, "hooks", "hooks.json"));

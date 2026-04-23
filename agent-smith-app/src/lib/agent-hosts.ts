@@ -52,6 +52,12 @@ export function homeDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.HOME ?? homedir();
 }
 
+export function geminiHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return typeof env.GEMINI_CLI_HOME === "string" && env.GEMINI_CLI_HOME.length > 0
+    ? env.GEMINI_CLI_HOME
+    : join(homeDir(env), ".gemini");
+}
+
 export function findBinary(binary: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const pathValue = env.PATH ?? "";
   for (const entry of pathValue.split(":")) {
@@ -83,10 +89,6 @@ export function toolConfigCandidates(
   cwd = process.cwd(),
 ): string[] {
   const home = homeDir(env);
-  const geminiHome =
-    typeof env.GEMINI_CLI_HOME === "string" && env.GEMINI_CLI_HOME.length > 0
-      ? env.GEMINI_CLI_HOME
-      : join(home, ".gemini");
 
   switch (tool) {
     case "claude":
@@ -96,7 +98,7 @@ export function toolConfigCandidates(
         join(cwd, ".claude", "settings.json"),
       ];
     case "gemini":
-      return [join(geminiHome, "settings.json"), join(cwd, ".gemini", "settings.json")];
+      return [join(geminiHomeDir(env), "settings.json"), join(cwd, ".gemini", "settings.json")];
     case "codex":
       return [join(home, ".codex", "config.toml")];
     case "opencode":

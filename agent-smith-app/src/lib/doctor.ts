@@ -2,7 +2,7 @@ import { accessSync, existsSync, readFileSync, statSync } from "node:fs";
 import { constants } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import { repoRootFromHere } from "./agent-hosts";
+import { geminiHomeDir, repoRootFromHere } from "./agent-hosts";
 import { codexPluginInstalledInCache, personalMarketplaceHasAgentSmith } from "./codex-install";
 import { inspectPiInstall } from "./pi-install";
 import { createTerminalTheme, type TerminalTheme } from "./terminal-theme";
@@ -446,10 +446,9 @@ function detectGemini(repoRoot: string, env: NodeJS.ProcessEnv): DoctorHostResul
     return makeSkipHost("gemini", binary);
   }
 
-  const home = homeDir(env);
   const repoManifest = join(repoRoot, "gemini-extension", "gemini-extension.json");
   const repoHooks = join(repoRoot, "gemini-extension", "hooks", "hooks.json");
-  const installPath = join(home, ".gemini", "extensions", "agent-smith", ".gemini-extension-install.json");
+  const installPath = join(geminiHomeDir(env), "extensions", "agent-smith", ".gemini-extension-install.json");
   const installCheck = geminiExtensionConfigured(installPath, readJson(installPath), repoRoot);
 
   const checks: DoctorCheck[] = [
