@@ -7,17 +7,19 @@ AGENT_CLI ?=
 MARKDOWNLINT ?= markdownlint
 SHELLCHECK ?= shellcheck
 SHFMT ?= shfmt
+ACTIONLINT ?= actionlint
 SESSIONS ?= 50
 TOOL ?=
 HELP_ASCII ?= 1
 HELP_HEADER ?= assets/agent-smith-ascii-cp-437.txt
 APP_BUN ?= bun
+NPM_CONFIG_CACHE ?= /tmp/agent-smith-npm-cache
 APP_CMD ?=
 APP_ARGS ?=
 TOOL_ARG := $(if $(TOOL),--tool $(TOOL),)
 VERSION ?=
 
-.PHONY: help quick-help _help deps app-install opencode-install shell-test test release-test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install pi-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop
+.PHONY: help quick-help _help deps app-install opencode-install shell-test test release-test app-test opencode-test app-format app-lint format-check typecheck app-typecheck opencode-typecheck build app-build opencode-build app-compile app-pack-check actionlint lint pre-push install-git-hooks version sync-version set-version release app-cli app-doctor demo refresh-schemas validate-agent-config codex-install pi-install agent-analyze agent-validate-schemas agent-upgrade-settings agent-loop
 
 help:
 	@$(MAKE) --no-print-directory _help HELP_MODE=full
@@ -97,6 +99,7 @@ _help:
 		print_row "make app-test" "Run the standalone Agent Smith app test suite"; \
 		print_row "make opencode-test" "Run the OpenCode plugin test suite"; \
 		print_row "make lint" "Run the local lint suite used in CI"; \
+		print_row "make actionlint" "Lint GitHub Actions workflows"; \
 		print_row "make format-check" "Run formatter checks for the standalone app"; \
 		print_row "make app-format" "Apply the standalone app formatter"; \
 		print_row "make app-lint" "Run the standalone app linter"; \
@@ -179,7 +182,7 @@ demo:
 	cd agent-smith-app && $(APP_BUN) run src/cli.ts demo $(APP_ARGS)
 
 app-pack-check:
-	cd agent-smith-app && $(APP_BUN) run pack:check
+	cd agent-smith-app && NPM_CONFIG_CACHE="$(NPM_CONFIG_CACHE)" $(APP_BUN) run pack:check
 
 format-check:
 	@$(MAKE) app-format
@@ -202,6 +205,10 @@ lint:
 	$(SHELLCHECK) -x -P SCRIPTDIR hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(SHFMT) -d hooks/*.sh hooks/lib/*.sh scripts/*.sh scripts/lib/*.sh tests/setup_suite.bash
 	$(MARKDOWNLINT) README.md commands/**/*.md skills/**/*.md
+	@$(MAKE) actionlint
+
+actionlint:
+	$(ACTIONLINT)
 
 typecheck:
 	@$(MAKE) app-typecheck
@@ -221,6 +228,7 @@ pre-push:
 	@$(MAKE) typecheck
 	@$(MAKE) test
 	@$(MAKE) build
+	@$(MAKE) app-pack-check
 
 install-git-hooks:
 	"$(SHELL)" scripts/install-git-hooks.sh
