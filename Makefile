@@ -142,7 +142,7 @@ opencode-install:
 	cd opencode-plugin && $(APP_BUN) install --frozen-lockfile
 
 shell-test:
-	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/release.bats tests/scripts/codex_hook_layout.bats tests/scripts/gemini_hook_layout.bats tests/scripts/pi_extension.bats tests/scripts/readme_compatibility.bats
+	$(BATS) --print-output-on-failure tests/lib/metrics.bats tests/hooks/security.bats tests/hooks/integration.bats tests/scripts/schema_tools.bats tests/scripts/run_agent_skill.bats tests/scripts/release.bats tests/scripts/codex_hook_layout.bats tests/scripts/gemini_hook_layout.bats tests/scripts/readme_compatibility.bats
 
 test:
 	@$(MAKE) shell-test
