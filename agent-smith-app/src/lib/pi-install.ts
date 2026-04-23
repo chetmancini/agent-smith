@@ -104,22 +104,23 @@ function resolveConfiguredSource(settingsPath: string, source: string): string {
 }
 
 export function normalizePiPackageSource(relativeSource: string): string {
-  if (relativeSource.length === 0) {
+  const source = relativeSource.replaceAll("\\", "/");
+  if (source.length === 0) {
     return ".";
   }
   if (
-    relativeSource.startsWith(".") ||
-    relativeSource.startsWith("/") ||
-    relativeSource.startsWith("//") ||
-    /^[A-Za-z]:\//.test(relativeSource)
+    source.startsWith(".") ||
+    source.startsWith("/") ||
+    source.startsWith("//") ||
+    /^[A-Za-z]:\//.test(source)
   ) {
-    return relativeSource;
+    return source;
   }
-  return `./${relativeSource}`;
+  return `./${source}`;
 }
 
 function canonicalSource(settingsPath: string, repoRoot: string): string {
-  const relativeSource = relative(dirname(settingsPath), repoRoot).replaceAll("\\", "/");
+  const relativeSource = relative(dirname(settingsPath), repoRoot);
   return normalizePiPackageSource(relativeSource);
 }
 

@@ -7,8 +7,16 @@ describe("pi install", () => {
     expect(normalizePiPackageSource("C:/repo/agent-smith")).toBe("C:/repo/agent-smith");
   });
 
+  test("preserves absolute Windows drive paths with backslashes", () => {
+    expect(normalizePiPackageSource("C:\\repo\\agent-smith")).toBe("C:/repo/agent-smith");
+  });
+
   test("preserves absolute UNC paths", () => {
     expect(normalizePiPackageSource("//server/share/agent-smith")).toBe("//server/share/agent-smith");
+  });
+
+  test("preserves absolute UNC paths with backslashes", () => {
+    expect(normalizePiPackageSource("\\\\server\\share\\agent-smith")).toBe("//server/share/agent-smith");
   });
 
   test("prefixes bare relative paths", () => {
