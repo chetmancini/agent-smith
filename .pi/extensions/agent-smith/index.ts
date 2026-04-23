@@ -56,7 +56,7 @@ function registerAliasCommand(pi: ExtensionAPI, commandName: string, targetPromp
     description: `Run Agent Smith ${targetPrompt} through Pi`,
     handler: async (args) => {
       const suffix = args.trim().length > 0 ? ` ${args.trim()}` : "";
-      pi.sendUserMessage(`/${targetPrompt}${suffix}`);
+      pi.sendUserMessage(`/${commandName}${suffix}`);
     },
   });
 }

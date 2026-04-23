@@ -104,6 +104,7 @@ jobs:
             tests/scripts/release.bats \
             tests/scripts/codex_hook_layout.bats \
             tests/scripts/gemini_hook_layout.bats \
+            tests/scripts/pi_extension.bats \
             tests/scripts/readme_compatibility.bats
 
   app-checks:
