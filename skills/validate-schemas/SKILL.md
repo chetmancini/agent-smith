@@ -38,7 +38,7 @@ Use the helper script first. It refreshes only the initiating agent's schema cac
 
 ```bash
 AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/refresh-schemas.sh"
-```text
+```
 
 For Codex, run the same command with `AGENT_SMITH_TOOL=codex`. For Pi, run it with `AGENT_SMITH_TOOL=pi`; Agent Smith uses the bundled Pi schema snapshot because Pi does not currently publish an official JSON schema.
 
@@ -48,7 +48,7 @@ Run the helper script next:
 
 ```bash
 AGENT_SMITH_TOOL=claude bash "${AGENT_SMITH_ROOT}/scripts/validate-agent-config.sh" --refresh
-```text
+```
 
 The helper script:
 
@@ -67,7 +67,7 @@ ajv validate -s schema.json -d settings.json --spec=draft7
 
 # Validate Codex config after converting TOML to JSON (Draft 2020-12)
 ajv validate -s schema.json -d config.json --spec=draft2020
-```text
+```
 
 **Manual validation** (fallback): If AJV is not available or the helper reports a schema-diff fallback, read the cached schema and the initiating agent's config files. Check:
 - All required fields are present
