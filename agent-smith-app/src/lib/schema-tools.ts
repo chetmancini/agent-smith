@@ -189,14 +189,7 @@ function validateWithAjv(
 ): { status: SchemaValidationStatus; details: string[] } {
   const runner = runtime.runAjv ?? defaultRunAjv;
   const env = runtime.env ?? process.env;
-  const args = [
-    "validate",
-    "-s",
-    schemaPath,
-    "-d",
-    configPath,
-    `--spec=${ajvSchemaSpec(tool)}`,
-  ];
+  const args = ["validate", "-s", schemaPath, "-d", configPath, `--spec=${ajvSchemaSpec(tool)}`];
   if (tool === "opencode") {
     args.push("-r", modelsDevSchemaCachePath(env));
   }

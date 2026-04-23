@@ -108,12 +108,7 @@ export function normalizePiPackageSource(relativeSource: string): string {
   if (source.length === 0) {
     return ".";
   }
-  if (
-    source.startsWith(".") ||
-    source.startsWith("/") ||
-    source.startsWith("//") ||
-    /^[A-Za-z]:\//.test(source)
-  ) {
+  if (source.startsWith(".") || source.startsWith("/") || source.startsWith("//") || /^[A-Za-z]:\//.test(source)) {
     return source;
   }
   return `./${source}`;
