@@ -102,6 +102,18 @@ export interface UpgradeSettingsReport {
   summary: string;
 }
 
+function ajvSchemaSpec(tool: SupportedAgentTool): "draft7" | "draft2020" {
+  switch (tool) {
+    case "codex":
+    case "gemini":
+      return "draft2020";
+    case "claude":
+    case "opencode":
+    case "pi":
+      return "draft7";
+  }
+}
+
 function schemaProperties(schema: SchemaDocument): Record<string, SchemaProperty> {
   if (!schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)) {
     return {};
@@ -172,7 +184,6 @@ function formatAjvDetails(result: AjvRunResult): string[] {
 function validateWithAjv(
   schemaPath: string,
   configPath: string,
-  parseMode: SchemaConfigParseMode,
   tool: SupportedAgentTool,
   runtime: SchemaToolRuntime,
 ): { status: SchemaValidationStatus; details: string[] } {
@@ -184,7 +195,7 @@ function validateWithAjv(
     schemaPath,
     "-d",
     configPath,
-    `--spec=${parseMode === "toml" ? "draft2020" : "draft7"}`,
+    `--spec=${ajvSchemaSpec(tool)}`,
   ];
   if (tool === "opencode") {
     args.push("-r", modelsDevSchemaCachePath(env));
@@ -321,7 +332,7 @@ export async function validateAgentConfig(
         writeFileSync(ajvConfigPath, `${JSON.stringify(parsed.value, null, 2)}\n`);
       }
 
-      const schemaCheck = validateWithAjv(schemaPath, ajvConfigPath, parsed.parseMode, tool, options);
+      const schemaCheck = validateWithAjv(schemaPath, ajvConfigPath, tool, options);
       results.push({
         configPath,
         parseMode: parsed.parseMode,

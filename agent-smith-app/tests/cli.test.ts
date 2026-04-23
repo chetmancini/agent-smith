@@ -691,6 +691,43 @@ printf '%s\n' '{"summary":"Use Codex-specific reasoning output.","recommendation
     expect(ajvCalls[0]).toContain(join(homeDir, ".config", "agent-smith", "schemas", "models-dev-model.schema.json"));
   });
 
+  test("validate-schemas uses draft2020 for Gemini JSON configs", async () => {
+    mkdirSync(join(homeDir, ".gemini"), { recursive: true });
+    mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
+      recursive: true,
+    });
+    writeFileSync(join(homeDir, ".gemini", "settings.json"), '{ "model": "gemini-3-pro" }\n');
+    writeFileSync(
+      join(homeDir, ".config", "agent-smith", "schemas", "gemini-cli-settings.schema.json"),
+      JSON.stringify({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        type: "object",
+        properties: {
+          model: { type: "string" },
+        },
+      }),
+    );
+
+    const ajvCalls: string[][] = [];
+    const { io, getStdout } = createIo();
+    const exitCode = await runCli(["validate-schemas", "--tool", "gemini"], io, {
+      schema: {
+        env: { ...process.env, HOME: homeDir, PATH: "" },
+        cwd: repoDir,
+        runAjv: (args) => {
+          ajvCalls.push(args);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(getStdout()).toContain("Tool: Gemini CLI");
+    expect(ajvCalls).toHaveLength(1);
+    expect(ajvCalls[0]).toContain("--spec=draft2020");
+    expect(ajvCalls[0]).not.toContain("--spec=draft7");
+  });
+
   test("update-settings alias returns a deterministic upgrade plan from native schema logic", async () => {
     mkdirSync(join(homeDir, ".codex"), { recursive: true });
     mkdirSync(join(homeDir, ".config", "agent-smith", "schemas"), {
