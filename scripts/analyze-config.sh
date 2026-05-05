@@ -857,6 +857,7 @@ CONFIG_FILE_MAPPING=$(
 Use these mappings when suggesting changes:
 - Hook timeout issues -> settings.json (hooks section)
 - Permission denials -> settings.json (permissions.allow)
+- Repeated auto-mode denials (same tool_name + reason) -> settings.json (permissions.allow). For Bash, prefer command-prefix patterns like `Bash(git status:*)` over a blanket `Bash`. Treat as Requires Approval.
 - Test strategy issues -> custom commands or CLAUDE.md instructions
 - Vague prompt handling -> custom commands, CLAUDE.md instructions
 - Model/effort issues -> settings.json (model, effortLevel)
@@ -959,6 +960,9 @@ $FAILURE_EXAMPLES
 ### Permission Denials
 $PERMISSION_DENIALS
 
+### Auto-Mode Permission Denials
+$AUTO_PERMISSION_DENIALS
+
 ### Permission Grants
 $PERMISSION_GRANTS
 
@@ -1029,6 +1033,8 @@ For each:
 - **Proposed**: what to change
 - **Risk**: what could go wrong
 - **Rationale**: metrics-based justification
+
+For permissions.allow proposals derived from Auto-Mode Permission Denials, also include: the proposed allow string (e.g. \`Bash(git status:*)\`), the source \`(tool_name, reason)\` pair, and the observed \`denial_count\` and \`sessions_affected\` from the metrics block.
 
 ## Metrics Snapshot
 Key numbers table for historical tracking.

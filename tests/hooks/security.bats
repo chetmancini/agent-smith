@@ -633,3 +633,39 @@ EOF
     grep -q -- '--auto' "$prompt_capture"
     grep -q -- '--include-settings' "$prompt_capture"
 }
+
+@test "llm prompt includes auto-mode permission denials and allowlist guidance" {
+    local metrics_dir db_file fakebin marker prompt_capture home_dir
+    metrics_dir="$TEST_TMPDIR/metrics"
+    db_file="$metrics_dir/rollup.db"
+    fakebin="$TEST_TMPDIR/fakebin"
+    marker="$TEST_TMPDIR/claude_called"
+    prompt_capture="$TEST_TMPDIR/prompt.txt"
+    home_dir="$TEST_TMPDIR/home"
+
+    create_metrics_db "$db_file"
+    create_fake_llm_cli "$fakebin" claude "$marker" "$prompt_capture"
+    mkdir -p "$home_dir/.claude"
+
+    sqlite3 "$db_file" "
+        INSERT INTO sessions (session_id, tool, started_at, stopped_at, duration_seconds, stop_reason, event_count, cwd)
+        VALUES ('session-2', 'claude', '2026-03-27T01:00:00Z', '2026-03-27T01:05:00Z', 300, 'completed', 1, '/tmp/project');
+        INSERT INTO events (ts, tool, session_id, event_type, metadata)
+        VALUES
+            ('2026-03-27T00:02:00Z', 'claude', 'session-1', 'permission_auto_denied',
+             '{\"tool_name\":\"Bash\",\"reason\":\"not in allowlist\"}'),
+            ('2026-03-27T01:02:00Z', 'claude', 'session-2', 'permission_auto_denied',
+             '{\"tool_name\":\"Bash\",\"reason\":\"not in allowlist\"}');
+    "
+
+    run env PATH="$fakebin:$PATH" HOME="$home_dir" METRICS_DIR="$metrics_dir" \
+        bash "$PROJECT_ROOT/scripts/analyze-config.sh" --llm --tool claude --sessions 5
+
+    [ "$status" -eq 0 ]
+    [ -f "$marker" ]
+    grep -q "### Auto-Mode Permission Denials" "$prompt_capture"
+    grep -q "Bash" "$prompt_capture"
+    grep -q "not in allowlist" "$prompt_capture"
+    grep -q "Repeated auto-mode denials" "$prompt_capture"
+    grep -q "permissions.allow" "$prompt_capture"
+}
